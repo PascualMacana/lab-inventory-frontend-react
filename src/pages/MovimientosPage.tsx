@@ -1,0 +1,318 @@
+import { FormEvent, useMemo, useState } from "react"
+import { useQuery } from "@tanstack/react-query"
+import { ArrowDownCircle, ArrowUpCircle, ListFilter, RotateCcw, SlidersHorizontal } from "lucide-react"
+
+import { Button } from "../components/ui/button"
+import { Input } from "../components/ui/input"
+import { Label } from "../components/ui/label"
+import { api, type Movimiento, type Reactivo } from "../lib/api"
+import { useAuth } from "../lib/auth"
+import { cn } from "../lib/utils"
+
+const reactivosVacios: Reactivo[] = []
+const movimientosVacios: Movimiento[] = []
+const tipos = [
+  { value: "", label: "Todos" },
+  { value: "entrada", label: "Entradas" },
+  { value: "salida", label: "Salidas" },
+  { value: "ajuste", label: "Ajustes" },
+]
+
+function isoDatePlusDays(days: number) {
+  const date = new Date()
+  date.setDate(date.getDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+function formatDateTime(value: string | null | undefined) {
+  if (!value) {
+    return "-"
+  }
+  const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(value)
+  const normalized = value.includes("T") ? value : value.replace(" ", "T")
+  const isoValue = hasTimezone ? normalized : `${normalized}Z`
+  const date = new Date(isoValue)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return new Intl.DateTimeFormat("es-AR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(date)
+}
+
+function formatNumber(value: number | null | undefined) {
+  return new Intl.NumberFormat("es-AR", { maximumFractionDigits: 2 }).format(value ?? 0)
+}
+
+function tipoLabel(tipo: Movimiento["tipo"]) {
+  if (tipo === "entrada") {
+    return "Entrada"
+  }
+  if (tipo === "salida") {
+    return "Salida"
+  }
+  return "Ajuste"
+}
+
+function tipoClasses(tipo: Movimiento["tipo"]) {
+  if (tipo === "entrada") {
+    return "text-cds-supportSuccess"
+  }
+  if (tipo === "salida") {
+    return "text-cds-supportError"
+  }
+  return "text-cds-supportInfo"
+}
+
+function TipoIcon({ tipo }: { tipo: Movimiento["tipo"] }) {
+  if (tipo === "entrada") {
+    return <ArrowUpCircle size={18} aria-hidden="true" />
+  }
+  if (tipo === "salida") {
+    return <ArrowDownCircle size={18} aria-hidden="true" />
+  }
+  return <SlidersHorizontal size={18} aria-hidden="true" />
+}
+
+export function MovimientosPage() {
+  const { token } = useAuth()
+  const [desde, setDesde] = useState(isoDatePlusDays(-30))
+  const [hasta, setHasta] = useState(isoDatePlusDays(0))
+  const [tipo, setTipo] = useState("")
+  const [reactivoId, setReactivoId] = useState("")
+  const [limite, setLimite] = useState("100")
+  const [filtrosAplicados, setFiltrosAplicados] = useState({
+    desde: isoDatePlusDays(-30),
+    hasta: isoDatePlusDays(0),
+    tipo: "",
+    reactivoId: "",
+    limite: 100,
+  })
+
+  const reactivosQuery = useQuery({
+    queryKey: ["reactivos"],
+    queryFn: () => api.reactivos(token!),
+    enabled: Boolean(token),
+  })
+
+  const movimientosQuery = useQuery({
+    queryKey: ["movimientos", filtrosAplicados],
+    queryFn: () =>
+      api.movimientos(token!, {
+        desde: filtrosAplicados.desde || undefined,
+        hasta: filtrosAplicados.hasta || undefined,
+        tipo: filtrosAplicados.tipo || undefined,
+        reactivo_id: filtrosAplicados.reactivoId ? Number(filtrosAplicados.reactivoId) : undefined,
+        limite: filtrosAplicados.limite,
+      }),
+    enabled: Boolean(token),
+  })
+
+  const reactivos = reactivosQuery.data ?? reactivosVacios
+  const movimientos = movimientosQuery.data ?? movimientosVacios
+  const resumen = useMemo(() => {
+    return movimientos.reduce(
+      (acc, movimiento) => {
+        acc.total += 1
+        acc[movimiento.tipo] += 1
+        return acc
+      },
+      { total: 0, entrada: 0, salida: 0, ajuste: 0 },
+    )
+  }, [movimientos])
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const limiteNumero = Number(limite)
+    setFiltrosAplicados({
+      desde,
+      hasta,
+      tipo,
+      reactivoId,
+      limite: Number.isFinite(limiteNumero) ? Math.min(Math.max(Math.trunc(limiteNumero), 1), 500) : 100,
+    })
+  }
+
+  function limpiarFiltros() {
+    const desdeDefault = isoDatePlusDays(-30)
+    const hastaDefault = isoDatePlusDays(0)
+    setDesde(desdeDefault)
+    setHasta(hastaDefault)
+    setTipo("")
+    setReactivoId("")
+    setLimite("100")
+    setFiltrosAplicados({
+      desde: desdeDefault,
+      hasta: hastaDefault,
+      tipo: "",
+      reactivoId: "",
+      limite: 100,
+    })
+  }
+
+  return (
+    <section>
+      <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h1>Movimientos</h1>
+          <p className="mt-2 text-sm leading-[1.29] tracking-[0.16px] text-cds-textSecondary">
+            Trazabilidad de entradas, consumos y ajustes registrados sobre lotes.
+          </p>
+        </div>
+        <div className="text-sm tracking-[0.16px] text-cds-textSecondary">
+          {movimientosQuery.isLoading ? "Cargando movimientos..." : `${resumen.total} movimiento(s)`}
+        </div>
+      </div>
+
+      <div className="mb-4 grid gap-px bg-cds-borderSubtle md:grid-cols-4">
+        <Metric label="Total" value={String(resumen.total)} />
+        <Metric label="Entradas" value={String(resumen.entrada)} tone="success" />
+        <Metric label="Salidas" value={String(resumen.salida)} tone="error" />
+        <Metric label="Ajustes" value={String(resumen.ajuste)} tone="info" />
+      </div>
+
+      <form className="mb-6 bg-cds-layer01 p-4" onSubmit={handleSubmit}>
+        <div className="mb-5 flex items-center gap-3">
+          <ListFilter size={20} aria-hidden="true" />
+          <h2 className="text-[24px] leading-[1.33]">Filtros</h2>
+        </div>
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-5">
+          <label className="block">
+            <Label className="mb-2" htmlFor="mov_desde">Desde</Label>
+            <Input id="mov_desde" type="date" value={desde} onChange={(event) => setDesde(event.target.value)} />
+          </label>
+          <label className="block">
+            <Label className="mb-2" htmlFor="mov_hasta">Hasta</Label>
+            <Input id="mov_hasta" type="date" value={hasta} onChange={(event) => setHasta(event.target.value)} />
+          </label>
+          <label className="block">
+            <Label className="mb-2" htmlFor="mov_tipo">Tipo</Label>
+            <select
+              id="mov_tipo"
+              className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
+              value={tipo}
+              onChange={(event) => setTipo(event.target.value)}
+            >
+              {tipos.map((item) => (
+                <option key={item.value || "todos"} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <Label className="mb-2" htmlFor="mov_reactivo">Reactivo</Label>
+            <select
+              id="mov_reactivo"
+              className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
+              value={reactivoId}
+              onChange={(event) => setReactivoId(event.target.value)}
+            >
+              <option value="">Todos</option>
+              {reactivos.map((reactivo) => (
+                <option key={reactivo.id} value={reactivo.id}>
+                  {reactivo.nombre}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <Label className="mb-2" htmlFor="mov_limite">Límite</Label>
+            <Input
+              id="mov_limite"
+              value={limite}
+              onChange={(event) => setLimite(event.target.value)}
+              inputMode="numeric"
+            />
+          </label>
+        </div>
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+          <Button type="submit" disabled={movimientosQuery.isFetching}>
+            {movimientosQuery.isFetching ? "Aplicando..." : "Aplicar filtros"}
+          </Button>
+          <Button type="button" variant="ghost" onClick={limpiarFiltros}>
+            <RotateCcw size={18} aria-hidden="true" />
+            Limpiar
+          </Button>
+        </div>
+      </form>
+
+      {movimientosQuery.isError ? (
+        <div className="mb-4 border-l-4 border-cds-supportError bg-cds-layer01 px-4 py-3 text-sm">
+          No se pudieron cargar los movimientos.
+        </div>
+      ) : null}
+
+      <MovimientosTable movimientos={movimientos} isLoading={movimientosQuery.isLoading} />
+    </section>
+  )
+}
+
+function Metric({ label, value, tone }: { label: string; value: string; tone?: "success" | "error" | "info" }) {
+  return (
+    <article className="bg-cds-layer01 p-4">
+      <div className="text-xs tracking-[0.32px] text-cds-textSecondary">{label}</div>
+      <div
+        className={cn(
+          "mt-3 text-[24px] leading-[1.33]",
+          tone === "success" && "text-cds-supportSuccess",
+          tone === "error" && "text-cds-supportError",
+          tone === "info" && "text-cds-supportInfo",
+        )}
+      >
+        {value}
+      </div>
+    </article>
+  )
+}
+
+function MovimientosTable({ movimientos, isLoading }: { movimientos: Movimiento[]; isLoading: boolean }) {
+  if (isLoading) {
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">Cargando tabla...</div>
+  }
+
+  if (!movimientos.length) {
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">No hay movimientos para esos filtros.</div>
+  }
+
+  return (
+    <div className="overflow-x-auto border-t border-cds-borderSubtle">
+      <table className="w-full min-w-[1120px] border-collapse text-left text-sm">
+        <thead>
+          <tr className="border-b border-cds-borderSubtle bg-cds-layer01 text-xs tracking-[0.32px] text-cds-textSecondary">
+            <th className="h-10 px-4 font-normal">Fecha</th>
+            <th className="h-10 px-4 font-normal">Tipo</th>
+            <th className="h-10 px-4 font-normal">Reactivo</th>
+            <th className="h-10 px-4 font-normal">Lote interno</th>
+            <th className="h-10 px-4 text-right font-normal">Cantidad</th>
+            <th className="h-10 px-4 font-normal">Usuario</th>
+            <th className="h-10 px-4 font-normal">Motivo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {movimientos.map((movimiento) => (
+            <tr key={movimiento.id} className="border-b border-cds-borderSubtle hover:bg-cds-layer01">
+              <td className="h-12 px-4 text-cds-textSecondary">{formatDateTime(movimiento.fecha)}</td>
+              <td className={cn("h-12 px-4", tipoClasses(movimiento.tipo))}>
+                <span className="inline-flex items-center gap-2">
+                  <TipoIcon tipo={movimiento.tipo} />
+                  {tipoLabel(movimiento.tipo)}
+                </span>
+              </td>
+              <td className="h-12 px-4">{movimiento.reactivo_nombre}</td>
+              <td className="h-12 px-4 font-mono text-xs tracking-[0.16px]">{movimiento.codigo_interno}</td>
+              <td className="h-12 px-4 text-right font-mono">
+                {formatNumber(movimiento.cantidad)} {movimiento.unidad}
+              </td>
+              <td className="h-12 px-4 text-cds-textSecondary">{movimiento.usuario_nombre}</td>
+              <td className="h-12 max-w-[320px] px-4 text-cds-textSecondary">
+                <span className="line-clamp-2">{movimiento.motivo || "-"}</span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
