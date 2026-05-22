@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000"
+const API_URL = (import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "")
 
 export type Usuario = {
   id: number
@@ -8,6 +8,9 @@ export type Usuario = {
   sector?: string | null
   activo?: number | boolean
   must_change_password?: number | boolean
+  organizacion_id?: number
+  owner_global?: boolean | number
+  modulos_habilitados?: string[]
 }
 
 export type UsuarioCrear = {
@@ -18,11 +21,87 @@ export type UsuarioCrear = {
   password_inicial: string
 }
 
+export type EstadoTarea = "pendiente" | "en_progreso" | "bloqueada" | "completada" | "cancelada"
+export type PrioridadTarea = "baja" | "media" | "alta" | "urgente"
+
+export type Tarea = {
+  id: number
+  titulo: string
+  descripcion?: string | null
+  estado: EstadoTarea
+  prioridad: PrioridadTarea
+  asignado_a?: number | null
+  asignado_nombre?: string | null
+  creado_por: number
+  creado_por_nombre?: string | null
+  entidad_tipo?: string | null
+  entidad_id?: number | null
+  fecha_limite?: string | null
+  fecha_creacion: string
+  fecha_actualizacion?: string | null
+  fecha_completada?: string | null
+  activo: number | boolean
+}
+
+export type TareaCrear = {
+  titulo: string
+  descripcion?: string | null
+  prioridad: PrioridadTarea
+  asignado_a?: number | null
+  entidad_tipo?: string | null
+  entidad_id?: number | null
+  fecha_limite?: string | null
+}
+
+export type TareaActualizar = {
+  titulo: string
+  descripcion?: string | null
+  prioridad: PrioridadTarea
+  fecha_limite?: string | null
+}
+
+export type TareaEvento = {
+  id: number
+  tarea_id: number
+  usuario_id: number
+  usuario_nombre: string
+  tipo: "creacion" | "estado" | "reasignacion" | "edicion" | "comentario" | string
+  estado_anterior?: EstadoTarea | null
+  estado_nuevo?: EstadoTarea | null
+  asignado_anterior?: number | null
+  asignado_nuevo?: number | null
+  asignado_anterior_nombre?: string | null
+  asignado_nuevo_nombre?: string | null
+  comentario?: string | null
+  fecha: string
+}
+
 export type LoginResponse = {
   token: string
   expira_en: string
   usuario: Usuario
   must_change_password: boolean
+}
+
+export type OrganizacionModulo = {
+  modulo: string
+  habilitado: boolean
+}
+
+export type Organizacion = {
+  id: number
+  nombre: string
+  slug: string
+  activo: number | boolean
+  fecha_creacion?: string
+  modulos?: OrganizacionModulo[]
+}
+
+export type OrganizacionCrear = {
+  nombre: string
+  slug?: string | null
+  activo?: boolean
+  modulos_habilitados?: string[]
 }
 
 export type DashboardResumen = {
@@ -39,7 +118,23 @@ export type DashboardResumen = {
   vencidos?: Array<Record<string, unknown>>
   por_vencer_7_dias?: Array<Record<string, unknown>>
   por_vencer_30_dias?: Array<Record<string, unknown>>
+  ultimos_movimientos?: Movimiento[]
+  movimientos_recientes?: Movimiento[]
   [key: string]: unknown
+}
+
+export type DashboardSeriePunto = {
+  fecha: string
+  total_reactivos: number
+  lotes_activos: number
+  stock_bajo: number
+  por_vencer_30d: number
+  vencidos: number
+}
+
+export type DashboardSeries = {
+  dias: number
+  puntos: DashboardSeriePunto[]
 }
 
 export type Reactivo = {
@@ -80,6 +175,7 @@ export type Lote = {
   unidad: string
   ubicacion?: string | null
   numero_lote?: string | null
+  marca?: string | null
   codigo_proveedor?: string | null
   cas_numero?: string | null
   codigo_interno: string
@@ -147,6 +243,7 @@ export type LoteCrear = {
   costo_total: number
   usuario_id: number
   numero_lote?: string | null
+  marca?: string | null
   codigo_proveedor?: string | null
   cas_numero?: string | null
 }
@@ -161,6 +258,7 @@ export type LoteCrearMultiple = {
   costo_total_compra: number
   usuario_id?: number | null
   numero_lote?: string | null
+  marca?: string | null
   codigo_proveedor?: string | null
   cas_numero?: string | null
 }
@@ -182,6 +280,7 @@ export type LoteCrearMultipleResponse = {
 
 export type LoteActualizar = {
   numero_lote?: string | null
+  marca?: string | null
   codigo_proveedor?: string | null
   cas_numero?: string | null
   fecha_vencimiento: string
@@ -619,6 +718,83 @@ export const api = {
 
   me: async (token: string) => request<Usuario>("/auth/yo", { token }),
 
+  organizaciones: async (token: string, soloActivas = true) =>
+    request<Organizacion[]>(`/organizaciones?solo_activas=${soloActivas ? "true" : "false"}`, { token }),
+
+  crearOrganizacion: async (token: string, data: OrganizacionCrear) =>
+    request<{ id: number; mensaje: string }>("/organizaciones", {
+      method: "POST",
+      token,
+      body: JSON.stringify(data),
+    }),
+
+  actualizarModulosOrganizacion: async (token: string, organizacionId: number, modulosHabilitados: string[]) =>
+    request<OrganizacionModulo[]>(`/organizaciones/${organizacionId}/modulos`, {
+      method: "PUT",
+      token,
+      body: JSON.stringify({ modulos_habilitados: modulosHabilitados }),
+    }),
+
+  usuariosOrganizacion: async (token: string, organizacionId: number, soloActivos = true) =>
+    request<Usuario[]>(`/organizaciones/${organizacionId}/usuarios?solo_activos=${soloActivos ? "true" : "false"}`, { token }),
+
+  crearUsuarioOrganizacion: async (token: string, organizacionId: number, data: UsuarioCrear) =>
+    request<{ id: number; mensaje: string }>(`/organizaciones/${organizacionId}/usuarios`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(data),
+    }),
+
+  tareas: async (token: string, filtros: { estado?: string; asignado_a?: number | null } = {}) => {
+    const params = new URLSearchParams()
+    if (filtros.estado) {
+      params.set("estado", filtros.estado)
+    }
+    if (filtros.asignado_a !== undefined && filtros.asignado_a !== null) {
+      params.set("asignado_a", String(filtros.asignado_a))
+    }
+    const query = params.toString()
+    return request<Tarea[]>(`/tareas${query ? `?${query}` : ""}`, { token })
+  },
+
+  crearTarea: async (token: string, data: TareaCrear) =>
+    request<Tarea>("/tareas", {
+      method: "POST",
+      token,
+      body: JSON.stringify(data),
+    }),
+
+  cambiarEstadoTarea: async (token: string, id: number, estado: EstadoTarea) =>
+    request<Tarea>(`/tareas/${id}/estado`, {
+      method: "PATCH",
+      token,
+      body: JSON.stringify({ estado }),
+    }),
+
+  actualizarTarea: async (token: string, id: number, data: TareaActualizar) =>
+    request<Tarea>(`/tareas/${id}`, {
+      method: "PATCH",
+      token,
+      body: JSON.stringify(data),
+    }),
+
+  reasignarTarea: async (token: string, id: number, asignadoA: number | null) =>
+    request<Tarea>(`/tareas/${id}/reasignar`, {
+      method: "PATCH",
+      token,
+      body: JSON.stringify({ asignado_a: asignadoA }),
+    }),
+
+  tareaEventos: async (token: string, id: number) =>
+    request<TareaEvento[]>(`/tareas/${id}/eventos`, { token }),
+
+  comentarTarea: async (token: string, id: number, comentario: string) =>
+    request<TareaEvento[]>(`/tareas/${id}/comentarios`, {
+      method: "POST",
+      token,
+      body: JSON.stringify({ comentario }),
+    }),
+
   usuarios: async (token: string, soloActivos = true) =>
     request<Usuario[]>(`/usuarios?solo_activos=${soloActivos ? "true" : "false"}`, { token }),
 
@@ -645,6 +821,9 @@ export const api = {
     }),
 
   dashboard: async (token: string) => request<DashboardResumen>("/dashboard", { token }),
+
+  dashboardSeries: async (token: string, dias = 30) =>
+    request<DashboardSeries>(`/dashboard/series?dias=${dias}`, { token }),
 
   reactivos: async (token: string) => request<Reactivo[]>("/reactivos", { token }),
 

@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, History, Microscope, Plus, Search, Wrench } from "lucide-react"
+import { ArrowLeft, Eye, EyeOff, History, Microscope, Plus, Search, Wrench } from "lucide-react"
 
 import { ModuleNav } from "../components/ModuleNav"
 import { Button } from "../components/ui/button"
@@ -210,13 +210,22 @@ export function EquipamientoPage() {
                   ))}
                 </select>
               </label>
-              <label className="block">
+              <div className="block">
                 <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">Stock operativo</span>
-                <span className="flex h-10 items-center gap-2 bg-cds-field px-4 text-sm tracking-[0.16px]">
-                  <input type="checkbox" checked={soloOperativos} onChange={(event) => setSoloOperativos(event.target.checked)} />
-                  Solo en uso
-                </span>
-              </label>
+                <Button
+                  type="button"
+                  variant={soloOperativos ? "primary" : "secondary"}
+                  size="compact"
+                  className="w-full lg:w-auto"
+                  onClick={() => {
+                    setSoloOperativos((actual) => !actual)
+                    setEquipoId(null)
+                  }}
+                >
+                  {soloOperativos ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
+                  {soloOperativos ? "Ver todos" : "Solo en uso"}
+                </Button>
+              </div>
             </div>
           </div>
 

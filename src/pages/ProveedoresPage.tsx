@@ -1,9 +1,11 @@
 import { FormEvent, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Building2, Mail, Phone, Plus, RotateCcw, Search, Trash2 } from "lucide-react"
+import { ArrowLeft, Building2, Eye, EyeOff, Mail, Phone, Plus, RotateCcw, Search, Trash2 } from "lucide-react"
 
 import { ModuleNav } from "../components/ModuleNav"
+import { PageHeader } from "../components/PageHeader"
 import { Button } from "../components/ui/button"
+import { EstadoBadge } from "../components/ui/estado-badge"
 import { Input } from "../components/ui/input"
 import { Label } from "../components/ui/label"
 import { api, type ContactoCrear, type Proveedor, type ProveedorCrear } from "../lib/api"
@@ -81,17 +83,12 @@ export function ProveedoresPage() {
 
   return (
     <section>
-      <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1>Proveedores</h1>
-          <p className="mt-2 text-sm leading-[1.29] tracking-[0.16px] text-cds-textSecondary">
-            Catálogo de proveedores y contactos operativos del laboratorio.
-          </p>
-        </div>
-        <div className="text-sm tracking-[0.16px] text-cds-textSecondary">
-          {proveedoresQuery.isLoading ? "Cargando proveedores..." : `${proveedoresFiltrados.length} proveedor(es)`}
-        </div>
-      </div>
+      <PageHeader
+        title="Proveedores"
+        description="Catálogo de proveedores y contactos operativos del laboratorio."
+        count={proveedoresQuery.isLoading ? "Cargando proveedores..." : `${proveedoresFiltrados.length} proveedor(es)`}
+        plain
+      />
 
       {mensaje ? (
         <div className="mb-6 border-l-4 border-cds-supportSuccess bg-cds-layer01 px-4 py-3 text-sm">{mensaje}</div>
@@ -129,17 +126,22 @@ export function ProveedoresPage() {
                 />
               </div>
             </label>
-            <label className="flex items-end gap-2 pb-3 text-sm tracking-[0.16px]">
-              <input
-                type="checkbox"
-                checked={mostrarInactivos}
-                onChange={(event) => {
-                  setMostrarInactivos(event.target.checked)
+            <div className="block">
+              <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">Estado</span>
+              <Button
+                type="button"
+                variant={mostrarInactivos ? "primary" : "secondary"}
+                size="compact"
+                className="w-full lg:w-auto"
+                onClick={() => {
+                  setMostrarInactivos((actual) => !actual)
                   setProveedorId(null)
                 }}
-              />
-              Mostrar inactivos
-            </label>
+              >
+                {mostrarInactivos ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
+                {mostrarInactivos ? "Ocultar inactivos" : "Mostrar inactivos"}
+              </Button>
+            </div>
           </div>
 
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
@@ -222,8 +224,8 @@ function ProveedoresTable({
               >
                 <td className="h-12 px-4 font-medium">{proveedor.nombre}</td>
                 <td className="h-12 px-4 text-cds-textSecondary">{proveedor.sitio_web || "-"}</td>
-                <td className={cn("h-12 px-4", activo ? "text-cds-supportSuccess" : "text-cds-supportError")}>
-                  {activo ? "Activo" : "Inactivo"}
+                <td className="h-12 px-4">
+                  <EstadoBadge activo={activo} />
                 </td>
                 <td className="h-12 max-w-[320px] px-4 text-cds-textSecondary">
                   <span className="line-clamp-2">{proveedor.descripcion || "-"}</span>
@@ -324,9 +326,9 @@ function ProveedorDetallePanel({
             <Building2 size={22} aria-hidden="true" />
           </div>
           <h2 className="text-[24px] leading-[1.33]">{proveedor.nombre}</h2>
-          <p className={cn("mt-2 text-sm", activo ? "text-cds-supportSuccess" : "text-cds-supportError")}>
-            {activo ? "Activo" : "Inactivo"}
-          </p>
+          <div className="mt-2">
+            <EstadoBadge activo={activo} />
+          </div>
         </div>
         {puedeEditar ? (
           <Button type="button" variant="ghost" size="compact" onClick={cambiarEstado} disabled={cambiarEstadoMutation.isPending}>

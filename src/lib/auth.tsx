@@ -96,14 +96,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error("No hay sesión activa")
     }
     await api.cambiarPassword(token, passwordActual, passwordNueva)
-    const updatedUser = { ...usuario, must_change_password: false }
-    setUsuario(updatedUser)
+    setToken(null)
+    setUsuario(null)
     setMustChangePassword(false)
-    writeStoredSession({
-      token,
-      usuario: updatedUser,
-      mustChangePassword: false,
-    })
+    writeStoredSession(null)
   }, [token, usuario])
 
   const logout = useCallback(async () => {

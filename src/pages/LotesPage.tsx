@@ -105,7 +105,7 @@ export function LotesPage() {
       return lotes
     }
     return lotes.filter((lote) =>
-      [lote.codigo_interno, lote.numero_lote, lote.codigo_proveedor, lote.proveedor, lote.ubicacion]
+      [lote.codigo_interno, lote.numero_lote, lote.marca, lote.codigo_proveedor, lote.proveedor, lote.ubicacion]
         .filter(Boolean)
         .some((value) => String(value).toLocaleLowerCase("es").includes(texto)),
     )
@@ -362,6 +362,7 @@ function NuevoLoteForm({
   const [unidadIngreso, setUnidadIngreso] = useState("")
   const [fechaVencimiento, setFechaVencimiento] = useState(isoDatePlusDays(365))
   const [numeroLote, setNumeroLote] = useState("")
+  const [marca, setMarca] = useState("")
   const [casNumero, setCasNumero] = useState("")
   const [codigoProveedor, setCodigoProveedor] = useState("")
   const [proveedor, setProveedor] = useState("")
@@ -423,6 +424,7 @@ function NuevoLoteForm({
         setFechaVencimiento(datos.fecha_vencimiento)
       }
       setNumeroLote(datos.numero_lote ?? "")
+      setMarca(datos.fabricante ?? "")
       setCasNumero(datos.cas_numero ?? "")
       setCodigoProveedor(datos.codigo_proveedor ?? "")
       setProveedor(datos.fabricante ?? "")
@@ -474,6 +476,7 @@ function NuevoLoteForm({
           costo_total_compra: costoParseado,
           usuario_id: usuarioId,
           numero_lote: nullable(numeroLote),
+          marca: nullable(marca),
           cas_numero: nullable(casNumero),
           codigo_proveedor: nullable(codigoProveedor),
         }
@@ -490,6 +493,7 @@ function NuevoLoteForm({
           costo_total: costoParseado,
           usuario_id: usuarioId,
           numero_lote: nullable(numeroLote),
+          marca: nullable(marca),
           cas_numero: nullable(casNumero),
           codigo_proveedor: nullable(codigoProveedor),
         }
@@ -503,6 +507,7 @@ function NuevoLoteForm({
       setUnidadIngreso("")
       setFechaVencimiento(isoDatePlusDays(365))
       setNumeroLote("")
+      setMarca("")
       setCasNumero("")
       setCodigoProveedor("")
       setProveedor("")
@@ -711,6 +716,13 @@ function NuevoLoteForm({
               placeholder="Ej: BCBV1234"
             />
             <Field
+              label="Marca / fabricante"
+              name="marca"
+              value={marca}
+              onChange={(event) => setMarca(event.target.value)}
+              placeholder="Ej: Sigma-Aldrich, Merck"
+            />
+            <Field
               label="Número CAS"
               name="cas_numero"
               value={casNumero}
@@ -835,6 +847,7 @@ function EditarLoteForm({
       }
       const payload: LoteActualizar = {
         numero_lote: nullable(String(form.get("numero_lote") ?? "")),
+        marca: nullable(String(form.get("marca") ?? "")),
         cas_numero: nullable(String(form.get("cas_numero") ?? "")),
         codigo_proveedor: nullable(String(form.get("codigo_proveedor") ?? "")),
         fecha_vencimiento: String(form.get("fecha_vencimiento") ?? lote.fecha_vencimiento),
@@ -911,6 +924,7 @@ function EditarLoteForm({
 
         <div className="grid gap-5 md:grid-cols-2">
           <Field label="Número de lote fabricante" name="numero_lote" defaultValue={lote.numero_lote ?? ""} />
+          <Field label="Marca / fabricante" name="marca" defaultValue={lote.marca ?? ""} />
           <Field label="Número CAS" name="cas_numero" defaultValue={lote.cas_numero ?? ""} />
           <Field label="Código proveedor" name="codigo_proveedor" defaultValue={lote.codigo_proveedor ?? ""} />
           <Field label="Fecha de vencimiento" name="fecha_vencimiento" type="date" defaultValue={lote.fecha_vencimiento} required />
@@ -1166,6 +1180,7 @@ function LotesTable({
           <tr className="border-b border-cds-borderSubtle bg-cds-layer01 text-xs tracking-[0.32px] text-cds-textSecondary">
             <th className="h-10 px-4 font-normal">QR interno</th>
             <th className="h-10 px-4 font-normal">Lote fabricante</th>
+            <th className="h-10 px-4 font-normal">Marca</th>
             <th className="h-10 px-4 font-normal">CAS</th>
             <th className="h-10 px-4 font-normal">Cód. proveedor</th>
             <th className="h-10 px-4 font-normal">Ingreso</th>
@@ -1189,6 +1204,7 @@ function LotesTable({
               >
                 <td className="h-12 px-4 font-mono text-xs tracking-[0.16px]">{lote.codigo_interno}</td>
                 <td className="h-12 px-4">{lote.numero_lote || "-"}</td>
+                <td className="h-12 px-4 text-cds-textSecondary">{lote.marca || "-"}</td>
                 <td className="h-12 px-4 font-mono text-xs text-cds-textSecondary">{lote.cas_numero || "-"}</td>
                 <td className="h-12 px-4 text-cds-textSecondary">{lote.codigo_proveedor || "-"}</td>
                 <td className="h-12 px-4 text-cds-textSecondary">{formatDate(lote.fecha_ingreso)}</td>

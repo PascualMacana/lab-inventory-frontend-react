@@ -11,6 +11,7 @@ type ChatTurn = {
   role: "user" | "assistant"
   text: string
   tools?: AsistenteToolUsada[]
+  pdfRequested?: boolean
 }
 
 const MAX_TURNOS_HISTORIAL = 10
@@ -23,14 +24,18 @@ const ejemplos = [
 ]
 
 function pdfSafeText(value: string) {
-  return value
+  const normalized = value
     .replace(/[“”]/g, '"')
     .replace(/[‘’]/g, "'")
     .replace(/[–—]/g, "-")
     .replace(/[•·]/g, "-")
     .replace(/[≤]/g, "<=")
     .replace(/[≥]/g, ">=")
-    .replace(/[^\x09\x0A\x0D\x20-\xFF]/g, "?")
+
+  return Array.from(normalized, (char) => {
+    const code = char.charCodeAt(0)
+    return code === 9 || code === 10 || code === 13 || (code >= 32 && code <= 255) ? char : "?"
+  }).join("")
 }
 
 function wrapPdfLine(line: string, maxChars = 92) {
@@ -156,6 +161,29 @@ function downloadAssistantPdf(text: string) {
   URL.revokeObjectURL(url)
 }
 
+function userRequestedPdf(text: string) {
+  const normalized = text
+    .toLocaleLowerCase("es")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+
+  return /(pdf|descarg|export|archivo|reporte|informe)/.test(normalized)
+}
+
+function pdfPreviewText(text: string) {
+  const cleaned = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 5)
+    .join(" ")
+
+  if (!cleaned) {
+    return "(sin contenido para previsualizar)"
+  }
+  return cleaned.length > 280 ? `${cleaned.slice(0, 280)}...` : cleaned
+}
+
 function mutationError(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
 }
@@ -253,12 +281,14 @@ export function AsistentePage() {
     setTurnos((actual) => [...actual, { role: "user", text: limpia }])
     try {
       const respuesta = await preguntarMutation.mutateAsync({ pregunta: limpia, historial })
+      const pdfRequested = userRequestedPdf(limpia)
       setTurnos((actual) => [
         ...actual,
         {
           role: "assistant",
           text: respuesta.respuesta || "(sin respuesta)",
           tools: respuesta.tools_usadas ?? [],
+          pdfRequested,
         },
       ])
     } catch (error) {
@@ -375,13 +405,8 @@ function ChatBubble({ turno }: { turno: ChatTurn }) {
           <div className="whitespace-pre-wrap text-sm leading-5 tracking-[0.16px]">{turno.text}</div>
         ) : (
           <>
-            <div className="mb-3 flex justify-end">
-              <Button type="button" variant="ghost" size="compact" onClick={() => downloadAssistantPdf(turno.text)}>
-                <Download size={16} aria-hidden="true" />
-                PDF
-              </Button>
-            </div>
             {renderAssistantText(turno.text)}
+            {turno.pdfRequested ? <AssistantPdfCard text={turno.text} /> : null}
           </>
         )}
         {tools.length ? <ToolsPanel tools={tools} /> : null}
@@ -391,6 +416,25 @@ function ChatBubble({ turno }: { turno: ChatTurn }) {
           <User size={20} aria-hidden="true" />
         </div>
       ) : null}
+    </div>
+  )
+}
+
+function AssistantPdfCard({ text }: { text: string }) {
+  return (
+    <div className="mt-4 border border-cds-borderSubtle bg-cds-background p-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="font-mono text-xs tracking-[0.32px] text-cds-textSecondary">PDF listo para descargar</div>
+          <p className="mt-2 line-clamp-3 text-sm leading-5 tracking-[0.16px] text-cds-textPrimary">
+            {pdfPreviewText(text)}
+          </p>
+        </div>
+        <Button type="button" variant="secondary" size="compact" onClick={() => downloadAssistantPdf(text)}>
+          <Download size={16} aria-hidden="true" />
+          Descargar PDF
+        </Button>
+      </div>
     </div>
   )
 }

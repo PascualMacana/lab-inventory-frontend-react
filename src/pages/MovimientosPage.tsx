@@ -2,6 +2,7 @@ import { FormEvent, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ArrowDownCircle, ArrowUpCircle, ListFilter, RotateCcw, SlidersHorizontal } from "lucide-react"
 
+import { PageHeader } from "../components/PageHeader"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
 import { Label } from "../components/ui/label"
@@ -55,24 +56,24 @@ function tipoLabel(tipo: Movimiento["tipo"]) {
   return "Ajuste"
 }
 
-function tipoClasses(tipo: Movimiento["tipo"]) {
+function tipoBadgeClasses(tipo: Movimiento["tipo"]) {
   if (tipo === "entrada") {
-    return "text-cds-supportSuccess"
+    return "bg-lab-sageBg text-cds-supportSuccess ring-1 ring-cds-supportSuccess/40"
   }
   if (tipo === "salida") {
-    return "text-cds-supportError"
+    return "bg-lab-critTint text-cds-supportError ring-1 ring-cds-supportError/40"
   }
-  return "text-cds-supportInfo"
+  return "bg-lab-warmTint text-lab-warmFg ring-1 ring-lab-warm/40"
 }
 
 function TipoIcon({ tipo }: { tipo: Movimiento["tipo"] }) {
   if (tipo === "entrada") {
-    return <ArrowUpCircle size={18} aria-hidden="true" />
+    return <ArrowUpCircle size={14} aria-hidden="true" />
   }
   if (tipo === "salida") {
-    return <ArrowDownCircle size={18} aria-hidden="true" />
+    return <ArrowDownCircle size={14} aria-hidden="true" />
   }
-  return <SlidersHorizontal size={18} aria-hidden="true" />
+  return <SlidersHorizontal size={14} aria-hidden="true" />
 }
 
 export function MovimientosPage() {
@@ -153,23 +154,18 @@ export function MovimientosPage() {
 
   return (
     <section>
-      <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1>Movimientos</h1>
-          <p className="mt-2 text-sm leading-[1.29] tracking-[0.16px] text-cds-textSecondary">
-            Trazabilidad de entradas, consumos y ajustes registrados sobre lotes.
-          </p>
-        </div>
-        <div className="text-sm tracking-[0.16px] text-cds-textSecondary">
-          {movimientosQuery.isLoading ? "Cargando movimientos..." : `${resumen.total} movimiento(s)`}
-        </div>
-      </div>
+      <PageHeader
+        title="Movimientos"
+        description="Trazabilidad de entradas, consumos y ajustes registrados sobre lotes."
+        count={movimientosQuery.isLoading ? "Cargando movimientos..." : `${resumen.total} movimiento(s)`}
+        plain
+      />
 
       <div className="mb-4 grid gap-px bg-cds-borderSubtle md:grid-cols-4">
         <Metric label="Total" value={String(resumen.total)} />
         <Metric label="Entradas" value={String(resumen.entrada)} tone="success" />
         <Metric label="Salidas" value={String(resumen.salida)} tone="error" />
-        <Metric label="Ajustes" value={String(resumen.ajuste)} tone="info" />
+        <Metric label="Ajustes" value={String(resumen.ajuste)} tone="warning" />
       </div>
 
       <form className="mb-6 bg-cds-layer01 p-4" onSubmit={handleSubmit}>
@@ -249,7 +245,7 @@ export function MovimientosPage() {
   )
 }
 
-function Metric({ label, value, tone }: { label: string; value: string; tone?: "success" | "error" | "info" }) {
+function Metric({ label, value, tone }: { label: string; value: string; tone?: "success" | "error" | "warning" }) {
   return (
     <article className="bg-cds-layer01 p-4">
       <div className="text-xs tracking-[0.32px] text-cds-textSecondary">{label}</div>
@@ -258,7 +254,7 @@ function Metric({ label, value, tone }: { label: string; value: string; tone?: "
           "mt-3 text-[24px] leading-[1.33]",
           tone === "success" && "text-cds-supportSuccess",
           tone === "error" && "text-cds-supportError",
-          tone === "info" && "text-cds-supportInfo",
+          tone === "warning" && "text-lab-warmFg",
         )}
       >
         {value}
@@ -294,8 +290,13 @@ function MovimientosTable({ movimientos, isLoading }: { movimientos: Movimiento[
           {movimientos.map((movimiento) => (
             <tr key={movimiento.id} className="border-b border-cds-borderSubtle hover:bg-cds-layer01">
               <td className="h-12 px-4 text-cds-textSecondary">{formatDateTime(movimiento.fecha)}</td>
-              <td className={cn("h-12 px-4", tipoClasses(movimiento.tipo))}>
-                <span className="inline-flex items-center gap-2">
+              <td className="h-12 px-4">
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium tracking-[0.16px]",
+                    tipoBadgeClasses(movimiento.tipo),
+                  )}
+                >
                   <TipoIcon tipo={movimiento.tipo} />
                   {tipoLabel(movimiento.tipo)}
                 </span>

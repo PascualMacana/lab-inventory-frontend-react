@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from "react-router-dom"
 import {
   BarChart3,
   Bot,
+  Building2,
   ChartNoAxesCombined,
   ClipboardCheck,
   FlaskRound,
@@ -12,11 +13,13 @@ import {
   LogOut,
   Menu,
   Microscope,
+  Moon,
   Package,
   PanelLeftClose,
   PanelLeftOpen,
   ScanLine,
   ScrollText,
+  Sun,
   Truck,
   UserCircle,
   Users,
@@ -27,15 +30,17 @@ import { useQuery } from "@tanstack/react-query"
 import { api } from "../lib/api"
 import { useAuth } from "../lib/auth"
 import { puede } from "../lib/permissions"
+import { useTheme } from "../lib/theme"
 import { Button } from "./ui/button"
 import { StatusDot } from "./ui/status-dot"
 import { cn } from "../lib/utils"
 
 const navItems = [
+  { to: "/owner", label: "Owner", icon: Building2, action: "ver_pagina_owner" },
   { to: "/", label: "Dashboard", icon: Gauge, action: "ver_pagina_dashboard" },
   { to: "/reactivos", label: "Reactivos", icon: FlaskConical, action: "ver_pagina_reactivos" },
   { to: "/lotes", label: "Lotes", icon: Package, action: "ver_pagina_lotes" },
-  { to: "/consumo", label: "Consumo", icon: ScanLine, action: "ver_pagina_consumo" },
+  { to: "/consumo", label: "Consumo", icon: ScanLine, action: "ver_pagina_consumo", desktopOnly: true },
   { to: "/mesada", label: "Mesada", icon: FlaskRound, action: "ver_pagina_mesada", mobileOnly: true },
   { to: "/protocolos", label: "Protocolos", icon: ScrollText, action: "ver_pagina_protocolos" },
   { to: "/tareas", label: "Tareas", icon: ClipboardCheck, action: "ver_pagina_tareas" },
@@ -56,7 +61,11 @@ const rolEtiqueta = {
 
 export function AppShell() {
   const { usuario, logout } = useAuth()
+  const { theme, toggleTheme } = useTheme()
   const location = useLocation()
+  const isDark = theme === "dark"
+  const themeLabel = isDark ? "Modo claro" : "Modo oscuro"
+  const ThemeIcon = isDark ? Sun : Moon
   const [menuAbierto, setMenuAbierto] = useState(false)
   const [sidebarColapsado, setSidebarColapsado] = useState(false)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
@@ -70,7 +79,7 @@ export function AppShell() {
 
   const visibleItems = navItems.filter((item) => puede(usuario, item.action))
   const desktopItems = visibleItems.filter((item) => !item.mobileOnly)
-  const mobileItems = visibleItems
+  const mobileItems = visibleItems.filter((item) => !item.desktopOnly)
   const online = healthQuery.data?.ok === true && !healthQuery.isError
 
   function handleModuleOpen(to: string) {
@@ -165,6 +174,15 @@ export function AppShell() {
                 <button
                   type="button"
                   className="flex h-10 w-full items-center gap-2 px-3 text-left text-sm tracking-[0.16px] text-[var(--lab-sidebar-text)] hover:bg-[var(--lab-sidebar-hover)] hover:text-white"
+                  onClick={toggleTheme}
+                  aria-label={themeLabel}
+                >
+                  <ThemeIcon size={18} aria-hidden="true" />
+                  {themeLabel}
+                </button>
+                <button
+                  type="button"
+                  className="flex h-10 w-full items-center gap-2 border-t border-[#393939] px-3 text-left text-sm tracking-[0.16px] text-[var(--lab-sidebar-text)] hover:bg-[var(--lab-sidebar-hover)] hover:text-white"
                   onClick={logout}
                 >
                   <LogOut size={18} aria-hidden="true" />
@@ -260,6 +278,18 @@ export function AppShell() {
                   )
                 })}
               </nav>
+
+              <div className="border-t border-[#393939]">
+                <button
+                  type="button"
+                  onClick={toggleTheme}
+                  aria-label={themeLabel}
+                  className="flex h-12 w-full items-center gap-3 px-4 text-left text-sm tracking-[0.16px] text-[var(--lab-sidebar-text)] transition-colors hover:bg-[var(--lab-sidebar-hover)] hover:text-white"
+                >
+                  <ThemeIcon size={18} aria-hidden="true" />
+                  {themeLabel}
+                </button>
+              </div>
 
               <div className="flex items-center justify-between gap-2 border-t border-[#393939] p-3">
                 {mostrarApi ? (

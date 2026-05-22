@@ -1,59 +1,159 @@
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400&family=IBM+Plex+Sans:wght@300;400;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Serif:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&display=swap");
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ───────────────────────────────────────────────────────────
+   LAB v2 tokens — petroleum + graphite (replaces IBM Blue)
+   ALL existing --cds-* class names (bg-cds-layer01, etc.) keep
+   working; only their VALUES changed.
+   ─────────────────────────────────────────────────────────── */
 :root {
-  --cds-background: #ffffff;
-  --cds-layer-01: #f4f4f4;
-  --cds-layer-02: #e0e0e0;
-  --cds-layer-hover-01: #e8e8e8;
-  --cds-text-primary: #161616;
-  --cds-text-secondary: #525252;
-  --cds-text-placeholder: #6f6f6f;
-  --cds-border-subtle: #c6c6c6;
-  --cds-border-strong: #161616;
-  --cds-field: #e0e0e0;
-  --cds-field-hover: #e8e8e8;
-  --cds-button-primary: #0f62fe;
-  --cds-button-primary-hover: #0353e9;
-  --cds-button-primary-active: #002d9c;
-  --cds-link-primary: #0f62fe;
-  --cds-link-primary-hover: #0043ce;
-  --cds-focus: #0f62fe;
-  --cds-support-error: #da1e28;
-  --cds-support-success: #24a148;
-  --cds-support-warning: #f1c21b;
-  --cds-support-info: #0f62fe;
-  --lab-sidebar-bg: #161616;
-  --lab-sidebar-hover: #262626;
-  --lab-sidebar-text: #c6c6c6;
+  /* surfaces */
+  --cds-background:        #f7f8f8;   /* off-white, slightly cool */
+  --cds-layer-01:          #eef0f2;
+  --cds-layer-02:          #d8dee3;
+  --cds-layer-hover-01:    #e5e8eb;
+
+  /* text */
+  --cds-text-primary:      #1f2933;   /* graphite */
+  --cds-text-secondary:    #5b6770;
+  --cds-text-placeholder:  #8b95a0;
+
+  /* borders */
+  --cds-border-subtle:     #d8dee3;
+  --cds-border-strong:     #1f2933;
+
+  /* fields — kept one step darker than layer-01 so inputs always get a box */
+  --cds-field:             #e3e7eb;
+  --cds-field-hover:       #d8dee3;
+
+  /* interactive — petroleum */
+  --cds-button-primary:        #2f6f88;
+  --cds-button-primary-hover:  #24576b;
+  --cds-button-primary-active: #1a4150;
+  --cds-link-primary:          #2f6f88;
+  --cds-link-primary-hover:    #24576b;
+  --cds-focus:                 #2f6f88;
+
+  /* support / status */
+  --cds-support-error:    #c25450;   /* coral, replaces #da1e28 */
+  --cds-support-success:  #7aa874;   /* sage, replaces #24a148 */
+  --cds-support-warning:  #c99a2e;   /* amber */
+  --cds-support-info:     #2f6f88;
+
+  /* ── LAB extras (new tokens) ── */
+  --lab-warm:        #c99a2e;        /* muted amber accent */
+  --lab-warm-fg:     #8a6a1f;        /* darker amber, for text */
+  --lab-warm-bg:     #f1ede4;        /* cream, complementary surface */
+  --lab-warm-tint:   #fbf3df;        /* alert bg, soft */
+  --lab-crit-tint:   #f6e3e2;        /* critical bg, soft */
+  --lab-sage:        #7aa874;        /* sage green */
+  --lab-sage-bg:     #e8efe5;        /* sage tint */
+  --lab-blue:        #2f6f88;        /* alias for clarity */
+  --lab-blue-40:     #5a96ad;        /* lighter petroleum, for dark theme */
+  --lab-blue-tint:   #e6eef1;        /* petroleum tint surface */
+
+  /* sidebar — shifted from pure black to graphite for warmth */
+  --lab-sidebar-bg:          #1f2933;
+  --lab-sidebar-bg-2:        #2a3540;
+  --lab-sidebar-hover:       #2a3540;
+  --lab-sidebar-border:      #3b4651;
+  --lab-sidebar-text:        #c9d1d8;
   --lab-sidebar-text-strong: #ffffff;
+
+  /* ── Landing v3 design tokens (unprefixed aliases from
+     design_handoff_labinventory_landing/styles/base.css). The landing's
+     embedded CSS references these names directly; keep them in sync with
+     the handoff values, not the --cds-* set (which the rest of the app
+     theming is built on). ── */
+  --bg:                #f7f8f8;
+  --bg-warm:           #f1ede4;
+  --layer-01:          #eef0f2;
+  --layer-02:          #d8dee3;
+  --layer-hover:       #e5e8eb;
+  --layer-dark:        #1f2933;
+  --layer-dark-2:      #2a3540;
+  --layer-dark-3:      #3b4651;
+
+  --text-primary:      #1f2933;
+  --text-secondary:    #5b6770;
+  --text-placeholder:  #8b95a0;
+  --text-on-dark:      #f7f8f8;
+  --text-on-dark-2:    #c9d1d8;
+  --text-on-dark-3:    #8b95a0;
+
+  --border-subtle:     #d8dee3;
+  --border-strong:     #aab4bd;
+  --border-dark:       #3b4651;
+
+  --blue:              #2f6f88;
+  --blue-hover:        #24576b;
+  --blue-active:       #1a4150;
+  --blue-10:           #e6eef1;
+  --blue-40:           #5a96ad;
+
+  --green:             #7aa874;
+  --green-10:          #e8efe5;
+  --teal-10:           #dceae6;
+  --warm-10:           #f5ead2;
+  --warm-fg:           #8a6a1f;
+  --warm-accent:       #c99a2e;
+  --red:               #c25450;
+
+  /* spacing scale (8px base) — landing relies on these for ALL padding/margin */
+  --s1:  4px;
+  --s2:  8px;
+  --s3:  16px;
+  --s4:  24px;
+  --s5:  32px;
+  --s6:  40px;
+  --s7:  48px;
+  --s8:  64px;
+  --s9:  80px;
+  --s10: 96px;
+  --s11: 128px;
 }
 
 .dark {
-  --cds-background: #161616;
-  --cds-layer-01: #262626;
-  --cds-layer-02: #393939;
-  --cds-layer-hover-01: #393939;
-  --cds-text-primary: #f4f4f4;
-  --cds-text-secondary: #c6c6c6;
-  --cds-text-placeholder: #8d8d8d;
-  --cds-border-subtle: #393939;
-  --cds-border-strong: #f4f4f4;
-  --cds-field: #262626;
-  --cds-field-hover: #393939;
-  --cds-button-primary: #78a9ff;
-  --cds-button-primary-hover: #a6c8ff;
-  --cds-button-primary-active: #d0e2ff;
-  --cds-link-primary: #78a9ff;
-  --cds-link-primary-hover: #a6c8ff;
-  --cds-focus: #78a9ff;
-  --cds-support-error: #fa4d56;
-  --cds-support-success: #42be65;
-  --lab-sidebar-bg: #262626;
-  --lab-sidebar-hover: #393939;
+  --cds-background:        #1f2933;
+  --cds-layer-01:          #2a3540;
+  --cds-layer-02:          #3b4651;
+  --cds-layer-hover-01:    #3b4651;
+  --cds-text-primary:      #f7f8f8;
+  --cds-text-secondary:    #c9d1d8;
+  --cds-text-placeholder:  #8b95a0;
+  --cds-border-subtle:     #3b4651;
+  --cds-border-strong:     #f7f8f8;
+  --cds-field:             #344050;
+  --cds-field-hover:       #3f4c5d;
+  --cds-button-primary:        #5a96ad;
+  --cds-button-primary-hover:  #7eb3c6;
+  --cds-button-primary-active: #a8cad6;
+  --cds-link-primary:          #5a96ad;
+  --cds-link-primary-hover:    #7eb3c6;
+  --cds-focus:                 #5a96ad;
+  --lab-blue:                  #7eb3c6;
+  --lab-blue-40:               #a8cad6;
+  --cds-support-error:    #d97670;
+  --cds-support-success:  #97c191;
+  --cds-support-warning:  #d9b25c;
+  --cds-support-info:     #5a96ad;
+
+  --lab-warm:       #d9b25c;
+  --lab-warm-fg:    #e0bd72;
+  --lab-warm-bg:    #2a2620;
+  --lab-warm-tint:  #2e2820;
+  --lab-crit-tint:  #2e2222;
+  --lab-blue-tint:  #213239;
+  --lab-sage:       #97c191;
+  --lab-sage-bg:    #232a26;
+
+  --lab-sidebar-bg:          #141a20;
+  --lab-sidebar-bg-2:        #1f2933;
+  --lab-sidebar-hover:       #2a3540;
+  --lab-sidebar-border:      #3b4651;
 }
 
 @layer base {
@@ -70,18 +170,20 @@
   body {
     @apply bg-cds-background font-sans text-cds-textPrimary;
     margin: 0;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
   h1 {
-    @apply text-[42px] font-light leading-[1.19] tracking-normal;
+    @apply text-[42px] font-light leading-[1.19] tracking-[-0.01em];
   }
 
   h2 {
-    @apply text-[32px] font-normal leading-[1.25] tracking-normal;
+    @apply text-[32px] font-light leading-[1.25] tracking-normal;
   }
 
   h3 {
-    @apply text-xl font-semibold leading-[1.4] tracking-normal;
+    @apply text-xl font-medium leading-[1.4] tracking-normal;
   }
 
   code,
@@ -98,6 +200,23 @@
   .lab-auth-panel-slide {
     animation: lab-auth-panel-slide 0.42s cubic-bezier(0.2, 0, 0, 1);
     will-change: transform, opacity;
+  }
+
+  /* italic serif emphasis — for editorial accents */
+  .lab-em {
+    font-family: "IBM Plex Serif", Georgia, serif;
+    font-style: italic;
+    font-weight: 500;
+    color: var(--lab-blue);
+  }
+
+  /* mono eyebrow / uppercase label */
+  .lab-eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    letter-spacing: 0.32px;
+    text-transform: uppercase;
+    color: var(--cds-text-secondary);
   }
 }
 

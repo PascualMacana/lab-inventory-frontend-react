@@ -8,14 +8,18 @@ export default {
       fontFamily: {
         sans: ["IBM Plex Sans", "Helvetica Neue", "Arial", "sans-serif"],
         mono: ["IBM Plex Mono", "Menlo", "Courier", "monospace"],
+        serif: ["IBM Plex Serif", "Georgia", "serif"],
       },
       colors: {
+        // ── Existing Carbon-namespaced tokens (kept stable for backward-compat) ──
         cds: {
           background: "var(--cds-background)",
           layer01: "var(--cds-layer-01)",
           layer02: "var(--cds-layer-02)",
+          layerHover01: "var(--cds-layer-hover-01)",
           textPrimary: "var(--cds-text-primary)",
           textSecondary: "var(--cds-text-secondary)",
+          textPlaceholder: "var(--cds-text-placeholder)",
           borderSubtle: "var(--cds-border-subtle)",
           borderStrong: "var(--cds-border-strong)",
           field: "var(--cds-field)",
@@ -30,6 +34,25 @@ export default {
           supportSuccess: "var(--cds-support-success)",
           supportWarning: "var(--cds-support-warning)",
           supportInfo: "var(--cds-support-info)",
+        },
+        // ── New LAB-namespaced tokens for landing-style accents ──
+        lab: {
+          blue: "var(--lab-blue)",
+          blue40: "var(--lab-blue-40)",
+          blueTint: "var(--lab-blue-tint)",
+          warm: "var(--lab-warm)",
+          warmFg: "var(--lab-warm-fg)",
+          warmBg: "var(--lab-warm-bg)",
+          warmTint: "var(--lab-warm-tint)",
+          critTint: "var(--lab-crit-tint)",
+          sage: "var(--lab-sage)",
+          sageBg: "var(--lab-sage-bg)",
+          sidebarBg: "var(--lab-sidebar-bg)",
+          sidebarBg2: "var(--lab-sidebar-bg-2)",
+          sidebarHover: "var(--lab-sidebar-hover)",
+          sidebarBorder: "var(--lab-sidebar-border)",
+          sidebarText: "var(--lab-sidebar-text)",
+          sidebarTextStrong: "var(--lab-sidebar-text-strong)",
         },
       },
       boxShadow: {

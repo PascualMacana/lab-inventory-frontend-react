@@ -131,6 +131,9 @@ export function MesadaPage() {
       setMotivo("")
       await queryClient.invalidateQueries({ queryKey: ["reactivos"] })
       await queryClient.invalidateQueries({ queryKey: ["lotes", lote.reactivo_id] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      await queryClient.invalidateQueries({ queryKey: ["dashboard-series", 30] })
+      await queryClient.invalidateQueries({ queryKey: ["movimientos"] })
     } catch (error) {
       setErrorLocal(mutationError(error, "No se pudo registrar el consumo"))
     }

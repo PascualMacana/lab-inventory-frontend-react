@@ -5,6 +5,7 @@ import { BrowserRouter } from "react-router-dom"
 
 import { App } from "./App"
 import { AuthProvider } from "./lib/auth"
+import { ThemeProvider } from "./lib/theme"
 import "./styles.css"
 
 const queryClient = new QueryClient({
@@ -17,14 +18,18 @@ const queryClient = new QueryClient({
   },
 })
 
+const basename = import.meta.env.BASE_URL.replace(/\/$/, "") || "/"
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <AuthProvider>
-          <App />
-        </AuthProvider>
-      </BrowserRouter>
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter basename={basename}>
+          <AuthProvider>
+            <App />
+          </AuthProvider>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ThemeProvider>
   </StrictMode>,
 )

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowLeft, Plus, AlertTriangle, FlaskConical, PackageCheck, Search, Save } from "lucide-react"
 
 import { ModuleNav } from "../components/ModuleNav"
+import { PageHeader } from "../components/PageHeader"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
 import { Label } from "../components/ui/label"
@@ -122,17 +123,12 @@ export function ReactivosPage() {
 
   return (
     <section>
-      <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1>Reactivos</h1>
-          <p className="mt-2 text-sm leading-[1.29] tracking-[0.16px] text-cds-textSecondary">
-            Catálogo maestro del laboratorio.
-          </p>
-        </div>
-        <div className="text-sm tracking-[0.16px] text-cds-textSecondary">
-          {reactivosQuery.isLoading ? "Cargando reactivos..." : `${reactivosFiltrados.length} de ${reactivos.length} reactivos`}
-        </div>
-      </div>
+      <PageHeader
+        title="Reactivos"
+        description="Catálogo maestro del laboratorio."
+        count={reactivosQuery.isLoading ? "Cargando reactivos..." : `${reactivosFiltrados.length} de ${reactivos.length} reactivos`}
+        plain
+      />
 
       {reactivosQuery.isError ? (
         <div className="mb-6 border-l-4 border-cds-supportError bg-cds-layer01 px-4 py-3 text-sm">
@@ -231,8 +227,8 @@ function ListadoReactivos({
       <div className="mb-4 grid gap-px bg-cds-borderSubtle md:grid-cols-4">
         <MetricTile label="Total" value={resumen.total} icon={FlaskConical} />
         <MetricTile label="Con stock" value={resumen.conStock} icon={PackageCheck} />
-        <MetricTile label="Sin stock" value={resumen.sinStock} icon={AlertTriangle} />
-        <MetricTile label="Stock bajo" value={resumen.stockBajo} icon={AlertTriangle} />
+        <MetricTile label="Sin stock" value={resumen.sinStock} icon={AlertTriangle} danger />
+        <MetricTile label="Stock bajo" value={resumen.stockBajo} icon={AlertTriangle} danger />
       </div>
 
       <div className="mb-4 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
@@ -282,18 +278,20 @@ function MetricTile({
   label,
   value,
   icon: Icon,
+  danger = false,
 }: {
   label: string
   value: number
   icon: typeof FlaskConical
+  danger?: boolean
 }) {
   return (
-    <article className="bg-cds-layer01 p-4">
-      <div className="mb-4 flex items-center justify-between text-cds-textSecondary">
+    <article className={cn("bg-cds-layer01 p-4", danger && "bg-lab-critTint shadow-[inset_2px_0_0_var(--cds-support-error)]")}>
+      <div className={cn("mb-4 flex items-center justify-between text-cds-textSecondary", danger && "text-cds-supportError")}>
         <span className="text-xs tracking-[0.32px]">{label}</span>
         <Icon size={18} aria-hidden="true" />
       </div>
-      <div className="text-[32px] font-light leading-[1.25]">{formatNumber(value)}</div>
+      <div className={cn("text-[32px] font-light leading-[1.25]", danger && "font-normal text-cds-supportError")}>{formatNumber(value)}</div>
     </article>
   )
 }
@@ -339,6 +337,7 @@ function ReactivosTable({
                 key={reactivo.id}
                 className={cn(
                   "cursor-pointer border-b border-cds-borderSubtle transition-colors hover:bg-cds-layer01",
+                  bajoMinimo && "bg-lab-critTint/60 shadow-[inset_2px_0_0_var(--cds-support-error)]",
                   selectedId === reactivo.id && "bg-cds-layer01 shadow-[inset_2px_0_0_var(--cds-focus)]",
                 )}
                 onClick={() => onSelectDetalle(reactivo.id)}
@@ -346,8 +345,11 @@ function ReactivosTable({
                 <td className="h-12 px-4 font-mono text-xs tracking-[0.16px] text-cds-textSecondary">{reactivo.id}</td>
                 <td className="h-12 px-4 font-semibold tracking-[0.16px]">{reactivo.nombre}</td>
                 <td className="h-12 px-4">{reactivo.unidad}</td>
-                <td className={cn("h-12 px-4 text-right font-mono", bajoMinimo && "text-cds-supportError")}>
-                  {formatNumber(reactivo.stock_total)}
+                <td className={cn("h-12 px-4 text-right font-mono", bajoMinimo && "font-semibold text-cds-supportError")}>
+                  <span className="inline-flex items-center justify-end gap-1.5">
+                    {bajoMinimo ? <AlertTriangle size={14} aria-hidden="true" /> : null}
+                    {formatNumber(reactivo.stock_total)}
+                  </span>
                 </td>
                 <td className="h-12 px-4 text-right font-mono">{formatNumber(reactivo.stock_minimo)}</td>
                 <td className="h-12 px-4 text-cds-textSecondary">{reactivo.ubicacion || "-"}</td>

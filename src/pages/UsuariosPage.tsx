@@ -1,9 +1,11 @@
 import { FormEvent, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Mail, Plus, RotateCcw, Search, Shield, UserRound, Users } from "lucide-react"
+import { ArrowLeft, Eye, EyeOff, Mail, Plus, RotateCcw, Search, Shield, UserRound, Users } from "lucide-react"
 
 import { ModuleNav } from "../components/ModuleNav"
+import { PageHeader } from "../components/PageHeader"
 import { Button } from "../components/ui/button"
+import { EstadoBadge } from "../components/ui/estado-badge"
 import { Input } from "../components/ui/input"
 import { Label } from "../components/ui/label"
 import { api, type Usuario, type UsuarioCrear } from "../lib/api"
@@ -88,17 +90,12 @@ export function UsuariosPage() {
 
   return (
     <section>
-      <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1>Usuarios</h1>
-          <p className="mt-2 text-sm leading-[1.29] tracking-[0.16px] text-cds-textSecondary">
-            Alta y estado de cuentas del equipo.
-          </p>
-        </div>
-        <div className="text-sm tracking-[0.16px] text-cds-textSecondary">
-          {usuariosQuery.isLoading ? "Cargando usuarios..." : `${usuariosFiltrados.length} usuario(s)`}
-        </div>
-      </div>
+      <PageHeader
+        title="Usuarios"
+        description="Alta y estado de cuentas del equipo."
+        count={usuariosQuery.isLoading ? "Cargando usuarios..." : `${usuariosFiltrados.length} usuario(s)`}
+        plain
+      />
 
       {mensaje ? (
         <div className="mb-6 border-l-4 border-cds-supportSuccess bg-cds-layer01 px-4 py-3 text-sm">{mensaje}</div>
@@ -136,17 +133,22 @@ export function UsuariosPage() {
                 />
               </div>
             </label>
-            <label className="flex items-end gap-2 pb-3 text-sm tracking-[0.16px]">
-              <input
-                type="checkbox"
-                checked={mostrarInactivos}
-                onChange={(event) => {
-                  setMostrarInactivos(event.target.checked)
+            <div className="block">
+              <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">Estado</span>
+              <Button
+                type="button"
+                variant={mostrarInactivos ? "primary" : "secondary"}
+                size="compact"
+                className="w-full lg:w-auto"
+                onClick={() => {
+                  setMostrarInactivos((actual) => !actual)
                   setUsuarioId(null)
                 }}
-              />
-              Mostrar inactivos
-            </label>
+              >
+                {mostrarInactivos ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
+                {mostrarInactivos ? "Ocultar inactivos" : "Mostrar inactivos"}
+              </Button>
+            </div>
           </div>
 
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -233,8 +235,8 @@ function UsuariosTable({
                 <td className="h-12 px-4 text-cds-textSecondary">{item.email}</td>
                 <td className="h-12 px-4">{rolLabels[item.rol]}</td>
                 <td className="h-12 px-4 text-cds-textSecondary">{item.sector || "-"}</td>
-                <td className={cn("h-12 px-4", activo ? "text-cds-supportSuccess" : "text-cds-supportError")}>
-                  {activo ? "Activo" : "Inactivo"}
+                <td className="h-12 px-4">
+                  <EstadoBadge activo={activo} />
                 </td>
               </tr>
             )
@@ -288,9 +290,9 @@ function UsuarioDetalle({
             <UserRound size={22} aria-hidden="true" />
           </div>
           <h2 className="text-[24px] leading-[1.33]">{usuario.nombre}</h2>
-          <p className={cn("mt-2 text-sm", activo ? "text-cds-supportSuccess" : "text-cds-supportError")}>
-            {activo ? "Activo" : "Inactivo"}
-          </p>
+          <div className="mt-2">
+            <EstadoBadge activo={activo} />
+          </div>
         </div>
         {puedeCambiarEstado ? (
           <Button type="button" variant="ghost" size="compact" onClick={cambiarEstado} disabled={cambiarEstadoMutation.isPending}>
