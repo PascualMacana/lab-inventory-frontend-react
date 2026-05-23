@@ -12,6 +12,7 @@ type ChatTurn = {
   text: string
   tools?: AsistenteToolUsada[]
   pdfRequested?: boolean
+  pdfText?: string
 }
 
 const MAX_TURNOS_HISTORIAL = 10
@@ -19,8 +20,8 @@ const ejemplos = [
   "¿Qué lotes vencen en los próximos 30 días?",
   "¿Cuánto etanol tengo en stock?",
   "Mostrame los movimientos de hoy",
-  "¿Qué proveedores tengo cargados?",
-  "¿Hay equipamiento fuera de servicio?",
+  "Dame un protocolo orientativo para preparar PBS 1X",
+  "¿Cómo preparo PBS 1X usando lo que tengo en stock?",
 ]
 
 function pdfSafeText(value: string) {
@@ -184,6 +185,16 @@ function pdfPreviewText(text: string) {
   return cleaned.length > 280 ? `${cleaned.slice(0, 280)}...` : cleaned
 }
 
+function lastAssistantPdfText(turnos: ChatTurn[]) {
+  for (let index = turnos.length - 1; index >= 0; index -= 1) {
+    const turno = turnos[index]
+    if (turno.role === "assistant" && turno.text.trim() && !turno.pdfRequested) {
+      return turno.text
+    }
+  }
+  return null
+}
+
 function mutationError(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
 }
@@ -274,6 +285,22 @@ export function AsistentePage() {
     }
     setErrorLocal(null)
     setPregunta("")
+    if (userRequestedPdf(limpia)) {
+      const pdfText = lastAssistantPdfText(turnos)
+      if (pdfText) {
+        setTurnos((actual) => [
+          ...actual,
+          { role: "user", text: limpia },
+          {
+            role: "assistant",
+            text: "Preparé un PDF descargable con la última respuesta del asistente.",
+            pdfRequested: true,
+            pdfText,
+          },
+        ])
+        return
+      }
+    }
     const historial = turnos.slice(-MAX_TURNOS_HISTORIAL).map((turno) => ({
       role: turno.role,
       content: turno.text,
@@ -315,7 +342,7 @@ export function AsistentePage() {
         <div>
           <h1>Asistente</h1>
           <p className="mt-2 text-sm leading-[1.29] tracking-[0.16px] text-cds-textSecondary">
-            Preguntas en lenguaje natural sobre inventario. Solo consulta datos; no modifica registros.
+            Consultá inventario o pedí orientación técnica y protocolos. No modifica registros.
           </p>
         </div>
         <Button type="button" variant="ghost" onClick={limpiarChat} disabled={!turnos.length || preguntarMutation.isPending}>
@@ -406,7 +433,7 @@ function ChatBubble({ turno }: { turno: ChatTurn }) {
         ) : (
           <>
             {renderAssistantText(turno.text)}
-            {turno.pdfRequested ? <AssistantPdfCard text={turno.text} /> : null}
+            {turno.pdfRequested ? <AssistantPdfCard text={turno.pdfText ?? turno.text} /> : null}
           </>
         )}
         {tools.length ? <ToolsPanel tools={tools} /> : null}
