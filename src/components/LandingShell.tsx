@@ -156,7 +156,8 @@ export function LandingShell() {
           </div>
         </footer>
 
-      <div id="login-overlay" className={`login-overlay${loginOpen ? ' open' : ''}`} aria-hidden={!loginOpen} role="dialog" aria-modal="true" aria-labelledby="login-overlay-title">
+      {loginOpen ? (
+      <div id="login-overlay" className="login-overlay open" role="dialog" aria-modal="true" aria-labelledby="login-overlay-title">
         <div className="login-overlay-bg" onClick={closeLogin}></div>
       
         <div className="login-overlay-content">
@@ -375,6 +376,7 @@ export function LandingShell() {
           </section>
         </div>
       </div>
+      ) : null}
       </div>
     </LandingLoginContext.Provider>
   );
