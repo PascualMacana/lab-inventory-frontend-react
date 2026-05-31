@@ -1,4 +1,26 @@
+import { type FormEvent } from "react";
+
 import { useLandingLogin } from "../components/LandingShell";
+
+const DEMO_EMAIL = "support@labinventory.lat";
+
+function handleDemoSubmit(event: FormEvent<HTMLFormElement>) {
+  event.preventDefault();
+  const formData = new FormData(event.currentTarget);
+  const email = String(formData.get("email") ?? "").trim();
+  const laboratorio = String(formData.get("laboratorio") ?? "").trim();
+  const subject = "Agendar demo de LabInventory";
+  const body = [
+    "Hola LabInventory,",
+    "",
+    "Quiero agendar una demo de 30 minutos.",
+    "",
+    email ? `Email institucional: ${email}` : null,
+    laboratorio ? `Laboratorio: ${laboratorio}` : null,
+  ].filter(Boolean).join("\n");
+
+  window.location.href = `mailto:${DEMO_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
 
 export function LandingPage() {
   const { openLogin } = useLandingLogin();
@@ -325,12 +347,12 @@ export function LandingPage() {
           </p>
         </div>
       
-        <form className="cta-form reveal rv-right" onSubmit={(e) => e.preventDefault()}>
+        <form className="cta-form reveal rv-right" onSubmit={handleDemoSubmit}>
           <div className="l">Solicitar demo · sin tarjeta</div>
           <label className="l" style={{marginTop: 'var(--s4)'}}>Email institucional</label>
-          <input type="email" placeholder="m.carrera@laboratorio.com" />
+          <input name="email" type="email" placeholder="m.carrera@laboratorio.com" />
           <label className="l">Nombre del laboratorio</label>
-          <input type="text" placeholder="Lab QC · LabFarma Industrial" />
+          <input name="laboratorio" type="text" placeholder="Lab QC · LabFarma Industrial" />
           <div className="submit-row">
             <span className="meta">→ Respondemos en &lt; 24 h</span>
             <button type="submit" className="btn btn-primary" style={{height: '44px'}}>Agendar</button>
