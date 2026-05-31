@@ -179,10 +179,11 @@ oscuro. Si agregás un color nuevo, usá la CSS var, no el hex.
 ## Landing pública
 
 Para usuarios sin sesión (`!token` en `App.tsx`), la app renderiza un
-sub-router con dos rutas — `/` y `/seguridad` — anidadas bajo
+sub-router con tres rutas — `/`, `/login` y `/seguridad` — anidadas bajo
 `<LandingShell />` (layout con `<Outlet />`). El login ya no es una
 página aparte: el overlay vive dentro de `LandingShell` y se abre desde
-los botones "Cuenta"/"Ingresar".
+los botones "Cuenta"/"Ingresar". `/login` renderiza la misma landing
+pero abre el overlay automáticamente; el logout navega a esa ruta.
 
 - **`LandingShell`** — masthead + footer + login overlay + estado del
   overlay. Renderiza el CSS via `<style>{LANDING_CSS}</style>`. Expone
@@ -338,8 +339,8 @@ final de `LANDING_CSS`.
   `style={{}}` que no responden al tema. Ir reemplazando por
   `var(--...)` a medida que se tocan.
 - Landing: el toggle de idioma **ES/EN** es decorativo (no hay i18n
-  aún) y el "¿Olvidaste tu contraseña?" del login todavía no manda
-  mail — se cablea al lanzar, junto con la página de login real.
+  aún). El link "¿Olvidaste tu contraseña?" del login abre mailto al
+  contacto operativo actual.
   Datos "en producción" del hero/ticker (142 lotes, uptime, "last
   sync") son ilustrativos hasta que el producto esté lanzado.
 

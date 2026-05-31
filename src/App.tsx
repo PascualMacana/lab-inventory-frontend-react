@@ -63,9 +63,10 @@ export function App() {
       <Routes>
         <Route element={<LandingShell />}>
           <Route index element={<LandingPage />} />
+          <Route path="login" element={<LandingPage />} />
           <Route path="seguridad" element={<LandingSeguridadPage />} />
         </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     )
   }

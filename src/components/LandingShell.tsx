@@ -1,5 +1,5 @@
 import { createContext, FormEvent, MouseEvent, useContext, useEffect, useRef, useState } from "react";
-import { Link, Outlet } from "react-router-dom";
+import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../lib/auth";
 import { HashLink } from "./HashLink";
@@ -23,12 +23,20 @@ export function useLandingLogin() {
 
 export function LandingShell() {
   const { login } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [loginOpen, setLoginOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginSubmitting, setLoginSubmitting] = useState(false);
   const emailInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (location.pathname === "/login") {
+      setLoginOpen(true);
+    }
+  }, [location.pathname]);
 
   useEffect(() => {
     if (!loginOpen) {
@@ -38,7 +46,12 @@ export function LandingShell() {
     document.body.style.overflow = "hidden";
     const focusTimer = window.setTimeout(() => emailInputRef.current?.focus(), 460);
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setLoginOpen(false);
+      if (e.key === "Escape") {
+        setLoginOpen(false);
+        if (location.pathname === "/login") {
+          navigate("/", { replace: true });
+        }
+      }
     };
     document.addEventListener("keydown", onKey);
     return () => {
@@ -46,7 +59,7 @@ export function LandingShell() {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
     };
-  }, [loginOpen]);
+  }, [location.pathname, loginOpen, navigate]);
 
   const openLogin = (e?: MouseEvent) => {
     e?.preventDefault();
@@ -55,10 +68,16 @@ export function LandingShell() {
   const closeLogin = (e?: MouseEvent) => {
     e?.preventDefault();
     setLoginOpen(false);
+    if (location.pathname === "/login") {
+      navigate("/", { replace: true });
+    }
   };
   const closeAndScrollToDemo = (e?: MouseEvent) => {
     e?.preventDefault();
     setLoginOpen(false);
+    if (location.pathname === "/login") {
+      navigate("/", { replace: true });
+    }
     window.setTimeout(() => {
       document.getElementById("cta")?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 320);

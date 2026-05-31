@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { NavLink, Outlet, useLocation } from "react-router-dom"
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom"
 import {
   BarChart3,
   Bot,
@@ -63,6 +63,7 @@ export function AppShell() {
   const { usuario, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const location = useLocation()
+  const navigate = useNavigate()
   const isDark = theme === "dark"
   const themeLabel = isDark ? "Modo claro" : "Modo oscuro"
   const ThemeIcon = isDark ? Sun : Moon
@@ -89,6 +90,11 @@ export function AppShell() {
   function toggleSidebar() {
     setAccountMenuOpen(false)
     setSidebarColapsado((colapsado) => !colapsado)
+  }
+
+  function handleLogout() {
+    void logout()
+    navigate("/login", { replace: true })
   }
 
   useEffect(() => {
@@ -183,7 +189,7 @@ export function AppShell() {
                 <button
                   type="button"
                   className="flex h-10 w-full items-center gap-2 border-t border-[#393939] px-3 text-left text-sm tracking-[0.16px] text-[var(--lab-sidebar-text)] hover:bg-[var(--lab-sidebar-hover)] hover:text-white"
-                  onClick={logout}
+                  onClick={handleLogout}
                 >
                   <LogOut size={18} aria-hidden="true" />
                   Cerrar sesión
@@ -298,7 +304,7 @@ export function AppShell() {
                     {online ? "API conectada" : "API caída"}
                   </div>
                 ) : <div />}
-                <Button type="button" variant="ghost" className="h-10 justify-start text-[var(--lab-sidebar-text)]" aria-label="Cerrar sesión" title="Cerrar sesión" onClick={logout}>
+                <Button type="button" variant="ghost" className="h-10 justify-start text-[var(--lab-sidebar-text)]" aria-label="Cerrar sesión" title="Cerrar sesión" onClick={handleLogout}>
                   <UserCircle size={18} aria-hidden="true" />
                   Cerrar sesión
                 </Button>
