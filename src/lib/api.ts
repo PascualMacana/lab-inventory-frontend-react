@@ -95,6 +95,8 @@ export type SolicitudDemoResponse = {
   id: number
   email: string
   laboratorio?: string | null
+  email_enviado?: boolean
+  email_error?: string | null
   mensaje: string
 }
 
