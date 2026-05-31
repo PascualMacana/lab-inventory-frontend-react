@@ -26,6 +26,7 @@ export function LandingShell() {
   const location = useLocation();
   const navigate = useNavigate();
   const [loginOpen, setLoginOpen] = useState(false);
+  const [loginVisible, setLoginVisible] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -37,6 +38,15 @@ export function LandingShell() {
       setLoginOpen(true);
     }
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!loginOpen) {
+      setLoginVisible(false);
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => setLoginVisible(true));
+    return () => window.cancelAnimationFrame(frame);
+  }, [loginOpen]);
 
   useEffect(() => {
     if (!loginOpen) {
@@ -157,7 +167,7 @@ export function LandingShell() {
         </footer>
 
       {loginOpen ? (
-      <div id="login-overlay" className="login-overlay open" role="dialog" aria-modal="true" aria-labelledby="login-overlay-title">
+      <div id="login-overlay" className={`login-overlay${loginVisible ? ' open' : ''}`} role="dialog" aria-modal="true" aria-labelledby="login-overlay-title">
         <div className="login-overlay-bg" onClick={closeLogin}></div>
       
         <div className="login-overlay-content">
