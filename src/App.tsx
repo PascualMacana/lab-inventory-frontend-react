@@ -5,7 +5,6 @@ import { AppShell } from "./components/AppShell"
 import { LandingShell } from "./components/LandingShell"
 import { ChangePasswordPage } from "./components/LoginPage"
 import { LandingPage } from "./pages/LandingPage"
-import { LandingPageV2 } from "./pages/LandingPageV2"
 import { LandingSeguridadPage } from "./pages/LandingSeguridadPage"
 import { useAuth } from "./lib/auth"
 import { puede } from "./lib/permissions"
@@ -64,7 +63,6 @@ export function App() {
       <Routes>
         <Route element={<LandingShell />}>
           <Route index element={<LandingPage />} />
-          <Route path="v2" element={<LandingPageV2 />} />
           <Route path="seguridad" element={<LandingSeguridadPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

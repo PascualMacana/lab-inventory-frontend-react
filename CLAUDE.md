@@ -17,8 +17,7 @@ reglas de negocio ver el CLAUDE.md raíz.
 - `src/pages/` — una página por módulo (DashboardPage, ReactivosPage,
   MovimientosPage, etc). Cada página maneja su propio data fetching.
   Las páginas públicas (sin sesión) viven acá también: `LandingPage`
-  (home), `LandingPageV2` (variante de home en `/v2`) y
-  `LandingSeguridadPage`. Ver "Landing pública" abajo.
+  (home) y `LandingSeguridadPage`. Ver "Landing pública" abajo.
 - `src/pages/landing-sections/` — secciones del landing archivadas
   (TrustBar, Pricing, CaseStudy, Modules, Roadmap, Seguridad verbosa,
   DashboardPreview, CompareSection, FounderNote) como `*.disabled.tsx`
@@ -180,7 +179,7 @@ oscuro. Si agregás un color nuevo, usá la CSS var, no el hex.
 ## Landing pública
 
 Para usuarios sin sesión (`!token` en `App.tsx`), la app renderiza un
-sub-router con tres rutas — `/`, `/v2` y `/seguridad` — anidadas bajo
+sub-router con dos rutas — `/` y `/seguridad` — anidadas bajo
 `<LandingShell />` (layout con `<Outlet />`). El login ya no es una
 página aparte: el overlay vive dentro de `LandingShell` y se abre desde
 los botones "Cuenta"/"Ingresar".
@@ -192,9 +191,6 @@ los botones "Cuenta"/"Ingresar".
   Monta `<ScrollToHash />` y `<ScrollReveal />` una sola vez.
 - **`LandingPage`** — home pública (`/`). Sólo el contenido entre
   masthead y footer.
-- **`LandingPageV2`** — variante de home en `/v2`, para comparar copy.
-  La intención es quedarse con una sola: cuando se decida, los cambios
-  van a `LandingPage` (V2 queda como está hasta entonces).
 - **`LandingSeguridadPage`** — página sobria de seguridad. **No**
   mencionar software específico (Caddy, fail2ban, SQLite WAL,
   UptimeRobot) ni números de norma exactos (ANMAT 2069/2018, 21 CFR
