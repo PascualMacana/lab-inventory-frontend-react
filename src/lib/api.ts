@@ -83,6 +83,21 @@ export type LoginResponse = {
   must_change_password: boolean
 }
 
+export type SolicitudDemoCrear = {
+  email: string
+  laboratorio?: string | null
+  mensaje?: string | null
+  origen?: string
+}
+
+export type SolicitudDemoResponse = {
+  ok: boolean
+  id: number
+  email: string
+  laboratorio?: string | null
+  mensaje: string
+}
+
 export type OrganizacionModulo = {
   modulo: string
   habilitado: boolean
@@ -696,6 +711,12 @@ export const api = {
   url: API_URL,
 
   health: async () => request<{ ok: boolean }>("/health"),
+
+  solicitarDemo: async (data: SolicitudDemoCrear) =>
+    request<SolicitudDemoResponse>("/contacto/demo", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 
   login: async (email: string, password: string) =>
     request<LoginResponse>("/auth/login", {

@@ -1,29 +1,37 @@
-import { type FormEvent } from "react";
+import { type FormEvent, useState } from "react";
 
 import { useLandingLogin } from "../components/LandingShell";
+import { api } from "../lib/api";
 
-const DEMO_EMAIL = "support@labinventory.lat";
-
-function handleDemoSubmit(event: FormEvent<HTMLFormElement>) {
-  event.preventDefault();
-  const formData = new FormData(event.currentTarget);
-  const email = String(formData.get("email") ?? "").trim();
-  const laboratorio = String(formData.get("laboratorio") ?? "").trim();
-  const subject = "Agendar demo de LabInventory";
-  const body = [
-    "Hola LabInventory,",
-    "",
-    "Quiero agendar una demo de 30 minutos.",
-    "",
-    email ? `Email institucional: ${email}` : null,
-    laboratorio ? `Laboratorio: ${laboratorio}` : null,
-  ].filter(Boolean).join("\n");
-
-  window.location.href = `mailto:${DEMO_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-}
+type DemoStatus = "idle" | "sending" | "sent" | "error";
 
 export function LandingPage() {
   const { openLogin } = useLandingLogin();
+  const [demoStatus, setDemoStatus] = useState<DemoStatus>("idle");
+  const [demoError, setDemoError] = useState<string | null>(null);
+
+  async function handleDemoSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const email = String(formData.get("email") ?? "").trim();
+    const laboratorio = String(formData.get("laboratorio") ?? "").trim();
+
+    setDemoStatus("sending");
+    setDemoError(null);
+    try {
+      await api.solicitarDemo({
+        email,
+        laboratorio: laboratorio || null,
+        origen: "landing",
+      });
+      form.reset();
+      setDemoStatus("sent");
+    } catch (err) {
+      setDemoStatus("error");
+      setDemoError(err instanceof Error ? err.message : "No se pudo enviar la solicitud");
+    }
+  }
 
   return (
     <>
@@ -353,9 +361,19 @@ export function LandingPage() {
           <input name="email" type="email" placeholder="m.carrera@laboratorio.com" />
           <label className="l">Nombre del laboratorio</label>
           <input name="laboratorio" type="text" placeholder="Lab QC · LabFarma Industrial" />
+          {demoStatus === "sent" ? (
+            <div className="vision-note" style={{ marginTop: 'var(--s3)' }}>Solicitud enviada. Te respondemos en menos de 24 h.</div>
+          ) : null}
+          {demoStatus === "error" ? (
+            <div className="vision-note" style={{ marginTop: 'var(--s3)', color: 'var(--red)' }}>
+              {demoError ?? "No se pudo enviar la solicitud"}
+            </div>
+          ) : null}
           <div className="submit-row">
             <span className="meta">→ Respondemos en &lt; 24 h</span>
-            <button type="submit" className="btn btn-primary" style={{height: '44px'}}>Agendar</button>
+            <button type="submit" className="btn btn-primary" style={{height: '44px'}} disabled={demoStatus === "sending"}>
+              {demoStatus === "sending" ? "Enviando..." : "Agendar"}
+            </button>
           </div>
         </form>
       </section>
