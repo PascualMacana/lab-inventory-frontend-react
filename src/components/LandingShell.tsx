@@ -4,6 +4,7 @@ import { Link, Outlet } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { HashLink } from "./HashLink";
 import { LANDING_CSS } from "./landingStyles";
+import { ScrollReveal } from "./ScrollReveal";
 import { ScrollToHash } from "./ScrollToHash";
 
 type LandingLoginContextValue = {
@@ -79,6 +80,7 @@ export function LandingShell() {
   return (
     <LandingLoginContext.Provider value={{ openLogin, closeAndScrollToDemo }}>
       <ScrollToHash />
+      <ScrollReveal />
       <div className="lab-landing">
         <style>{LANDING_CSS}</style>
 
@@ -87,9 +89,8 @@ export function LandingShell() {
           <Link className="masthead-brand" to="/">LabInventory</Link>
           <div className="masthead-product">Sistema de inventario de laboratorio</div>
           <nav className="masthead-nav">
-            <HashLink to="/#dashboard">Producto</HashLink>
-            <HashLink to="/#agentes">Agentes IA</HashLink>
-            <HashLink to="/#trazabilidad">Trazabilidad</HashLink>
+            <HashLink className="nav-anchor" to="/#agentes">Asistente</HashLink>
+            <HashLink className="nav-anchor" to="/#trazabilidad">Trazabilidad</HashLink>
             <a href="#" onClick={openLogin}>Cuenta</a>
           </nav>
           <div className="lang-toggle">
@@ -106,19 +107,13 @@ export function LandingShell() {
             <div>
               <div className="brand">LabInventory</div>
               <div className="url">→ labinventory.lat</div>
-              <p className="desc">Inventario de laboratorio en tiempo real. Trazabilidad por frasco, agentes IA, todo en producción.</p>
+              <p className="desc">Inventario de laboratorio en tiempo real. Trazabilidad por unidad, asistencia inteligente, todo en producción.</p>
             </div>
             <div className="footer-col">
               <h4>Producto</h4>
               <HashLink to="/#how">Cómo funciona</HashLink>
-              <HashLink to="/#dashboard">Vista del producto</HashLink>
-              <HashLink to="/#agentes">Agentes IA</HashLink>
+              <HashLink to="/#agentes">Asistente</HashLink>
               <HashLink to="/#trazabilidad">Trazabilidad</HashLink>
-            </div>
-            <div className="footer-col">
-              <h4>Compañía</h4>
-              <a href="#">Sobre</a>
-              <a href="#">Contacto</a>
             </div>
             <div className="footer-col">
               <h4>Recursos</h4>
@@ -127,7 +122,17 @@ export function LandingShell() {
             </div>
           </div>
           <div className="footer-bottom">
-            <span>© 2026 LabInventory · Hecho en Argentina</span>
+            <span>© 2026 LabInventory · Hecho en <span className="arg-wrap">
+                <svg className="arg-watermark" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="12" r="4.5" fill="#f6b40e"></circle>
+                  <g stroke="#f6b40e" strokeWidth="1.4" strokeLinecap="round">
+                    <line x1="12" y1="2" x2="12" y2="5"></line><line x1="12" y1="19" x2="12" y2="22"></line><line x1="2" y1="12" x2="5" y2="12"></line><line x1="19" y1="12" x2="22" y2="12"></line>
+                    <line x1="5" y1="5" x2="7" y2="7"></line><line x1="17" y1="17" x2="19" y2="19"></line><line x1="5" y1="19" x2="7" y2="17"></line><line x1="17" y1="7" x2="19" y2="5"></line>
+                    <line x1="8.3" y1="2.6" x2="9.4" y2="5.4"></line><line x1="14.6" y1="18.6" x2="15.7" y2="21.4"></line><line x1="2.6" y1="8.3" x2="5.4" y2="9.4"></line><line x1="18.6" y1="14.6" x2="21.4" y2="15.7"></line>
+                    <line x1="15.7" y1="2.6" x2="14.6" y2="5.4"></line><line x1="9.4" y1="18.6" x2="8.3" y2="21.4"></line><line x1="2.6" y1="15.7" x2="5.4" y2="14.6"></line><line x1="18.6" y1="9.4" x2="21.4" y2="8.3"></line>
+                  </g>
+                </svg>
+                <span className="arg">Argentina</span></span></span>
             <span className="live">sistema operativo · last sync 4s</span>
           </div>
         </footer>
@@ -327,14 +332,14 @@ export function LandingShell() {
       
               <div className="login-field">
                 <label className="login-field-label" htmlFor="login-email">Correo electrónico</label>
-                <input ref={emailInputRef} className="login-input" id="login-email" type="email" placeholder="m.carrera@conicet.gov.ar" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
+                <input ref={emailInputRef} className="login-input" id="login-email" type="email" placeholder="m.carrera@laboratorio.com" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
               </div>
               <div className="login-field">
                 <label className="login-field-label" htmlFor="login-pass">Contraseña</label>
                 <input className="login-input" id="login-pass" type="password" placeholder="••••••••" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
               </div>
       
-              <a href="#" className="login-forgot">¿Olvidaste tu contraseña?</a>
+              <a href="mailto:Ox.serv@hotmail.com" className="login-forgot">¿Olvidaste tu contraseña?</a>
       
               {loginError ? <div className="login-error">{loginError}</div> : null}
 
@@ -342,12 +347,6 @@ export function LandingShell() {
                 <span>{loginSubmitting ? 'Ingresando…' : 'Iniciar sesión'}</span>
                 <span className="arrow">→</span>
               </button>
-      
-              <div className="login-divider"></div>
-              <p className="login-sso">
-                ¿Tu organización usa SSO?&nbsp;
-                <button className="login-sso-link" type="button">Acceder con SSO institucional</button>
-              </p>
             </form>
       
             <footer className="login-foot">

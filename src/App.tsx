@@ -2,7 +2,11 @@ import { lazy, Suspense } from "react"
 import { Navigate, Route, Routes } from "react-router-dom"
 
 import { AppShell } from "./components/AppShell"
-import { ChangePasswordPage, LoginPage } from "./components/LoginPage"
+import { LandingShell } from "./components/LandingShell"
+import { ChangePasswordPage } from "./components/LoginPage"
+import { LandingPage } from "./pages/LandingPage"
+import { LandingPageV2 } from "./pages/LandingPageV2"
+import { LandingSeguridadPage } from "./pages/LandingSeguridadPage"
 import { useAuth } from "./lib/auth"
 import { puede } from "./lib/permissions"
 import { AsistentePage } from "./pages/AsistentePage"
@@ -58,7 +62,11 @@ export function App() {
   if (!token) {
     return (
       <Routes>
-        <Route index element={<LoginPage />} />
+        <Route element={<LandingShell />}>
+          <Route index element={<LandingPage />} />
+          <Route path="v2" element={<LandingPageV2 />} />
+          <Route path="seguridad" element={<LandingSeguridadPage />} />
+        </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     )

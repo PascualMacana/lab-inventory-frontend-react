@@ -2,7 +2,7 @@ export const LANDING_CSS = String.raw`
 
   /* Full-width root — sections set their own backgrounds across the viewport,
      and .section-inner (max-width 1440px) centers the content inside. */
-  .lab-landing { width: 100%; }
+  .lab-landing { width: 100%; overflow-x: clip; }
 
   /* ════════════════════════════════════════════════════════════════════
      base.css (from design_handoff_labinventory_landing/styles/base.css)
@@ -24,6 +24,8 @@ export const LANDING_CSS = String.raw`
     background: var(--bg);
   }
   .lab-landing a { color: var(--blue); text-decoration: none; }
+  /* el botón primario lleva texto blanco; gana a la regla de link de arriba sin subir su especificidad global */
+  .lab-landing a.btn-primary { color: #fff; }
   .lab-landing button { font-family: inherit; }
   .lab-landing code, .lab-landing .mono {
     font-family: 'IBM Plex Mono', Menlo, Courier, monospace;
@@ -269,7 +271,6 @@ export const LANDING_CSS = String.raw`
   @media (max-width: 671px) {
     .grid-2 { grid-template-columns: 1fr; }
     .section { padding: var(--s7) var(--s4); }
-    .masthead-nav { display: none; }
   }
   /* ════════════════════════════════════════════════════════════════════ */
 
@@ -278,8 +279,13 @@ export const LANDING_CSS = String.raw`
 
   .hero {
     background: var(--bg-warm);
-    padding: var(--s9) var(--s8) var(--s6);
+    padding: var(--s6) var(--s8) var(--s6);
     border-bottom: 1px solid #ebe5d8;
+    /* deja el masthead (48px) arriba y el ticker (~48px) asomando abajo, sin scrollear */
+    min-height: calc(100vh - 96px);
+    min-height: calc(100svh - 96px);
+    display: flex;
+    flex-direction: column;
   }
   .hero-meta {
     display: flex;
@@ -287,7 +293,7 @@ export const LANDING_CSS = String.raw`
     align-items: baseline;
     padding-bottom: var(--s4);
     border-bottom: 1px solid var(--border-subtle);
-    margin-bottom: var(--s7);
+    margin-bottom: var(--s5);
   }
   .hero-meta .left {
     font-family: 'IBM Plex Mono', monospace;
@@ -311,11 +317,13 @@ export const LANDING_CSS = String.raw`
     grid-template-columns: 1.4fr 1fr;
     gap: var(--s9);
     align-items: end;
+    margin-top: auto;
+    margin-bottom: auto;
   }
   .hero-title {
-    font-size: clamp(96px, 11vw, 152px);
+    font-size: clamp(48px, 6vw, 92px);
     font-weight: 300;
-    line-height: 0.92;
+    line-height: 0.96;
     letter-spacing: -0.04em;
     color: var(--text-primary);
   }
@@ -1051,9 +1059,48 @@ export const LANDING_CSS = String.raw`
   .footer-col h4 { font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.32px; color: var(--text-on-dark-3); text-transform: uppercase; margin-bottom: var(--s3); }
   .footer-col a { display: block; font-size: 14px; color: var(--text-on-dark-2); padding: 6px 0; }
   .footer-col a:hover { color: #fff; }
-  .footer-bottom { padding-top: var(--s4); display: flex; justify-content: space-between; align-items: center; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.32px; color: var(--text-on-dark-3); text-transform: uppercase; }
+  .footer-bottom { padding-top: var(--s4); display: flex; justify-content: space-between; align-items: center; font-family: 'IBM Plex Mono', monospace; font-size: 12px; letter-spacing: 0.32px; color: var(--text-on-dark-3); text-transform: uppercase; }
   .footer-bottom .live { color: var(--green); display: inline-flex; align-items: center; gap: 6px; }
   .footer-bottom .live::before { content: ''; width: 8px; height: 8px; background: var(--green); border-radius: 50%; }
+  /* "Argentina" with the flag's three horizontal bands (celeste/white/celeste) painted into the letters — like the gradient detail in Max/Claude CLI. */
+  /* "Argentina" como wordmark: franjas de la bandera (celeste/blanco/celeste) pintadas
+     en las letras + un brillo que barre simulando el ondeo, con el Sol de Mayo al lado. */
+  .footer-bottom .arg {
+    position: relative;
+    z-index: 1;
+    font-weight: 600;
+    background-image:
+      linear-gradient(105deg, rgba(255,255,255,0) 36%, rgba(255,255,255,0.95) 50%, rgba(255,255,255,0) 64%),
+      linear-gradient(180deg, #74acdf 0 33.333%, #f4f7fb 33.333% 66.666%, #74acdf 66.666% 100%);
+    background-size: 220% 100%, 100% 100%;
+    background-position: 150% 0, 0 0;
+    background-repeat: no-repeat;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    animation: arg-wave 2.2s linear infinite;
+  }
+  .footer-bottom .arg-wrap { position: relative; display: inline-block; }
+  /* Sol de Mayo como marca de agua detrás de la palabra (asoma entre las letras). */
+  .footer-bottom .arg-watermark {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 2.4em;
+    height: 2.4em;
+    transform: translate(-50%, -50%);
+    opacity: 0.32;
+    pointer-events: none;
+    z-index: 0;
+  }
+  @keyframes arg-wave {
+    from { background-position: 150% 0, 0 0; }
+    to   { background-position: -50% 0, 0 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .footer-bottom .arg { animation: none; background-position: 50% 0, 0 0; }
+  }
 
   /* ─── LOGIN OVERLAY (constellation + login panel) ───── */
   .login-overlay {
@@ -1511,4 +1558,92 @@ export const LANDING_CSS = String.raw`
     .const-panel { display: none; }
   }
 
+  /* ─── scroll reveal (estilo Apple) ─────────────────── */
+  .reveal {
+    opacity: 0;
+    transform: translateY(28px);
+    transition: opacity 0.7s cubic-bezier(0.16, 0.84, 0.44, 1), transform 0.7s cubic-bezier(0.16, 0.84, 0.44, 1);
+    transition-delay: var(--rv-d, 0ms);
+    will-change: opacity, transform;
+  }
+  .reveal.rv-left  { transform: translateX(-56px); }
+  .reveal.rv-right { transform: translateX(56px); }
+  .reveal.is-visible { opacity: 1; transform: none; }
+  /* evita scroll horizontal mientras las tarjetas entran desde el costado */
+  .lab-landing .section, .lab-landing .cta { overflow-x: clip; }
+
+  /* tarjetas escalonadas (entran desde el costado, una atrás de la otra) */
+  .steps .step.reveal:nth-child(2) { --rv-d: 120ms; }
+  .steps .step.reveal:nth-child(3) { --rv-d: 240ms; }
+  .agents .agent.reveal:nth-child(2) { --rv-d: 130ms; }
+
+  /* título en cascada: el contenedor dispara y los hijos entran escalonados */
+  .reveal-cascade .num,
+  .reveal-cascade h2,
+  .reveal-cascade .en,
+  .reveal-cascade .lede {
+    opacity: 0;
+    transform: translateY(22px);
+    transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.16, 0.84, 0.44, 1);
+  }
+  .reveal-cascade.is-visible .num  { opacity: 1; transform: none; transition-delay: 0ms; }
+  .reveal-cascade.is-visible h2    { opacity: 1; transform: none; transition-delay: 90ms; }
+  .reveal-cascade.is-visible .en   { opacity: 1; transform: none; transition-delay: 170ms; }
+  .reveal-cascade.is-visible .lede { opacity: 1; transform: none; transition-delay: 230ms; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .reveal,
+    .reveal-cascade .num,
+    .reveal-cascade h2,
+    .reveal-cascade .en,
+    .reveal-cascade .lede { opacity: 1; transform: none; transition: none; }
+  }
+
+  /* ─── responsive landing (tablet + mobile) ─────────────── */
+  /* Tablet/abajo: las grillas de dos columnas se apilan */
+  @media (max-width: 900px) {
+    .hero {
+      min-height: auto;
+      padding: var(--s6) var(--s6) var(--s6);
+    }
+    .hero-grid {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--s7);
+      align-items: start;
+      margin-top: var(--s6);
+      margin-bottom: 0;
+    }
+    .section-head { grid-template-columns: minmax(0, 1fr); gap: var(--s5); }
+    .steps { grid-template-columns: minmax(0, 1fr); }
+    .trace-hero { grid-template-columns: minmax(0, 1fr); }
+    .agents { grid-template-columns: minmax(0, 1fr); }
+    .cta { grid-template-columns: minmax(0, 1fr); gap: var(--s7); }
+    .footer-top { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s6); }
+    /* los items de grid no deben crecer por debajo de su contenido (deja envolver el texto) */
+    .hero-grid > *, .section-head > *, .trace-hero > *, .agents > *, .cta > * { min-width: 0; }
+    /* en pantallas chicas el deslizamiento lateral marea: que entren desde abajo */
+    .reveal.rv-left, .reveal.rv-right { transform: translateY(28px); }
+  }
+
+  /* Mobile */
+  @media (max-width: 671px) {
+    .masthead { padding: 0 var(--s4); }
+    .masthead-product { display: none; }
+    .lang-toggle { display: none; }
+    .masthead-nav .nav-anchor { display: none; }   /* deja "Cuenta" (login) accesible */
+    .masthead-nav a { padding: 0 var(--s2); }
+
+    .hero-title { font-size: clamp(40px, 11vw, 60px); }
+    .hero-meta { flex-direction: column; align-items: flex-start; gap: var(--s2); }
+    .hero-meta .left { flex-wrap: wrap; gap: var(--s2) var(--s4); }
+    .hero-meta .right { display: none; }
+    .hero-stat .figure { font-size: 56px; }
+
+    .footer-top { grid-template-columns: minmax(0, 1fr); gap: var(--s5); }
+
+    .audit-head { grid-template-columns: minmax(0, 1fr); gap: var(--s4); justify-items: start; }
+    .audit-head .status-block { border-left: 0; padding-left: 0; flex-direction: row; gap: var(--s5); }
+    .timeline-row { grid-template-columns: 64px 16px 1fr auto; gap: var(--s2); font-size: 11px; }
+    .qr-svg { width: 96px; height: 96px; }
+  }
 `;

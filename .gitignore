@@ -23,3 +23,8 @@ pnpm-debug.log*
 .DS_Store
 .idea/
 .vscode/
+
+# Local landing handoff / backups
+LAB _Template_.zip
+design_handoff_labinventory_landing 2/
+tailwind.config.ts.bak
