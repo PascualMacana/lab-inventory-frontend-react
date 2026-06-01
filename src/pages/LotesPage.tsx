@@ -1,6 +1,7 @@
-import { FormEvent, useMemo, useState } from "react"
+import { FormEvent, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowLeft, CalendarClock, Camera, Download, FileText, Package, PackagePlus, QrCode, Save, Search } from "lucide-react"
+import { useSearchParams } from "react-router-dom"
 
 import { ModuleNav } from "../components/ModuleNav"
 import { Button } from "../components/ui/button"
@@ -70,10 +71,12 @@ function downloadBlob(blob: Blob, filename: string) {
 export function LotesPage() {
   const { token, usuario } = useAuth()
   const queryClient = useQueryClient()
+  const [searchParams] = useSearchParams()
   const puedeCrearLote = puede(usuario, "crear_lote")
   const puedeImprimir = puede(usuario, "imprimir_hoja_avery")
   const [tab, setTab] = useState<TabLotes>("listado")
   const [reactivoId, setReactivoId] = useState<number | null>(null)
+  const [loteSeleccionadoId, setLoteSeleccionadoId] = useState<number | null>(null)
   const [busqueda, setBusqueda] = useState("")
   const [mensaje, setMensaje] = useState<string | null>(null)
   const [errorLocal, setErrorLocal] = useState<string | null>(null)
@@ -85,17 +88,15 @@ export function LotesPage() {
   })
 
   const reactivos = reactivosQuery.data ?? reactivosVacios
-  const reactivoSeleccionado = useMemo(() => {
-    if (!reactivoId) {
-      return reactivos[0] ?? null
-    }
-    return reactivos.find((reactivo) => reactivo.id === reactivoId) ?? null
-  }, [reactivoId, reactivos])
+  const reactivoSeleccionado = useMemo(
+    () => reactivos.find((reactivo) => reactivo.id === reactivoId) ?? null,
+    [reactivoId, reactivos],
+  )
 
   const lotesQuery = useQuery({
-    queryKey: ["lotes", reactivoSeleccionado?.id],
-    queryFn: () => api.lotesPorReactivo(token!, reactivoSeleccionado!.id),
-    enabled: Boolean(token && reactivoSeleccionado?.id),
+    queryKey: ["lotes", reactivoId ?? "todos", reactivoId ? "" : busqueda.trim()],
+    queryFn: () => (reactivoId ? api.lotesPorReactivo(token!, reactivoId) : api.lotes(token!, busqueda, !busqueda.trim())),
+    enabled: Boolean(token),
   })
 
   const lotes = lotesQuery.data ?? lotesVacios
@@ -105,7 +106,7 @@ export function LotesPage() {
       return lotes
     }
     return lotes.filter((lote) =>
-      [lote.codigo_interno, lote.numero_lote, lote.marca, lote.codigo_proveedor, lote.proveedor, lote.ubicacion]
+      [lote.codigo_interno, lote.numero_lote, lote.marca, lote.codigo_proveedor, lote.proveedor, lote.ubicacion, lote.reactivo_nombre, lote.cas_numero]
         .filter(Boolean)
         .some((value) => String(value).toLocaleLowerCase("es").includes(texto)),
     )
@@ -113,6 +114,36 @@ export function LotesPage() {
 
   const stockTotal = lotes.reduce((total, lote) => total + (lote.cantidad_actual ?? 0), 0)
   const proximoVencimiento = lotes[0]?.fecha_vencimiento
+  const codigoUrl = searchParams.get("codigo")
+
+  useEffect(() => {
+    if (!token || !codigoUrl) {
+      return
+    }
+    let activo = true
+    setErrorLocal(null)
+    setMensaje(null)
+    api.lotePorCodigo(token, codigoUrl)
+      .then((lote) => {
+        if (!activo) {
+          return
+        }
+        setTab("listado")
+        setReactivoId(null)
+        setLoteSeleccionadoId(lote.id)
+        setBusqueda(lote.codigo_interno)
+        setMensaje(`Lote ${lote.codigo_interno} seleccionado desde movimientos.`)
+      })
+      .catch((error) => {
+        if (!activo) {
+          return
+        }
+        setErrorLocal(mutationError(error, "No se pudo abrir el lote desde movimientos"))
+      })
+    return () => {
+      activo = false
+    }
+  }, [codigoUrl, token])
 
   return (
     <section>
@@ -160,26 +191,37 @@ export function LotesPage() {
           reactivoSeleccionado={reactivoSeleccionado}
           lotes={lotesFiltrados}
           lotesTodos={lotes}
+          loteSeleccionadoId={loteSeleccionadoId}
           isLoading={lotesQuery.isLoading}
           busqueda={busqueda}
           stockTotal={stockTotal}
           proximoVencimiento={proximoVencimiento}
           onReactivoChange={setReactivoId}
+          onLoteSelect={setLoteSeleccionadoId}
           onBusquedaChange={setBusqueda}
+          onBuscarTexto={async (texto) => {
+            setErrorLocal(null)
+            setMensaje(null)
+            setReactivoId(null)
+            setLoteSeleccionadoId(null)
+            setBusqueda(texto)
+            await queryClient.invalidateQueries({ queryKey: ["lotes"] })
+          }}
           onBuscarCodigoInterno={async (codigo) => {
             setErrorLocal(null)
             setMensaje(null)
             try {
               const lote = await api.lotePorCodigo(token!, codigo)
-              setReactivoId(lote.reactivo_id)
+              setReactivoId(null)
+              setLoteSeleccionadoId(lote.id)
               setBusqueda(lote.codigo_interno)
-              setMensaje(`Lote ${lote.codigo_interno} encontrado. Cambié el selector a ${lote.reactivo_nombre}.`)
+              setMensaje(`Lote ${lote.codigo_interno} encontrado.`)
             } catch (error) {
               setErrorLocal(mutationError(error, "No se pudo buscar el lote"))
             }
           }}
           onUpdated={async (mensajeActualizado) => {
-            await queryClient.invalidateQueries({ queryKey: ["lotes", reactivoSeleccionado?.id] })
+            await queryClient.invalidateQueries({ queryKey: ["lotes"] })
             await queryClient.invalidateQueries({ queryKey: ["reactivos"] })
             await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
             if (mensajeActualizado) {
@@ -218,12 +260,15 @@ function ListadoLotes({
   reactivoSeleccionado,
   lotes,
   lotesTodos,
+  loteSeleccionadoId,
   isLoading,
   busqueda,
   stockTotal,
   proximoVencimiento,
   onReactivoChange,
+  onLoteSelect,
   onBusquedaChange,
+  onBuscarTexto,
   onBuscarCodigoInterno,
   onUpdated,
 }: {
@@ -234,27 +279,33 @@ function ListadoLotes({
   reactivoSeleccionado: Reactivo | null
   lotes: Lote[]
   lotesTodos: Lote[]
+  loteSeleccionadoId: number | null
   isLoading: boolean
   busqueda: string
   stockTotal: number
   proximoVencimiento?: string
-  onReactivoChange: (id: number) => void
+  onReactivoChange: (id: number | null) => void
+  onLoteSelect: (id: number | null) => void
   onBusquedaChange: (value: string) => void
+  onBuscarTexto: (texto: string) => void | Promise<void>
   onBuscarCodigoInterno: (codigo: string) => void | Promise<void>
   onUpdated: (mensaje?: string) => void | Promise<void>
 }) {
-  const [loteEditarId, setLoteEditarId] = useState<number | null>(null)
   const loteEditar = useMemo(() => {
-    if (!lotesTodos.length) {
+    if (!loteSeleccionadoId) {
       return null
     }
-    if (!loteEditarId) {
-      return lotesTodos[0]
-    }
-    return lotesTodos.find((lote) => lote.id === loteEditarId) ?? lotesTodos[0]
-  }, [loteEditarId, lotesTodos])
+    return lotesTodos.find((lote) => lote.id === loteSeleccionadoId) ?? null
+  }, [loteSeleccionadoId, lotesTodos])
 
   const pendientes = reactivos.filter(esPendiente)
+  const reactivosConLote = new Set(lotesTodos.map((lote) => lote.reactivo_id)).size
+
+  useEffect(() => {
+    if (!isLoading && loteSeleccionadoId && !lotesTodos.some((lote) => lote.id === loteSeleccionadoId)) {
+      onLoteSelect(null)
+    }
+  }, [isLoading, loteSeleccionadoId, lotesTodos, onLoteSelect])
 
   return (
     <>
@@ -273,9 +324,10 @@ function ListadoLotes({
           <select
             className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
             value={reactivoSeleccionado?.id ?? ""}
-            onChange={(event) => onReactivoChange(Number(event.target.value))}
+            onChange={(event) => onReactivoChange(event.target.value ? Number(event.target.value) : null)}
             disabled={reactivos.length === 0}
           >
+            <option value="">Todos los reactivos</option>
             {reactivos.map((reactivo) => (
               <option key={reactivo.id} value={reactivo.id}>
                 {reactivo.nombre} | stock: {formatNumber(reactivo.stock_total)} {reactivo.unidad} | ID {reactivo.id}
@@ -293,6 +345,10 @@ function ListadoLotes({
               const texto = busqueda.trim()
               if (texto.toUpperCase().startsWith("LAB-")) {
                 void onBuscarCodigoInterno(texto)
+                return
+              }
+              if (texto) {
+                void onBuscarTexto(texto)
               }
             }}
           >
@@ -306,36 +362,44 @@ function ListadoLotes({
                 className="pl-12"
                 value={busqueda}
                 onChange={(event) => onBusquedaChange(event.target.value)}
-                placeholder="QR interno, lote, proveedor"
+                placeholder="Reactivo, marca, proveedor, QR, CAS"
               />
             </div>
-            <Button type="submit" variant="secondary" size="compact" disabled={!busqueda.trim().toUpperCase().startsWith("LAB-")}>
-              Ir
+            <Button type="submit" variant="secondary" size="compact" disabled={!busqueda.trim()}>
+              Buscar
             </Button>
           </form>
         </label>
       </div>
 
       <div className="mb-4 grid gap-px bg-cds-borderSubtle md:grid-cols-3">
-        <MetricTile label="Stock activo" value={`${formatNumber(stockTotal)} ${reactivoSeleccionado?.unidad ?? ""}`} icon={Package} />
+        <MetricTile
+          label={reactivoSeleccionado ? "Stock activo" : "Reactivos con lote"}
+          value={reactivoSeleccionado ? `${formatNumber(stockTotal)} ${reactivoSeleccionado.unidad}` : String(reactivosConLote)}
+          icon={Package}
+        />
         <MetricTile label="Lotes activos" value={String(lotesTodos.length)} icon={Package} />
         <MetricTile label="Próximo vencimiento" value={formatDate(proximoVencimiento)} icon={CalendarClock} />
       </div>
 
-      {lotesTodos[0] ? (
+      {reactivoSeleccionado && lotesTodos[0] ? (
         <p className="mb-3 text-xs tracking-[0.32px] text-cds-textSecondary">
           Lote FIFO: <span className="font-mono text-cds-textPrimary">{lotesTodos[0].codigo_interno}</span>
         </p>
       ) : null}
 
-      <LotesTable lotes={lotes} isLoading={isLoading} onSelect={setLoteEditarId} />
+      <LotesTable lotes={lotes} isLoading={isLoading} selectedId={loteSeleccionadoId} onSelect={onLoteSelect} />
 
       {puedeEditar && loteEditar ? (
-        <EditarLoteForm token={token} lote={loteEditar} lotes={lotesTodos} onSelect={setLoteEditarId} onUpdated={onUpdated} />
+        <EditarLoteForm token={token} lote={loteEditar} lotes={lotesTodos} onSelect={onLoteSelect} onUpdated={onUpdated} />
+      ) : puedeEditar ? (
+        <div className="mt-6 bg-cds-layer01 p-4 text-sm text-cds-textSecondary">
+          Seleccioná un lote de la tabla para editar datos, ajustar stock o reimprimir etiquetas.
+        </div>
       ) : null}
 
       {puedeImprimir && lotesTodos.length ? (
-        <EtiquetasLotes token={token} lotes={lotesTodos} reactivoNombre={reactivoSeleccionado?.nombre ?? "reactivo"} />
+        <EtiquetasLotes token={token} lotes={lotesTodos} reactivoNombre={reactivoSeleccionado?.nombre ?? "lotes"} />
       ) : null}
     </>
   )
@@ -1159,10 +1223,12 @@ function MetricTile({
 function LotesTable({
   lotes,
   isLoading,
+  selectedId,
   onSelect,
 }: {
   lotes: Lote[]
   isLoading: boolean
+  selectedId: number | null
   onSelect: (id: number) => void
 }) {
   if (isLoading) {
@@ -1179,6 +1245,7 @@ function LotesTable({
         <thead>
           <tr className="border-b border-cds-borderSubtle bg-cds-layer01 text-xs tracking-[0.32px] text-cds-textSecondary">
             <th className="h-10 px-4 font-normal">QR interno</th>
+            <th className="h-10 px-4 font-normal">Reactivo</th>
             <th className="h-10 px-4 font-normal">Lote fabricante</th>
             <th className="h-10 px-4 font-normal">Marca</th>
             <th className="h-10 px-4 font-normal">CAS</th>
@@ -1199,10 +1266,14 @@ function LotesTable({
             return (
               <tr
                 key={lote.id}
-                className="cursor-pointer border-b border-cds-borderSubtle transition-colors hover:bg-cds-layer01"
+                className={cn(
+                  "cursor-pointer border-b border-cds-borderSubtle transition-colors hover:bg-cds-layer01",
+                  selectedId === lote.id && "bg-cds-layer01 shadow-[inset_2px_0_0_var(--cds-focus)]",
+                )}
                 onClick={() => onSelect(lote.id)}
               >
                 <td className="h-12 px-4 font-mono text-xs tracking-[0.16px]">{lote.codigo_interno}</td>
+                <td className="h-12 px-4 font-semibold tracking-[0.16px]">{lote.reactivo_nombre}</td>
                 <td className="h-12 px-4">{lote.numero_lote || "-"}</td>
                 <td className="h-12 px-4 text-cds-textSecondary">{lote.marca || "-"}</td>
                 <td className="h-12 px-4 font-mono text-xs text-cds-textSecondary">{lote.cas_numero || "-"}</td>

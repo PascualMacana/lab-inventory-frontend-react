@@ -869,6 +869,16 @@ export const api = {
   lotesPorReactivo: async (token: string, reactivoId: number) =>
     request<Lote[]>(`/lotes/reactivo/${reactivoId}`, { token }),
 
+  lotes: async (token: string, busqueda?: string, soloConStock = true) => {
+    const params = new URLSearchParams()
+    if (busqueda?.trim()) {
+      params.set("q", busqueda.trim())
+    }
+    params.set("solo_con_stock", soloConStock ? "true" : "false")
+    const query = params.toString()
+    return request<Lote[]>(`/lotes${query ? `?${query}` : ""}`, { token })
+  },
+
   lotePorCodigo: async (token: string, codigoInterno: string) =>
     request<Lote>(`/lotes/codigo/${encodeURIComponent(codigoInterno)}`, { token }),
 

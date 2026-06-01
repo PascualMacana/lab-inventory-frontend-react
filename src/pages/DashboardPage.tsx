@@ -1,6 +1,8 @@
 import { useMemo } from "react"
+import type { ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { AlertTriangle, ArrowDownCircle, ArrowUpCircle, FileSignature, SlidersHorizontal } from "lucide-react"
+import { Link } from "react-router-dom"
 
 import { api, type DashboardSeriePunto } from "../lib/api"
 import { useAuth } from "../lib/auth"
@@ -188,6 +190,31 @@ function TipoIcon({ tipo }: { tipo: "entrada" | "salida" | "ajuste" | null }) {
   return <SlidersHorizontal size={14} aria-hidden="true" />
 }
 
+function KpiTile({
+  to,
+  className,
+  children,
+}: {
+  to?: string
+  className: string
+  children: ReactNode
+}) {
+  const classes = cn(
+    className,
+    to && "block transition-colors hover:bg-[var(--cds-layer-hover-01)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-cds-focus",
+  )
+
+  if (to) {
+    return (
+      <Link to={to} className={classes} aria-label={`Abrir ${to === "/lotes" ? "lotes" : "reactivos"}`}>
+        {children}
+      </Link>
+    )
+  }
+
+  return <article className={classes}>{children}</article>
+}
+
 export function DashboardPage() {
   const { token, usuario } = useAuth()
   const dashboardQuery = useQuery({
@@ -218,6 +245,7 @@ export function DashboardPage() {
       [
         {
           label: "Reactivos activos",
+          to: "/reactivos",
           value: contadores.total_reactivos,
           spark: serieNumerica(series, "total_reactivos", contadores.total_reactivos),
           sparkColor: palette.blue,
@@ -225,6 +253,7 @@ export function DashboardPage() {
         },
         {
           label: "Lotes activos",
+          to: "/lotes",
           value: contadores.lotes_activos,
           spark: serieNumerica(series, "lotes_activos", contadores.lotes_activos),
           sparkColor: palette.blue,
@@ -338,8 +367,9 @@ export function DashboardPage() {
         {/* KPIs */}
         <div className="grid grid-cols-2 gap-px bg-cds-layer02 xl:grid-cols-4">
           {kpis.map((k) => (
-            <article
+            <KpiTile
               key={k.label}
+              to={k.to}
               className={
                 k.tone === "alert"
                   ? "bg-lab-warmTint p-4"
@@ -372,7 +402,7 @@ export function DashboardPage() {
               </div>
               <Sparkline points={k.spark} color={k.sparkColor} />
               <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.32px] text-cds-textSecondary">{k.status}</div>
-            </article>
+            </KpiTile>
           ))}
         </div>
 

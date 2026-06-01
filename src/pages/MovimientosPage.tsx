@@ -1,6 +1,7 @@
 import { FormEvent, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ArrowDownCircle, ArrowUpCircle, ListFilter, RotateCcw, SlidersHorizontal } from "lucide-react"
+import { Link } from "react-router-dom"
 
 import { PageHeader } from "../components/PageHeader"
 import { Button } from "../components/ui/button"
@@ -302,7 +303,15 @@ function MovimientosTable({ movimientos, isLoading }: { movimientos: Movimiento[
                 </span>
               </td>
               <td className="h-12 px-4">{movimiento.reactivo_nombre}</td>
-              <td className="h-12 px-4 font-mono text-xs tracking-[0.16px]">{movimiento.codigo_interno}</td>
+              <td className="h-12 px-4">
+                <Link
+                  to={`/lotes?codigo=${encodeURIComponent(movimiento.codigo_interno)}`}
+                  className="inline-flex h-8 items-center border border-cds-borderSubtle bg-cds-layer01 px-3 font-mono text-xs tracking-[0.16px] text-cds-linkPrimary transition-colors hover:bg-[var(--cds-layer-hover-01)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-cds-focus"
+                  aria-label={`Abrir lote ${movimiento.codigo_interno}`}
+                >
+                  {movimiento.codigo_interno}
+                </Link>
+              </td>
               <td className="h-12 px-4 text-right font-mono">
                 {formatNumber(movimiento.cantidad)} {movimiento.unidad}
               </td>
