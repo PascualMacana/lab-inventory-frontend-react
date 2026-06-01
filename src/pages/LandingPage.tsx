@@ -37,7 +37,7 @@ export function LandingPage() {
     <>
       {/* ═══════════════ HERO ═══════════════ */}
       <section className="hero">
-        <div className="hero-meta">
+        <div className="hero-meta reveal">
           <div className="left">
             <span>Issue №&nbsp;<b>0024</b></span>
             <span><b>labinventory.lat</b> · v2.1</span>
@@ -47,7 +47,7 @@ export function LandingPage() {
         </div>
       
         <div className="hero-grid">
-          <div>
+          <div className="reveal">
             <h1 className="hero-title">
               Inventario,<br />
                       <span className="em">como en la mesada.<span className="cursor"></span></span>
@@ -63,7 +63,7 @@ export function LandingPage() {
             </div>
           </div>
       
-          <div className="hero-stat">
+          <div className="hero-stat reveal" style={{ ['--rv-d' as string]: '120ms' }}>
             <div className="label">Hoy, en producción</div>
             <div className="figure">142 <span className="unit">lotes</span></div>
             <div className="meta">trazados al gramo · firmados por usuario · listos para auditoría</div>

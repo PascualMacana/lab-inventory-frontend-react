@@ -1599,6 +1599,14 @@ export const LANDING_CSS = String.raw`
     .reveal-cascade .lede { opacity: 1; transform: none; transition: none; }
   }
 
+  /* Reveal replay after closing the login: hide instantly without transition,
+     then animate the entrance again. */
+  .lab-landing .reveal.rv-reset,
+  .lab-landing .reveal-cascade.rv-reset .num,
+  .lab-landing .reveal-cascade.rv-reset h2,
+  .lab-landing .reveal-cascade.rv-reset .en,
+  .lab-landing .reveal-cascade.rv-reset .lede { transition: none !important; }
+
   /* ─── responsive landing (tablet + mobile) ─────────────── */
   /* Tablet/abajo: las grillas de dos columnas se apilan */
   @media (max-width: 900px) {
@@ -1633,17 +1641,28 @@ export const LANDING_CSS = String.raw`
     .masthead-nav .nav-anchor { display: none; }   /* deja "Cuenta" (login) accesible */
     .masthead-nav a { padding: 0 var(--s2); }
 
-    .hero-title { font-size: clamp(40px, 11vw, 60px); }
+    /* Titles need looser line-height and smaller clamps on narrow screens. */
+    .hero-title { font-size: clamp(34px, 10vw, 56px); line-height: 1.06; }
+    .section-head h2 { font-size: clamp(30px, 8.5vw, 40px); line-height: 1.12; }
+    .agent .title { font-size: 24px; }
+    .step .hello { font-size: 24px; }
+
     .hero-meta { flex-direction: column; align-items: flex-start; gap: var(--s2); }
     .hero-meta .left { flex-wrap: wrap; gap: var(--s2) var(--s4); }
     .hero-meta .right { display: none; }
-    .hero-stat .figure { font-size: 56px; }
+    .hero-stat .figure { font-size: 48px; }
+
+    /* Long text should wrap before it can overflow. */
+    .hero-body, .section-head .lede, .step .d, .trace-copy p { overflow-wrap: break-word; }
+    .step .receipt { flex-wrap: wrap; gap: 4px var(--s3); }
 
     .footer-top { grid-template-columns: minmax(0, 1fr); gap: var(--s5); }
 
     .audit-head { grid-template-columns: minmax(0, 1fr); gap: var(--s4); justify-items: start; }
     .audit-head .status-block { border-left: 0; padding-left: 0; flex-direction: row; gap: var(--s5); }
-    .timeline-row { grid-template-columns: 64px 16px 1fr auto; gap: var(--s2); font-size: 11px; }
+    .audit-head .info .code { font-size: 18px; }
+    .timeline-row { grid-template-columns: 56px 14px 1fr auto; gap: var(--s2); font-size: 11px; }
+    .timeline-row .what { overflow-wrap: anywhere; }
     .qr-svg { width: 96px; height: 96px; }
   }
 `;

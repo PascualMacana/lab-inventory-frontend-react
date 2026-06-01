@@ -1,4 +1,4 @@
-import { createContext, FormEvent, MouseEvent, useContext, useEffect, useRef, useState } from "react";
+import { createContext, FormEvent, MouseEvent, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../lib/auth";
@@ -32,20 +32,43 @@ export function LandingShell() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginSubmitting, setLoginSubmitting] = useState(false);
   const emailInputRef = useRef<HTMLInputElement>(null);
+  const closeTimer = useRef<number | undefined>(undefined);
+
+  // Smooth close: remove .open first, then unmount after the transition.
+  // Inputs still disappear shortly after close, so macOS autofill does not leak
+  // over the hero. The replay event lets the visible section animate back in.
+  const requestClose = useCallback(
+    (scrollDemo = false) => {
+      setLoginVisible(false);
+      if (location.pathname === "/login") navigate("/", { replace: true });
+      window.setTimeout(() => window.dispatchEvent(new CustomEvent("landing:replay")), 90);
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = window.setTimeout(() => {
+        setLoginOpen(false);
+        if (scrollDemo) {
+          document.getElementById("cta")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }, 360);
+    },
+    [location.pathname, navigate],
+  );
 
   useEffect(() => {
-    if (location.pathname === "/login") {
-      setLoginOpen(true);
-    }
+    if (location.pathname === "/login") setLoginOpen(true);
   }, [location.pathname]);
 
+  // Smooth open: double rAF lets the browser paint the closed state before
+  // adding .open. With conditional mount, one frame can skip the transition.
   useEffect(() => {
-    if (!loginOpen) {
-      setLoginVisible(false);
-      return;
-    }
-    const frame = window.requestAnimationFrame(() => setLoginVisible(true));
-    return () => window.cancelAnimationFrame(frame);
+    if (!loginOpen) return;
+    let raf2 = 0;
+    const raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => setLoginVisible(true));
+    });
+    return () => {
+      window.cancelAnimationFrame(raf1);
+      window.cancelAnimationFrame(raf2);
+    };
   }, [loginOpen]);
 
   useEffect(() => {
@@ -56,12 +79,7 @@ export function LandingShell() {
     document.body.style.overflow = "hidden";
     const focusTimer = window.setTimeout(() => emailInputRef.current?.focus(), 460);
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setLoginOpen(false);
-        if (location.pathname === "/login") {
-          navigate("/", { replace: true });
-        }
-      }
+      if (e.key === "Escape") requestClose();
     };
     document.addEventListener("keydown", onKey);
     return () => {
@@ -69,28 +87,28 @@ export function LandingShell() {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
     };
-  }, [location.pathname, loginOpen, navigate]);
+  }, [loginOpen, requestClose]);
+
+  useEffect(() => {
+    return () => window.clearTimeout(closeTimer.current);
+  }, []);
 
   const openLogin = (e?: MouseEvent) => {
     e?.preventDefault();
-    setLoginOpen(true);
+    window.clearTimeout(closeTimer.current);
+    if (loginOpen) {
+      setLoginVisible(true); // closing in progress: show again without unmounting
+    } else {
+      setLoginOpen(true); // mount; the double-rAF effect starts the opening
+    }
   };
   const closeLogin = (e?: MouseEvent) => {
     e?.preventDefault();
-    setLoginOpen(false);
-    if (location.pathname === "/login") {
-      navigate("/", { replace: true });
-    }
+    requestClose();
   };
   const closeAndScrollToDemo = (e?: MouseEvent) => {
     e?.preventDefault();
-    setLoginOpen(false);
-    if (location.pathname === "/login") {
-      navigate("/", { replace: true });
-    }
-    window.setTimeout(() => {
-      document.getElementById("cta")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 320);
+    requestClose(true);
   };
 
   async function handleLoginSubmit(e: FormEvent<HTMLFormElement>) {

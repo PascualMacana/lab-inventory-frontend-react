@@ -35,5 +35,29 @@ export function ScrollReveal() {
     return () => io.disconnect();
   }, [pathname]);
 
+  // Replay visible reveal elements when LandingShell closes the login, so the
+  // current section can animate back in instead of only the hero.
+  useEffect(() => {
+    function replay() {
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      const els = document.querySelectorAll<HTMLElement>(
+        ".lab-landing .reveal, .lab-landing .reveal-cascade",
+      );
+      els.forEach((el) => {
+        const r = el.getBoundingClientRect();
+        const inView = r.top < window.innerHeight && r.bottom > 0;
+        if (!inView) return;
+        // Hide instantly without a transition, then animate in again.
+        el.classList.add("rv-reset");
+        el.classList.remove("is-visible");
+        void el.offsetWidth; // force reflow so the hidden state applies now
+        el.classList.remove("rv-reset");
+        window.requestAnimationFrame(() => el.classList.add("is-visible"));
+      });
+    }
+    window.addEventListener("landing:replay", replay);
+    return () => window.removeEventListener("landing:replay", replay);
+  }, []);
+
   return null;
 }
