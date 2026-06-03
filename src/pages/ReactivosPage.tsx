@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Plus, AlertTriangle, FlaskConical, PackageCheck, Search, Save } from "lucide-react"
+import { ArrowLeft, Check, Plus, AlertTriangle, FlaskConical, PackageCheck, Search, Save } from "lucide-react"
 
 import { ModuleNav } from "../components/ModuleNav"
 import { PageHeader } from "../components/PageHeader"
@@ -172,9 +172,11 @@ export function ReactivosPage() {
           reactivos={reactivos}
           reactivo={reactivoDetalle}
           puedeEditar={puedeEditar}
+          puedeFusionar={puedeCrear}
           onSelect={setReactivoDetalleId}
           onUpdated={async () => {
             await queryClient.invalidateQueries({ queryKey: ["reactivos"] })
+            await queryClient.invalidateQueries({ queryKey: ["lotes"] })
             await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
           }}
         />
@@ -447,6 +449,7 @@ function DetalleReactivo({
   reactivos,
   reactivo,
   puedeEditar,
+  puedeFusionar,
   onSelect,
   onUpdated,
 }: {
@@ -454,6 +457,7 @@ function DetalleReactivo({
   reactivos: Reactivo[]
   reactivo: Reactivo | null
   puedeEditar: boolean
+  puedeFusionar: boolean
   onSelect: (id: number) => void
   onUpdated: () => void | Promise<void>
 }) {
@@ -463,8 +467,27 @@ function DetalleReactivo({
   const [ubicacion, setUbicacion] = useState("")
   const [categoria, setCategoria] = useState("")
   const [mensajeLocal, setMensajeLocal] = useState<string | null>(null)
+  // Merge tool: el reactivo que se ve es el sobreviviente; se elige un duplicado a absorber.
+  const [duplicadoId, setDuplicadoId] = useState<number | null>(null)
+  const [confirmandoFusion, setConfirmandoFusion] = useState(false)
+  const [mensajeFusion, setMensajeFusion] = useState<string | null>(null)
+  const [errorFusion, setErrorFusion] = useState<string | null>(null)
   const actualizarMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: ReactivoActualizar }) => api.actualizarReactivo(token, id, data),
+  })
+  const fusionMutation = useMutation({
+    mutationFn: ({ sobreviviente, duplicado }: { sobreviviente: number; duplicado: number }) =>
+      api.fusionarReactivos(token, sobreviviente, duplicado),
+  })
+  const queryClient = useQueryClient()
+  const [busquedaDup, setBusquedaDup] = useState("")
+  // Posibles duplicados con IA: manual (enabled:false) para no gastar una llamada
+  // al LLM cada vez que se abre un detalle; keyed por reactivo => se resetea solo
+  // al cambiar de reactivo. Se dispara con el botón (refetch).
+  const duplicadosQuery = useQuery({
+    queryKey: ["duplicados", reactivo?.id],
+    queryFn: () => api.duplicadosReactivo(token, reactivo!.id),
+    enabled: false,
   })
 
   useEffect(() => {
@@ -477,6 +500,11 @@ function DetalleReactivo({
     setCategoria(reactivo.categoria ?? "")
     setErrorLocal(null)
     setMensajeLocal(null)
+    setDuplicadoId(null)
+    setConfirmandoFusion(false)
+    setMensajeFusion(null)
+    setErrorFusion(null)
+    setBusquedaDup("")
   }, [reactivo])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -508,13 +536,49 @@ function DetalleReactivo({
     }
   }
 
+  async function handleFusionar() {
+    if (!reactivo || !duplicadoId) {
+      return
+    }
+    setErrorFusion(null)
+    setMensajeFusion(null)
+    try {
+      const res = await fusionMutation.mutateAsync({ sobreviviente: reactivo.id, duplicado: duplicadoId })
+      setMensajeFusion(res.mensaje ?? `Fusionado: ${res.lotes_movidos} lote(s) movido(s).`)
+      setDuplicadoId(null)
+      setConfirmandoFusion(false)
+      setBusquedaDup("")
+      await onUpdated()
+      // Las sugerencias en cache quedaron viejas (el duplicado ya no existe).
+      queryClient.removeQueries({ queryKey: ["duplicados"] })
+    } catch (error) {
+      setConfirmandoFusion(false)
+      setErrorFusion(mutationError(error, "No se pudo fusionar"))
+    }
+  }
+
+  function seleccionarDuplicado(id: number) {
+    setDuplicadoId(id)
+    setConfirmandoFusion(false)
+    setMensajeFusion(null)
+    setErrorFusion(null)
+  }
+
   if (!reactivo) {
     return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">No hay reactivos para mostrar.</div>
   }
 
   const bajoMinimo = (reactivo.stock_total ?? 0) < (reactivo.stock_minimo ?? 0)
+  // Solo se puede fusionar entre reactivos con la MISMA unidad (el backend lo exige:
+  // los lotes guardan la cantidad en la unidad del reactivo, no se convierte).
+  const duplicadosPosibles = reactivos.filter((item) => item.id !== reactivo.id && item.unidad === reactivo.unidad)
+  const duplicadosFiltrados = busquedaDup.trim()
+    ? duplicadosPosibles.filter((item) => normalizarTexto(item.nombre).includes(normalizarTexto(busquedaDup)))
+    : []
+  const nombreDuplicado = reactivos.find((item) => item.id === duplicadoId)?.nombre ?? ""
 
   return (
+    <>
     <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
       <aside>
         <Label className="mb-2" htmlFor="reactivo_detalle">Seleccioná un reactivo</Label>
@@ -607,6 +671,134 @@ function DetalleReactivo({
         ) : null}
       </form>
     </div>
+
+    {puedeFusionar ? (
+      <section className="mt-6 bg-cds-layer01 p-4">
+        <h2 className="text-[24px] leading-[1.33]">Fusionar duplicado</h2>
+        <p className="mt-2 text-xs leading-4 tracking-[0.32px] text-cds-textSecondary">
+          Si <strong>{reactivo.nombre}</strong> está cargado dos veces, elegí el reactivo duplicado: sus lotes se mueven a este y el duplicado se da de baja (soft delete, se preserva la trazabilidad). Solo se listan reactivos con la misma unidad ({reactivo.unidad}); la fusión no se puede deshacer desde acá.
+        </p>
+
+        {duplicadosPosibles.length === 0 ? (
+          <p className="mt-4 text-sm text-cds-textSecondary">No hay otros reactivos con unidad {reactivo.unidad} para fusionar.</p>
+        ) : (
+          <div className="mt-4 max-w-xl">
+            <Button
+              type="button"
+              onClick={() => void duplicadosQuery.refetch()}
+              disabled={duplicadosQuery.isFetching}
+            >
+              {duplicadosQuery.isFetching ? "Buscando posibles duplicados..." : "Buscar posibles duplicados (IA)"}
+            </Button>
+
+            {duplicadosQuery.isError ? (
+              <p className="mt-3 text-sm text-cds-supportError">No se pudo consultar duplicados. Probá de nuevo o buscá manualmente abajo.</p>
+            ) : null}
+
+            {duplicadosQuery.data ? (
+              duplicadosQuery.data.candidatos.length > 0 ? (
+                <div className="mt-3">
+                  <p className="text-xs tracking-[0.32px] text-cds-textSecondary">Posibles duplicados</p>
+                  <div className="mt-2 flex flex-col gap-2">
+                    {duplicadosQuery.data.candidatos.map((candidato) => (
+                      <button
+                        key={candidato.reactivo_id}
+                        type="button"
+                        onClick={() => seleccionarDuplicado(candidato.reactivo_id)}
+                        className={cn(
+                          "flex items-center justify-between border px-3 py-2 text-left text-sm transition-colors",
+                          duplicadoId === candidato.reactivo_id
+                            ? "border-cds-buttonPrimary bg-lab-blueTint text-cds-linkPrimary"
+                            : "border-cds-borderSubtle hover:bg-cds-background",
+                        )}
+                      >
+                        <span>
+                          {candidato.nombre}{" "}
+                          <span className="text-cds-textSecondary">(ID {candidato.reactivo_id}{candidato.cas_numero ? ` · CAS ${candidato.cas_numero}` : ""})</span>
+                        </span>
+                        {duplicadoId === candidato.reactivo_id ? <Check size={16} aria-hidden="true" /> : null}
+                      </button>
+                    ))}
+                  </div>
+                  {duplicadosQuery.data.razon ? <p className="mt-2 text-xs leading-4 text-cds-textSecondary">{duplicadosQuery.data.razon}</p> : null}
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-cds-textSecondary">La IA no encontró duplicados claros. Buscalo manualmente abajo.</p>
+              )
+            ) : null}
+
+            <div className="mt-5">
+              <Label className="mb-2" htmlFor="buscar_duplicado">O buscar en todos los de unidad {reactivo.unidad}</Label>
+              <Input
+                id="buscar_duplicado"
+                value={busquedaDup}
+                onChange={(event) => setBusquedaDup(event.target.value)}
+                placeholder="Escribí parte del nombre..."
+              />
+              {busquedaDup.trim() ? (
+                <div className="mt-2 flex flex-col gap-2">
+                  {duplicadosFiltrados.length === 0 ? (
+                    <p className="text-sm text-cds-textSecondary">Sin resultados.</p>
+                  ) : (
+                    duplicadosFiltrados.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => seleccionarDuplicado(item.id)}
+                        className={cn(
+                          "flex items-center justify-between border px-3 py-2 text-left text-sm transition-colors",
+                          duplicadoId === item.id
+                            ? "border-cds-buttonPrimary bg-lab-blueTint text-cds-linkPrimary"
+                            : "border-cds-borderSubtle hover:bg-cds-background",
+                        )}
+                      >
+                        <span>
+                          {item.nombre}{" "}
+                          <span className="text-cds-textSecondary">(ID {item.id} · stock {formatNumber(item.stock_total)} {item.unidad})</span>
+                        </span>
+                        {duplicadoId === item.id ? <Check size={16} aria-hidden="true" /> : null}
+                      </button>
+                    ))
+                  )}
+                </div>
+              ) : null}
+            </div>
+
+            {duplicadoId ? (
+              <p className="mt-4 text-sm">Duplicado elegido: <strong>{nombreDuplicado}</strong></p>
+            ) : null}
+          </div>
+        )}
+
+        {duplicadoId && !confirmandoFusion ? (
+          <Button className="mt-4" type="button" onClick={() => setConfirmandoFusion(true)}>
+            Fusionar
+          </Button>
+        ) : null}
+
+        {duplicadoId && confirmandoFusion ? (
+          <div className="mt-4 border-l-4 border-lab-warm bg-cds-background px-4 py-3 text-sm">
+            Vas a mover los lotes de <strong>{nombreDuplicado}</strong> a <strong>{reactivo.nombre}</strong> y dar de baja el duplicado. No se puede deshacer desde acá.
+            <div className="mt-3 flex items-center gap-3">
+              <Button type="button" onClick={() => void handleFusionar()} disabled={fusionMutation.isPending}>
+                {fusionMutation.isPending ? "Fusionando..." : "Confirmar fusión"}
+              </Button>
+              <button type="button" className="text-sm text-cds-textSecondary underline" onClick={() => setConfirmandoFusion(false)}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {errorFusion ? (
+          <div className="mt-4 border-l-4 border-cds-supportError bg-cds-background px-4 py-3 text-sm">{errorFusion}</div>
+        ) : null}
+        {mensajeFusion ? (
+          <div className="mt-4 border-l-4 border-cds-supportSuccess bg-cds-background px-4 py-3 text-sm">{mensajeFusion}</div>
+        ) : null}
+      </section>
+    ) : null}
+    </>
   )
 }
 

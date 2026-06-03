@@ -1,13 +1,13 @@
 import { FormEvent, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, CalendarClock, Camera, Download, FileText, Package, PackagePlus, QrCode, Save, Search } from "lucide-react"
+import { ArrowLeft, CalendarClock, Camera, Check, Download, FileText, Package, PackagePlus, Plus, QrCode, Save, Search, X } from "lucide-react"
 import { useSearchParams } from "react-router-dom"
 
 import { ModuleNav } from "../components/ModuleNav"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
 import { Label } from "../components/ui/label"
-import { api, type DatosEtiqueta, type Lote, type LoteAjusteStock, type LoteActualizar, type LoteCrear, type LoteCrearMultiple, type LoteCrearMultipleResponse, type Reactivo } from "../lib/api"
+import { api, type DatosEtiqueta, type Lote, type LoteAjusteStock, type LoteActualizar, type LoteCrear, type LoteCrearMultiple, type LoteCrearMultipleResponse, type Reactivo, type ReactivoCandidato, type ReactivoCrear, type ReactivoMatch, type ReactivoMatchRequest } from "../lib/api"
 import { useAuth } from "../lib/auth"
 import { parseFormNumber, requireFiniteNumber } from "../lib/forms"
 import { puede } from "../lib/permissions"
@@ -405,6 +405,12 @@ function ListadoLotes({
   )
 }
 
+// Pill de confianza: NEUTRO a propósito. El color semántico (verde/ámbar/azul)
+// lo lleva el borde de la tarjeta para la DECISIÓN (match/ambiguo/nuevo); pintar
+// también la confianza con esos colores confundía (ej. "ambiguo" + pill verde
+// "confianza alta" se leía como contradicción). Acá la confianza es solo dato.
+const CONFIANZA_PILL = "bg-cds-layer01 text-cds-textSecondary ring-1 ring-cds-borderSubtle"
+
 function NuevoLoteForm({
   token,
   usuarioId,
@@ -421,6 +427,14 @@ function NuevoLoteForm({
   const [errorLocal, setErrorLocal] = useState<string | null>(null)
   const [modoCarga, setModoCarga] = useState<"manual" | "vision" | "multiple">("manual")
   const [datosExtraidos, setDatosExtraidos] = useState<DatosEtiqueta | null>(null)
+  const [matchResult, setMatchResult] = useState<ReactivoMatch | null>(null)
+  // Sub-form para crear un reactivo nuevo cuando el match dice "nuevo" (o el
+  // usuario decide que no es ninguno del catálogo). Unidad base prellenada de la
+  // foto pero editable; stock mínimo arranca en 0 (se ajusta después).
+  const [creandoReactivo, setCreandoReactivo] = useState(false)
+  const [nuevoNombre, setNuevoNombre] = useState("")
+  const [nuevoUnidad, setNuevoUnidad] = useState("")
+  const [nuevoCas, setNuevoCas] = useState("")
   const [cantidadEnvases, setCantidadEnvases] = useState("2")
   const [cantidadInicial, setCantidadInicial] = useState("")
   const [unidadIngreso, setUnidadIngreso] = useState("")
@@ -443,6 +457,13 @@ function NuevoLoteForm({
   })
   const visionMutation = useMutation({
     mutationFn: (file: File) => api.extraerEtiquetaLote(token, file),
+  })
+  const queryClient = useQueryClient()
+  const matchMutation = useMutation({
+    mutationFn: (data: ReactivoMatchRequest) => api.matchReactivo(token, data),
+  })
+  const crearReactivoMutation = useMutation({
+    mutationFn: (data: ReactivoCrear) => api.crearReactivo(token, data),
   })
 
   const reactivosFiltrados = soloPendientes ? reactivos.filter(esPendiente) : reactivos
@@ -470,6 +491,8 @@ function NuevoLoteForm({
     }
     setErrorLocal(null)
     setAltaMultipleResultado(null)
+    setMatchResult(null)
+    setCreandoReactivo(false)
     try {
       const datos = await visionMutation.mutateAsync(file)
       if (!datos.es_etiqueta_reactivo) {
@@ -492,9 +515,77 @@ function NuevoLoteForm({
       setCasNumero(datos.cas_numero ?? "")
       setCodigoProveedor(datos.codigo_proveedor ?? "")
       setProveedor(datos.fabricante ?? "")
+
+      // Wizard foto-primero: sugerir el reactivo del catálogo. Es asistencia: el
+      // usuario confirma/cambia abajo y nada se guarda hasta crear el lote.
+      try {
+        const sugerencia = await matchMutation.mutateAsync({
+          nombre_extraido: datos.nombre_compuesto,
+          cas_numero: datos.cas_numero,
+          unidad_envase: datos.unidad_envase,
+        })
+        setMatchResult(sugerencia)
+        if (sugerencia.decision === "match" && sugerencia.match) {
+          setSoloPendientes(false)
+          setReactivoId(sugerencia.match.reactivo_id)
+        }
+        // Prellenar los campos del reactivo nuevo (editables) para la rama "nuevo"
+        // o si el usuario decide que no es ninguno del catálogo.
+        const sug = sugerencia.sugerencia_nuevo
+        setNuevoNombre(sug?.nombre ?? datos.nombre_compuesto ?? "")
+        setNuevoUnidad(sug?.unidad_base ?? datos.unidad_envase ?? "")
+        setNuevoCas(sug?.cas_numero ?? datos.cas_numero ?? "")
+        setCreandoReactivo(sugerencia.decision === "nuevo")
+      } catch {
+        // Si el match falla (p. ej. OpenAI caído), no bloqueamos: el usuario
+        // elige el reactivo a mano en el desplegable de abajo.
+        setMatchResult(null)
+      }
     } catch (error) {
       setDatosExtraidos(null)
       setErrorLocal(mutationError(error, "No se pudieron extraer datos de la etiqueta"))
+    }
+  }
+
+  function elegirCandidato(c: ReactivoCandidato) {
+    setSoloPendientes(false)
+    setReactivoId(c.reactivo_id)
+    setCreandoReactivo(false)
+  }
+
+  // "No es este / ninguno del catálogo": el usuario resuelve a mano (desplegable).
+  function descartarSugerencia() {
+    setReactivoId(null)
+    setCreandoReactivo(false)
+  }
+
+  async function handleCrearReactivo() {
+    setErrorLocal(null)
+    const nombre = nuevoNombre.trim()
+    const unidad = nuevoUnidad.trim()
+    if (!nombre) {
+      setErrorLocal("El reactivo nuevo necesita un nombre.")
+      return
+    }
+    if (!unidad) {
+      setErrorLocal("El reactivo nuevo necesita una unidad base.")
+      return
+    }
+    try {
+      const creado = await crearReactivoMutation.mutateAsync({
+        nombre,
+        unidad,
+        stock_minimo: 0,
+        cas_numero: nullable(nuevoCas),
+      })
+      await queryClient.invalidateQueries({ queryKey: ["reactivos"] })
+      await queryClient.refetchQueries({ queryKey: ["reactivos"] })
+      setSoloPendientes(false)
+      setReactivoId(creado.id)
+      setCreandoReactivo(false)
+      setMatchResult(null)
+    } catch (error) {
+      setErrorLocal(mutationError(error, "No se pudo crear el reactivo"))
     }
   }
 
@@ -703,6 +794,102 @@ function NuevoLoteForm({
             {datosExtraidos?.notas ? (
               <p className="mt-2 text-sm text-cds-textSecondary">Notas detectadas: {datosExtraidos.notas}</p>
             ) : null}
+          </div>
+        ) : null}
+
+        {matchMutation.isPending ? (
+          <p className="mb-5 text-sm text-cds-textSecondary">Buscando el reactivo en el catálogo...</p>
+        ) : null}
+
+        {modoCarga === "vision" && matchResult ? (
+          <div className="mb-5">
+            {matchResult.decision === "match" && matchResult.match ? (
+              <div className="border-l-4 border-cds-supportSuccess bg-cds-background px-4 py-3">
+                <div className="flex flex-wrap items-center gap-2 text-sm tracking-[0.16px]">
+                  <Check size={18} className="text-cds-supportSuccess" aria-hidden="true" />
+                  <span>Coincide con un reactivo del catálogo</span>
+                  <span className={cn("inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium tracking-[0.16px]", CONFIANZA_PILL)}>
+                    confianza {matchResult.confianza}
+                  </span>
+                </div>
+                <p className="mt-2 text-sm">
+                  Detecté <strong>{datosExtraidos?.nombre_compuesto}</strong> → <strong>{matchResult.match.nombre}</strong>
+                  {matchResult.match.cas_numero ? <span className="text-cds-textSecondary"> · CAS {matchResult.match.cas_numero}</span> : null}
+                </p>
+                <p className="mt-1 text-xs leading-4 text-cds-textSecondary">{matchResult.razon}</p>
+                <p className="mt-2 text-xs text-cds-textSecondary">
+                  Quedó seleccionado abajo. Si no es correcto,{" "}
+                  <button type="button" onClick={descartarSugerencia} className="text-cds-linkPrimary underline">elegí otro</button>.
+                </p>
+              </div>
+            ) : null}
+
+            {matchResult.decision === "ambiguo" ? (
+              <div className="border-l-4 border-lab-warm bg-cds-background px-4 py-3">
+                <div className="flex flex-wrap items-center gap-2 text-sm tracking-[0.16px]">
+                  <span>No estoy seguro de cuál es. Elegí uno:</span>
+                  <span className={cn("inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium tracking-[0.16px]", CONFIANZA_PILL)}>
+                    confianza {matchResult.confianza}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs leading-4 text-cds-textSecondary">{matchResult.razon}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {matchResult.candidatos.map((candidato) => (
+                    <button
+                      key={candidato.reactivo_id}
+                      type="button"
+                      onClick={() => elegirCandidato(candidato)}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 border px-3 py-1.5 text-sm transition-colors",
+                        reactivoId === candidato.reactivo_id
+                          ? "border-cds-buttonPrimary bg-lab-blueTint text-cds-linkPrimary"
+                          : "border-cds-borderSubtle hover:bg-cds-layer01",
+                      )}
+                    >
+                      {reactivoId === candidato.reactivo_id ? <Check size={16} aria-hidden="true" /> : null}
+                      {candidato.nombre}
+                      {candidato.cas_numero ? <span className="text-cds-textSecondary"> · {candidato.cas_numero}</span> : null}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCreandoReactivo(true)}
+                  className="mt-3 inline-flex items-center gap-1.5 text-sm text-cds-linkPrimary"
+                >
+                  <Plus size={16} aria-hidden="true" /> Ninguno, crear reactivo nuevo
+                </button>
+              </div>
+            ) : null}
+
+            {matchResult.decision === "nuevo" ? (
+              <div className="border-l-4 border-cds-supportInfo bg-cds-background px-4 py-3 text-sm">
+                No encontré este reactivo en el catálogo. Cargá los datos abajo y crealo.
+                <p className="mt-1 text-xs leading-4 text-cds-textSecondary">{matchResult.razon}</p>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {modoCarga === "vision" && creandoReactivo ? (
+          <div className="mb-5 border-l-4 border-cds-supportInfo bg-cds-layer01 px-4 py-4">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-sm font-medium">Crear reactivo nuevo</span>
+              <button type="button" onClick={() => setCreandoReactivo(false)} className="text-cds-textSecondary hover:text-cds-textPrimary" aria-label="Cerrar">
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="Nombre *" name="nuevo_reactivo_nombre" value={nuevoNombre} onChange={(event) => setNuevoNombre(event.target.value)} required />
+              <Field label="Unidad base *" name="nuevo_reactivo_unidad" value={nuevoUnidad} onChange={(event) => setNuevoUnidad(event.target.value)} placeholder="Ej: g, ml, unidad" required />
+              <Field label="Número CAS" name="nuevo_reactivo_cas" value={nuevoCas} onChange={(event) => setNuevoCas(event.target.value)} placeholder="Ej: 64-17-5" />
+            </div>
+            <p className="mt-2 text-xs leading-4 text-cds-textSecondary">
+              La unidad base es permanente y rige el FIFO. El stock mínimo arranca en 0 (lo ajustás después).
+            </p>
+            <Button type="button" onClick={() => void handleCrearReactivo()} disabled={crearReactivoMutation.isPending} className="mt-3">
+              {crearReactivoMutation.isPending ? "Creando..." : "Crear y usar"}
+            </Button>
           </div>
         ) : null}
 

@@ -173,6 +173,50 @@ export type ReactivoCrear = {
   stock_minimo: number
   ubicacion?: string | null
   categoria?: string | null
+  cas_numero?: string | null
+}
+
+// --- Wizard foto-primero: matching de reactivo contra el catálogo ---
+export type ReactivoCandidato = {
+  reactivo_id: number
+  nombre: string
+  cas_numero: string | null
+}
+
+export type SugerenciaNuevo = {
+  nombre: string | null
+  cas_numero: string | null
+  unidad_base: string | null
+  dimension: string | null
+}
+
+export type ReactivoMatch = {
+  decision: "match" | "ambiguo" | "nuevo"
+  confianza: "alta" | "media" | "baja"
+  razon: string
+  match: ReactivoCandidato | null
+  candidatos: ReactivoCandidato[]
+  sugerencia_nuevo: SugerenciaNuevo | null
+  fuente: string
+}
+
+export type ReactivoMatchRequest = {
+  nombre_extraido?: string | null
+  cas_numero?: string | null
+  unidad_envase?: string | null
+}
+
+export type ReactivoFusionarResponse = {
+  sobreviviente_id: number
+  duplicado_id: number
+  lotes_movidos: number
+  mensaje: string
+}
+
+export type DuplicadosReactivo = {
+  candidatos: ReactivoCandidato[]
+  fuente: string
+  razon: string
 }
 
 export type ReactivoActualizar = {
@@ -858,6 +902,30 @@ export const api = {
       token,
       body: JSON.stringify(data),
     }),
+
+  // Wizard foto-primero: sugiere si el reactivo de la etiqueta ya existe en el
+  // catálogo (match), es dudoso (ambiguo) o es nuevo. Asistencia: el front
+  // siempre pide confirmación antes de guardar.
+  matchReactivo: async (token: string, data: ReactivoMatchRequest) =>
+    request<ReactivoMatch>("/reactivos/match", {
+      method: "POST",
+      token,
+      body: JSON.stringify(data),
+    }),
+
+  // Fusiona dos reactivos duplicados (mueve lotes al sobreviviente, da de baja
+  // al duplicado). Requiere permiso crear_reactivo.
+  fusionarReactivos: async (token: string, sobrevivienteId: number, duplicadoId: number) =>
+    request<ReactivoFusionarResponse>("/reactivos/fusionar", {
+      method: "POST",
+      token,
+      body: JSON.stringify({ sobreviviente_id: sobrevivienteId, duplicado_id: duplicadoId }),
+    }),
+
+  // Merge tool: posibles duplicados de un reactivo (mismo CAS o misma sustancia
+  // según el LLM, misma unidad). Requiere crear_reactivo.
+  duplicadosReactivo: async (token: string, id: number) =>
+    request<DuplicadosReactivo>(`/reactivos/${id}/duplicados`, { token }),
 
   actualizarReactivo: async (token: string, id: number, data: ReactivoActualizar) =>
     request<{ id: number; mensaje: string }>(`/reactivos/${id}`, {
