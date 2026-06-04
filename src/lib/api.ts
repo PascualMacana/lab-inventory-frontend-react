@@ -387,6 +387,15 @@ export type DecodificarQrResponse = {
   codigo_interno: string
 }
 
+export type PerfilEtiqueta = {
+  clave: string
+  nombre: string
+  ancho_mm: number
+  alto_mm: number
+  grilla: boolean
+  por_pagina: number
+}
+
 export type Proveedor = {
   id: number
   nombre: string
@@ -1012,12 +1021,20 @@ export const api = {
   qrLote: async (token: string, loteId: number) =>
     requestBlob(`/lotes/${loteId}/qr`, { token }),
 
-  etiquetasPdf: async (token: string, loteIds: number[], posicionInicio: number) =>
+  perfilesEtiquetas: async (token: string) =>
+    request<PerfilEtiqueta[]>("/lotes/etiquetas-perfiles", { token }),
+
+  etiquetasPdf: async (
+    token: string,
+    loteIds: number[],
+    posicionInicio: number,
+    formato = "avery_l7160",
+  ) =>
     requestBlob("/lotes/etiquetas-pdf", {
       method: "POST",
       token,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lote_ids: loteIds, posicion_inicio: posicionInicio }),
+      body: JSON.stringify({ lote_ids: loteIds, posicion_inicio: posicionInicio, formato }),
     }),
 
   extraerEtiquetaLote: async (token: string, file: File) => {

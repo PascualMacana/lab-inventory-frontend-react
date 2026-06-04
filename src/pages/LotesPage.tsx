@@ -1255,13 +1255,27 @@ function EtiquetasLotes({
   const [loteQrId, setLoteQrId] = useState(lotes[0]?.id ?? 0)
   const [seleccionPdf, setSeleccionPdf] = useState<number[]>(lotes.map((lote) => lote.id))
   const [posicionInicio, setPosicionInicio] = useState("1")
+  const [formato, setFormato] = useState("avery_l7160")
   const [errorLocal, setErrorLocal] = useState<string | null>(null)
   const qrMutation = useMutation({
     mutationFn: (lote: Lote) => api.qrLote(token, lote.id),
   })
-  const pdfMutation = useMutation({
-    mutationFn: ({ ids, posicion }: { ids: number[]; posicion: number }) => api.etiquetasPdf(token, ids, posicion),
+  const perfilesQuery = useQuery({
+    queryKey: ["etiquetas-perfiles"],
+    queryFn: () => api.perfilesEtiquetas(token),
+    enabled: Boolean(token),
   })
+  const pdfMutation = useMutation({
+    mutationFn: ({ ids, posicion, fmt }: { ids: number[]; posicion: number; fmt: string }) =>
+      api.etiquetasPdf(token, ids, posicion, fmt),
+  })
+
+  // Fallback a Avery hasta que cargue la lista (o si la query falla).
+  const perfiles = perfilesQuery.data?.length
+    ? perfilesQuery.data
+    : [{ clave: "avery_l7160", nombre: "Avery L7160 — A4, 21/hoja", ancho_mm: 63.5, alto_mm: 38.1, grilla: true, por_pagina: 21 }]
+  const perfilSel = perfiles.find((p) => p.clave === formato) ?? perfiles[0]
+  const esGrilla = perfilSel.grilla
 
   const loteQr = lotes.find((lote) => lote.id === loteQrId) ?? lotes[0]
 
@@ -1289,16 +1303,21 @@ function EtiquetasLotes({
   async function descargarPdf() {
     setErrorLocal(null)
     try {
-      const posicion = requireFiniteNumber(parseFormNumber(posicionInicio, 1), "Posición inicial inválida.")
-      if (posicion < 1 || posicion > 21 || !Number.isInteger(posicion)) {
-        throw new Error("La posición inicial debe ser un entero entre 1 y 21.")
+      // La posición inicial solo aplica a la grilla Avery; en rollo se ignora.
+      let posicion = 1
+      if (esGrilla) {
+        posicion = requireFiniteNumber(parseFormNumber(posicionInicio, 1), "Posición inicial inválida.")
+        const tope = perfilSel.por_pagina
+        if (posicion < 1 || posicion > tope || !Number.isInteger(posicion)) {
+          throw new Error(`La posición inicial debe ser un entero entre 1 y ${tope}.`)
+        }
       }
       if (!seleccionPdf.length) {
         throw new Error("Seleccioná al menos un lote.")
       }
-      const blob = await pdfMutation.mutateAsync({ ids: seleccionPdf, posicion })
+      const blob = await pdfMutation.mutateAsync({ ids: seleccionPdf, posicion, fmt: formato })
       const nombre = reactivoNombre.trim().replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "")
-      downloadBlob(blob, `etiquetas_${nombre || "reactivo"}.pdf`)
+      downloadBlob(blob, `etiquetas_${nombre || "reactivo"}_${formato}.pdf`)
     } catch (error) {
       setErrorLocal(mutationError(error, "No se pudo generar el PDF"))
     }
@@ -1344,8 +1363,25 @@ function EtiquetasLotes({
           <FileText size={20} aria-hidden="true" />
           <h2 className="text-[24px] leading-[1.33]">Imprimir etiquetas</h2>
         </div>
-        <p className="mb-4 text-sm tracking-[0.16px] text-cds-textSecondary">
-          PDF A4 Avery L7160, 21 etiquetas por hoja.
+        <label className="block">
+          <Label className="mb-2" htmlFor="formato_etiqueta">Tamaño / formato</Label>
+          <select
+            id="formato_etiqueta"
+            className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
+            value={formato}
+            onChange={(event) => setFormato(event.target.value)}
+          >
+            {perfiles.map((perfil) => (
+              <option key={perfil.clave} value={perfil.clave}>
+                {perfil.nombre}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="mb-4 mt-3 text-sm tracking-[0.16px] text-cds-textSecondary">
+          {esGrilla
+            ? `PDF A4, ${perfilSel.por_pagina} etiquetas por hoja.`
+            : `Rollo: una etiqueta por página (${perfilSel.ancho_mm}×${perfilSel.alto_mm} mm).`}
         </p>
         <div className="max-h-56 overflow-y-auto border-t border-cds-borderSubtle">
           {lotes.map((lote) => (
@@ -1360,15 +1396,17 @@ function EtiquetasLotes({
             </label>
           ))}
         </div>
-        <label className="mt-5 block max-w-48">
-          <Label className="mb-2" htmlFor="posicion_inicio">Empezar en posición</Label>
-          <Input
-            id="posicion_inicio"
-            value={posicionInicio}
-            onChange={(event) => setPosicionInicio(event.target.value)}
-            inputMode="numeric"
-          />
-        </label>
+        {esGrilla ? (
+          <label className="mt-5 block max-w-48">
+            <Label className="mb-2" htmlFor="posicion_inicio">Empezar en posición</Label>
+            <Input
+              id="posicion_inicio"
+              value={posicionInicio}
+              onChange={(event) => setPosicionInicio(event.target.value)}
+              inputMode="numeric"
+            />
+          </label>
+        ) : null}
         <Button className="mt-5" type="button" onClick={descargarPdf} disabled={pdfMutation.isPending || !seleccionPdf.length}>
           <Download size={18} aria-hidden="true" />
           {pdfMutation.isPending ? "Generando..." : "Descargar PDF"}
