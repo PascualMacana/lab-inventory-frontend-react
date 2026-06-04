@@ -6,6 +6,7 @@ import { BrowserRouter } from "react-router-dom"
 import { App } from "./App"
 import { AuthProvider } from "./lib/auth"
 import { ThemeProvider } from "./lib/theme"
+import "./lib/i18n"
 import "./styles.css"
 
 const queryClient = new QueryClient({

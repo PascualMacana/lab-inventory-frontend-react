@@ -7,7 +7,7 @@ export function PageHeader({
   plain = false,
 }: {
   title: string
-  description: string
+  description?: string
   count?: ReactNode
   plain?: boolean
 }) {
@@ -17,9 +17,11 @@ export function PageHeader({
         <h1 className="text-[44px] leading-[1.19] tracking-[-0.01em]">
           {plain ? title : <span className="lab-em">{title}</span>}
         </h1>
-        <p className="mt-2 text-sm leading-[1.29] tracking-[0.16px] text-cds-textSecondary">
-          {description}
-        </p>
+        {description ? (
+          <p className="mt-2 text-sm leading-[1.29] tracking-[0.16px] text-cds-textSecondary">
+            {description}
+          </p>
+        ) : null}
       </div>
       {count ? <div className="text-sm tracking-[0.16px] text-cds-textSecondary">{count}</div> : null}
     </div>

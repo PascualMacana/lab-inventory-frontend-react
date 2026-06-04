@@ -3,6 +3,7 @@ import type { ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { AlertTriangle, ArrowDownCircle, ArrowUpCircle, FileSignature, SlidersHorizontal } from "lucide-react"
 import { Link } from "react-router-dom"
+import { useTranslation } from "react-i18next"
 
 import { api, type DashboardSeriePunto } from "../lib/api"
 import { useAuth } from "../lib/auth"
@@ -157,19 +158,6 @@ function tipoMovimiento(value: unknown) {
   return value === "entrada" || value === "salida" || value === "ajuste" ? value : null
 }
 
-function tipoLabel(tipo: "entrada" | "salida" | "ajuste" | null) {
-  if (tipo === "entrada") {
-    return "Entrada"
-  }
-  if (tipo === "salida") {
-    return "Salida"
-  }
-  if (tipo === "ajuste") {
-    return "Ajuste"
-  }
-  return "-"
-}
-
 function tipoBadgeClasses(tipo: "entrada" | "salida" | "ajuste" | null) {
   if (tipo === "entrada") {
     return "bg-lab-sageBg text-cds-supportSuccess ring-1 ring-cds-supportSuccess/40"
@@ -199,6 +187,7 @@ function KpiTile({
   className: string
   children: ReactNode
 }) {
+  const { t } = useTranslation()
   const classes = cn(
     className,
     to && "block transition-colors hover:bg-[var(--cds-layer-hover-01)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-cds-focus",
@@ -206,7 +195,7 @@ function KpiTile({
 
   if (to) {
     return (
-      <Link to={to} className={classes} aria-label={`Abrir ${to === "/lotes" ? "lotes" : "reactivos"}`}>
+      <Link to={to} className={classes} aria-label={to === "/lotes" ? t("dashboard.abrirLotes") : t("dashboard.abrirReactivos")}>
         {children}
       </Link>
     )
@@ -217,6 +206,7 @@ function KpiTile({
 
 export function DashboardPage() {
   const { token, usuario } = useAuth()
+  const { t } = useTranslation()
   const dashboardQuery = useQuery({
     queryKey: ["dashboard"],
     queryFn: () => api.dashboard(token!),
@@ -244,39 +234,43 @@ export function DashboardPage() {
     () =>
       [
         {
-          label: "Reactivos activos",
+          id: "reactivos",
+          label: t("dashboard.kpiReactivos"),
           to: "/reactivos",
           value: contadores.total_reactivos,
           spark: serieNumerica(series, "total_reactivos", contadores.total_reactivos),
           sparkColor: palette.blue,
-          status: "Total actual",
+          status: t("dashboard.statusTotal"),
         },
         {
-          label: "Lotes activos",
+          id: "lotes",
+          label: t("dashboard.kpiLotes"),
           to: "/lotes",
           value: contadores.lotes_activos,
           spark: serieNumerica(series, "lotes_activos", contadores.lotes_activos),
           sparkColor: palette.blue,
-          status: "Frascos con stock",
+          status: t("dashboard.statusFrascos"),
         },
         {
-          label: "Stock bajo",
+          id: "stockBajo",
+          label: t("dashboard.kpiStockBajo"),
           value: contadores.alertas_stock_bajo,
           tone: "crit" as const,
           spark: serieNumerica(series, "stock_bajo", contadores.alertas_stock_bajo),
           sparkColor: palette.crit,
-          status: "Bajo mínimo",
+          status: t("dashboard.statusBajoMin"),
         },
         {
-          label: "Próximos a vencer",
+          id: "porVencer",
+          label: t("dashboard.kpiPorVencer"),
           value: proximosAVencer,
           tone: "alert" as const,
           spark: serieNumerica(series, "por_vencer_30d", proximosAVencer),
           sparkColor: palette.warm,
-          status: numberFrom(proximosAVencer) === 0 ? "Sin vencimientos 30d" : "Vencen en 30d",
+          status: numberFrom(proximosAVencer) === 0 ? t("dashboard.statusSinVenc") : t("dashboard.statusVencen"),
         },
       ].map((kpi) => ({ ...kpi, delta: deltaSerie(kpi.spark) })),
-    [contadores.alertas_stock_bajo, contadores.lotes_activos, contadores.total_reactivos, proximosAVencer, series],
+    [contadores.alertas_stock_bajo, contadores.lotes_activos, contadores.total_reactivos, proximosAVencer, series, t],
   )
 
   const recentMovs = useMemo(() => movimientos.slice(0, 6), [movimientos])
@@ -285,29 +279,40 @@ export function DashboardPage() {
     stockBajo.forEach((row) => {
       out.push({
         level: "crit",
-        badge: "STOCK",
-        message: `${row.nombre ?? row.reactivo_nombre ?? "Reactivo"} · stock ${formatValue(row.stock_total)}/${formatValue(row.stock_minimo)} ${row.unidad ?? ""}`,
-        when: `faltan ${formatValue(row.faltante)}`,
+        badge: t("dashboard.badgeStock"),
+        message: t("dashboard.alertStock", {
+          nombre: row.nombre ?? row.reactivo_nombre ?? t("dashboard.reactivoFallback"),
+          stock: formatValue(row.stock_total),
+          min: formatValue(row.stock_minimo),
+          unidad: row.unidad ?? "",
+        }),
+        when: t("dashboard.alertFaltan", { faltante: formatValue(row.faltante) }),
       })
     })
     vencidos.forEach((row) => {
       out.push({
         level: "crit",
-        badge: "VENC",
-        message: `${row.reactivo_nombre ?? row.nombre ?? "Reactivo"} · vencido hace ${formatValue(row.dias_vencido)} días`,
-        when: String(row.fecha_vencimiento ?? "vencido"),
+        badge: t("dashboard.badgeVenc"),
+        message: t("dashboard.alertVencido", {
+          nombre: row.reactivo_nombre ?? row.nombre ?? t("dashboard.reactivoFallback"),
+          dias: formatValue(row.dias_vencido),
+        }),
+        when: String(row.fecha_vencimiento ?? t("dashboard.vencido")),
       })
     })
     porVencer30.forEach((row) => {
       out.push({
         level: "warn",
-        badge: "EXP",
-        message: `${row.reactivo_nombre ?? row.nombre ?? "Reactivo"} · vence en ${formatValue(row.dias_restantes)} días`,
-        when: `${formatValue(row.dias_restantes)}d`,
+        badge: t("dashboard.badgeExp"),
+        message: t("dashboard.alertVence", {
+          nombre: row.reactivo_nombre ?? row.nombre ?? t("dashboard.reactivoFallback"),
+          dias: formatValue(row.dias_restantes),
+        }),
+        when: t("dashboard.diasCorto", { dias: formatValue(row.dias_restantes) }),
       })
     })
     return out
-  }, [porVencer30, stockBajo, vencidos])
+  }, [porVencer30, stockBajo, vencidos, t])
 
   const today = new Intl.DateTimeFormat("es-AR", { day: "2-digit", month: "short", year: "2-digit" }).format(new Date())
 
@@ -320,18 +325,18 @@ export function DashboardPage() {
             <span className="h-px w-6 bg-cds-textSecondary opacity-60" />
             <span className="text-cds-buttonPrimary">01</span>
             <span>—</span>
-            <span>Dashboard</span>
+            <span>{t("dashboard.section")}</span>
           </div>
           <h1 className="text-[44px] font-light leading-[1.05] tracking-[-0.015em] md:text-[56px]">
-            Inventario,<br />
-            <span className="lab-em">en vivo.</span>
+            {t("dashboard.heroLine1")}<br />
+            <span className="lab-em">{t("dashboard.heroLine2")}</span>
           </h1>
         </div>
         <div className="flex flex-col gap-3 md:items-end">
           {puedeVerValor ? (
             <article className="min-w-[260px] border border-cds-borderSubtle bg-cds-background p-4">
               <div className="flex items-center justify-between font-mono text-xs uppercase tracking-[0.32px] text-cds-textSecondary">
-                Valor inventario
+                {t("dashboard.valorInventario")}
                 <FileSignature size={16} aria-hidden="true" />
               </div>
               <div className="mt-3 font-mono text-[32px] font-normal leading-none">
@@ -340,14 +345,14 @@ export function DashboardPage() {
             </article>
           ) : null}
           <p className="max-w-md text-sm leading-[1.55] text-cds-textSecondary md:text-right">
-            Stock activo, vencimientos próximos y últimos movimientos firmados — actualizado con cada acción del laboratorio.
+            {t("dashboard.heroDesc")}
           </p>
         </div>
       </header>
 
       {dashboardQuery.isError ? (
         <div className="mb-6 border-l-2 border-cds-supportError bg-lab-critTint px-4 py-3 text-sm">
-          No se pudo cargar el dashboard.
+          {t("dashboard.loadError")}
         </div>
       ) : null}
 
@@ -356,11 +361,11 @@ export function DashboardPage() {
         {/* head */}
         <div className="flex items-center justify-between border-b border-cds-layer02 pb-3">
           <div className="font-mono text-xs uppercase tracking-[0.32px] text-cds-textSecondary">
-            Inventario / <span className="font-medium text-cds-textPrimary">Dashboard</span>
+            {t("dashboard.crumbInventario")} / <span className="font-medium text-cds-textPrimary">{t("dashboard.section")}</span>
           </div>
           <div className="flex items-center gap-3 font-mono text-xs uppercase tracking-[0.32px] text-cds-textSecondary">
-            <span>Hoy · {today}</span>
-            <span className="border border-cds-layer02 bg-cds-background px-2 py-1">Sector: todos</span>
+            <span>{t("dashboard.hoy")} · {today}</span>
+            <span className="border border-cds-layer02 bg-cds-background px-2 py-1">{t("dashboard.sectorTodos")}</span>
           </div>
         </div>
 
@@ -368,7 +373,7 @@ export function DashboardPage() {
         <div className="grid grid-cols-2 gap-px bg-cds-layer02 xl:grid-cols-4">
           {kpis.map((k) => (
             <KpiTile
-              key={k.label}
+              key={k.id}
               to={k.to}
               className={
                 k.tone === "alert"
@@ -411,20 +416,20 @@ export function DashboardPage() {
           {/* Movements */}
           <section className="flex min-h-[260px] flex-col bg-cds-background p-4">
             <header className="mb-3 flex items-center justify-between font-mono text-[11px] uppercase tracking-[0.32px] text-cds-textSecondary">
-              Últimos movimientos
+              {t("dashboard.ultimosMovimientos")}
               <a href="/movimientos" className="text-cds-linkPrimary hover:underline" style={{ textTransform: "none", letterSpacing: "0.16px" }}>
-                ver historial →
+                {t("dashboard.verHistorial")}
               </a>
             </header>
             {recentMovs.length ? (
               <table className="w-full border-collapse font-mono text-xs">
                 <thead>
                   <tr className="border-b border-cds-layer01 text-[10px] uppercase tracking-[0.32px] text-cds-textSecondary">
-                    <th className="py-2 text-left font-normal">Fecha</th>
-                    <th className="py-2 text-left font-normal">Tipo</th>
-                    <th className="py-2 text-left font-normal">Lote</th>
-                    <th className="py-2 text-left font-normal">Cant.</th>
-                    <th className="py-2 text-left font-normal">Usuario</th>
+                    <th className="py-2 text-left font-normal">{t("dashboard.thFecha")}</th>
+                    <th className="py-2 text-left font-normal">{t("dashboard.thTipo")}</th>
+                    <th className="py-2 text-left font-normal">{t("dashboard.thLote")}</th>
+                    <th className="py-2 text-left font-normal">{t("dashboard.thCant")}</th>
+                    <th className="py-2 text-left font-normal">{t("dashboard.thUsuario")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -441,7 +446,7 @@ export function DashboardPage() {
                             )}
                           >
                             <TipoIcon tipo={tipo} />
-                            {tipoLabel(tipo)}
+                            {tipo ? t(`mov.${tipo}`) : "—"}
                           </span>
                         </td>
                         <td className="py-2" style={{ color: palette.blue }}>{String(m.codigo_interno ?? m.lote ?? "—")}</td>
@@ -453,14 +458,14 @@ export function DashboardPage() {
                 </tbody>
               </table>
             ) : (
-              <EmptyChart text="Sin movimientos recientes." />
+              <EmptyChart text={t("dashboard.sinMovimientos")} />
             )}
           </section>
 
           {/* Alerts */}
           <section className="flex min-h-[260px] flex-col bg-cds-background p-4">
             <header className="mb-3 flex items-center justify-between font-mono text-[11px] uppercase tracking-[0.32px] text-cds-textSecondary">
-              Alertas
+              {t("dashboard.alertas")}
               <a href="/auditoria" className="text-cds-linkPrimary hover:underline" style={{ textTransform: "none", letterSpacing: "0.16px" }}>→</a>
             </header>
             {dashboardAlerts.length ? (
@@ -489,7 +494,7 @@ export function DashboardPage() {
                 ))}
               </div>
             ) : (
-              <EmptyChart text="Sin alertas activas." />
+              <EmptyChart text={t("dashboard.sinAlertas")} />
             )}
           </section>
         </div>
@@ -498,9 +503,9 @@ export function DashboardPage() {
         <div className="flex items-center justify-between border-t border-cds-layer02 pt-3 font-mono text-[11px] uppercase tracking-[0.32px] text-cds-textSecondary">
           <span>
             <span className="inline-block h-2 w-2 rounded-full align-middle" style={{ background: palette.sage }} />{" "}
-            sincronizado · hace 4 seg
+            {t("dashboard.sincronizado")}
           </span>
-          <span>{usuario?.email ?? "lab"} · {stockBajo.length + vencidos.length + porVencer30.length} alertas vigentes</span>
+          <span>{usuario?.email ?? "lab"} · {t("dashboard.footAlertas", { n: stockBajo.length + vencidos.length + porVencer30.length })}</span>
         </div>
       </div>
     </section>

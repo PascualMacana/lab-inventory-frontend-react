@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react"
-import { Navigate, Route, Routes } from "react-router-dom"
+import { Navigate, Route, Routes, useLocation } from "react-router-dom"
 
 import { AppShell } from "./components/AppShell"
 import { LandingShell } from "./components/LandingShell"
@@ -13,6 +13,7 @@ import { AuditoriaPage } from "./pages/AuditoriaPage"
 import { ConsumoPage } from "./pages/ConsumoPage"
 import { DashboardPage } from "./pages/DashboardPage"
 import { EquipamientoPage } from "./pages/EquipamientoPage"
+import { IngresarFrascoPage } from "./pages/IngresarFrascoPage"
 import { LotesPage } from "./pages/LotesPage"
 import { MesadaPage } from "./pages/MesadaPage"
 import { MovimientosPage } from "./pages/MovimientosPage"
@@ -20,6 +21,7 @@ import { OwnerPage } from "./pages/OwnerPage"
 import { ProtocolosPage } from "./pages/ProtocolosPage"
 import { ProveedoresPage } from "./pages/ProveedoresPage"
 import { ReactivosPage } from "./pages/ReactivosPage"
+import { ReactivosSection } from "./pages/ReactivosSection"
 import { UsuariosPage } from "./pages/UsuariosPage"
 import { TareasPage } from "./pages/TareasPage"
 
@@ -28,8 +30,6 @@ const GraphsPage = lazy(() => import("./Graphs/GraphsPage").then((module) => ({ 
 const protectedRoutes = [
   { path: "owner", action: "ver_pagina_owner", element: <OwnerPage /> },
   { index: true, action: "ver_pagina_dashboard", element: <DashboardPage /> },
-  { path: "reactivos", action: "ver_pagina_reactivos", element: <ReactivosPage /> },
-  { path: "lotes", action: "ver_pagina_lotes", element: <LotesPage /> },
   { path: "consumo", action: "ver_pagina_consumo", element: <ConsumoPage /> },
   { path: "mesada", action: "ver_pagina_mesada", element: <MesadaPage /> },
   { path: "protocolos", action: "ver_pagina_protocolos", element: <ProtocolosPage /> },
@@ -50,6 +50,13 @@ const protectedRoutes = [
     ),
   },
 ]
+
+// Las viejas URLs /lotes (con ?codigo= del buscador global) ahora viven dentro
+// de la sección Reactivos. Redirigimos preservando el query string.
+function LotesRedirect() {
+  const location = useLocation()
+  return <Navigate to={`/reactivos/lotes${location.search}`} replace />
+}
 
 export function App() {
   const { token, usuario, isBootstrapping, mustChangePassword } = useAuth()
@@ -75,12 +82,36 @@ export function App() {
     return <ChangePasswordPage />
   }
 
-  const fallbackPath = protectedRoutes.find((route) => puede(usuario, route.action) && route.path)?.path ?? ""
+  const fallbackPath = puede(usuario, "ver_pagina_reactivos")
+    ? "reactivos"
+    : puede(usuario, "ver_pagina_lotes")
+      ? "reactivos/lotes"
+      : protectedRoutes.find((route) => puede(usuario, route.action) && route.path)?.path ?? ""
   const fallbackElement = <Navigate to={`/${fallbackPath}`} replace />
 
   return (
     <Routes>
       <Route element={<AppShell />}>
+        <Route
+          path="reactivos"
+          element={
+            puede(usuario, "ver_pagina_reactivos") || puede(usuario, "ver_pagina_lotes") ? (
+              <ReactivosSection />
+            ) : (
+              fallbackElement
+            )
+          }
+        >
+          <Route
+            index
+            element={puede(usuario, "ver_pagina_reactivos") ? <ReactivosPage /> : <Navigate to="lotes" replace />}
+          />
+          <Route path="lotes" element={puede(usuario, "ver_pagina_lotes") ? <LotesPage /> : fallbackElement} />
+          <Route path="ingresar" element={puede(usuario, "crear_lote") ? <IngresarFrascoPage /> : fallbackElement} />
+        </Route>
+
+        <Route path="lotes" element={<LotesRedirect />} />
+
         {protectedRoutes.map((route) => {
           const element = puede(usuario, route.action) ? route.element : fallbackElement
           if (route.index) {

@@ -1,5 +1,6 @@
 import { MoreHorizontal } from "lucide-react"
 import { type ReactNode } from "react"
+import { useTranslation } from "react-i18next"
 
 import { cn } from "../lib/utils"
 import { Button, type ButtonProps } from "./ui/button"
@@ -29,6 +30,7 @@ export function ModuleNav<T extends string>({
   actions?: ModuleAction[]
   more?: ModuleAction[]
 }) {
+  const { t } = useTranslation()
   const hasViews = Boolean(views?.length)
 
   if (!hasViews && !actions.length && !more.length) {
@@ -40,7 +42,7 @@ export function ModuleNav<T extends string>({
       <div>
         {hasViews && value && onChange ? (
           <>
-            <div className="hidden gap-px md:flex" role="tablist" aria-label="Vistas del módulo">
+            <div className="hidden gap-px md:flex" role="tablist" aria-label={t("moduleNav.vistasModulo")}>
               {views!.map((view) => (
                 <button
                   key={view.value}
@@ -58,7 +60,7 @@ export function ModuleNav<T extends string>({
               ))}
             </div>
             <label className="block md:hidden">
-              <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">Vista</span>
+              <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">{t("moduleNav.vista")}</span>
               <select
                 className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
                 value={value}
@@ -87,7 +89,7 @@ export function ModuleNav<T extends string>({
           <details className="relative">
             <summary className="flex h-10 cursor-pointer list-none items-center gap-2 border border-cds-borderStrong bg-cds-layer02 px-3 text-sm tracking-[0.16px] text-cds-textPrimary transition-colors hover:bg-cds-borderSubtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-cds-focus">
               <MoreHorizontal size={18} aria-hidden="true" />
-              Más
+              {t("moduleNav.mas")}
             </summary>
             <div className="absolute right-0 z-20 mt-1 min-w-48 border border-cds-borderSubtle bg-cds-layer01 py-1 shadow-lg">
               {more.map((action) => (

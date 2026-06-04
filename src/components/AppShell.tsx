@@ -10,11 +10,11 @@ import {
   FlaskConical,
   Gauge,
   History,
+  Languages,
   LogOut,
   Menu,
   Microscope,
   Moon,
-  Package,
   PanelLeftClose,
   PanelLeftOpen,
   ScanLine,
@@ -26,9 +26,11 @@ import {
   X,
 } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
+import { useTranslation } from "react-i18next"
 
 import { api } from "../lib/api"
 import { useAuth } from "../lib/auth"
+import { setLang, type Lang } from "../lib/i18n"
 import { puede } from "../lib/permissions"
 import { useTheme } from "../lib/theme"
 import { Button } from "./ui/button"
@@ -36,36 +38,33 @@ import { StatusDot } from "./ui/status-dot"
 import { cn } from "../lib/utils"
 
 const navItems = [
-  { to: "/owner", label: "Owner", icon: Building2, action: "ver_pagina_owner" },
-  { to: "/", label: "Dashboard", icon: Gauge, action: "ver_pagina_dashboard" },
-  { to: "/reactivos", label: "Reactivos", icon: FlaskConical, action: "ver_pagina_reactivos" },
-  { to: "/lotes", label: "Lotes", icon: Package, action: "ver_pagina_lotes" },
-  { to: "/consumo", label: "Consumo", icon: ScanLine, action: "ver_pagina_consumo", desktopOnly: true },
-  { to: "/mesada", label: "Mesada", icon: FlaskRound, action: "ver_pagina_mesada", mobileOnly: true },
-  { to: "/protocolos", label: "Protocolos", icon: ScrollText, action: "ver_pagina_protocolos" },
-  { to: "/tareas", label: "Tareas", icon: ClipboardCheck, action: "ver_pagina_tareas" },
-  { to: "/movimientos", label: "Movimientos", icon: History, action: "ver_pagina_movimientos" },
-  { to: "/proveedores", label: "Proveedores", icon: Truck, action: "ver_pagina_proveedores" },
-  { to: "/equipamiento", label: "Equipamiento", icon: Microscope, action: "ver_pagina_equipamiento" },
-  { to: "/usuarios", label: "Usuarios", icon: Users, action: "ver_pagina_usuarios" },
-  { to: "/asistente", label: "Asistente", icon: Bot, action: "ver_pagina_asistente" },
-  { to: "/auditoria", label: "Auditoría", icon: BarChart3, action: "ver_pagina_auditoria" },
-  { to: "/graphs", label: "Analítica", icon: ChartNoAxesCombined, action: "ver_pagina_analitica" },
+  { to: "/owner", labelKey: "nav.owner", icon: Building2, action: "ver_pagina_owner" },
+  { to: "/", labelKey: "nav.dashboard", icon: Gauge, action: "ver_pagina_dashboard" },
+  { to: "/reactivos", labelKey: "nav.reactivos", icon: FlaskConical, action: "ver_pagina_reactivos" },
+  { to: "/consumo", labelKey: "nav.consumo", icon: ScanLine, action: "ver_pagina_consumo", desktopOnly: true },
+  { to: "/mesada", labelKey: "nav.mesada", icon: FlaskRound, action: "ver_pagina_mesada", mobileOnly: true },
+  { to: "/protocolos", labelKey: "nav.protocolos", icon: ScrollText, action: "ver_pagina_protocolos" },
+  { to: "/tareas", labelKey: "nav.tareas", icon: ClipboardCheck, action: "ver_pagina_tareas" },
+  { to: "/movimientos", labelKey: "nav.movimientos", icon: History, action: "ver_pagina_movimientos" },
+  { to: "/proveedores", labelKey: "nav.proveedores", icon: Truck, action: "ver_pagina_proveedores" },
+  { to: "/equipamiento", labelKey: "nav.equipamiento", icon: Microscope, action: "ver_pagina_equipamiento" },
+  { to: "/usuarios", labelKey: "nav.usuarios", icon: Users, action: "ver_pagina_usuarios" },
+  { to: "/asistente", labelKey: "nav.asistente", icon: Bot, action: "ver_pagina_asistente" },
+  { to: "/auditoria", labelKey: "nav.auditoria", icon: BarChart3, action: "ver_pagina_auditoria" },
+  { to: "/graphs", labelKey: "nav.analitica", icon: ChartNoAxesCombined, action: "ver_pagina_analitica" },
 ]
 
-const rolEtiqueta = {
-  admin: "Administrador",
-  jefe: "Jefe de laboratorio",
-  cientifico: "Científico",
-}
+const langs: Lang[] = ["es", "en"]
 
 export function AppShell() {
   const { usuario, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
+  const { t, i18n } = useTranslation()
   const location = useLocation()
   const navigate = useNavigate()
   const isDark = theme === "dark"
-  const themeLabel = isDark ? "Modo claro" : "Modo oscuro"
+  const lang = (i18n.resolvedLanguage ?? i18n.language ?? "es").slice(0, 2)
+  const themeLabel = t(isDark ? "account.lightMode" : "account.darkMode")
   const ThemeIcon = isDark ? Sun : Moon
   const [menuAbierto, setMenuAbierto] = useState(false)
   const [sidebarColapsado, setSidebarColapsado] = useState(false)
@@ -121,22 +120,22 @@ export function AppShell() {
             variant="ghost"
             size="icon"
             className="mx-auto h-9 w-9 text-[var(--lab-sidebar-text)] hover:bg-[var(--lab-sidebar-hover)] hover:text-white"
-            aria-label={sidebarColapsado ? "Mostrar barra de módulos" : "Ocultar barra de módulos"}
-            title={sidebarColapsado ? "Mostrar barra de módulos" : "Ocultar barra de módulos"}
+            aria-label={t(sidebarColapsado ? "shell.showModules" : "shell.hideModules")}
+            title={t(sidebarColapsado ? "shell.showModules" : "shell.hideModules")}
             onClick={toggleSidebar}
           >
             {sidebarColapsado ? <PanelLeftOpen size={18} aria-hidden="true" /> : <PanelLeftClose size={18} aria-hidden="true" />}
           </Button>
-          <span className="overflow-hidden whitespace-nowrap pr-3">Lab Inventory</span>
+          <span className="overflow-hidden whitespace-nowrap pr-3">{t("shell.appName")}</span>
         </div>
 
         {mostrarApi ? (
           <div
             className="grid h-10 grid-cols-[4rem_1fr] items-center border-b border-[#393939] text-xs tracking-[0.32px] text-[var(--lab-sidebar-text)]"
-            title={online ? "API conectada" : "API caída"}
+            title={online ? t("shell.apiConnected") : t("shell.apiDown")}
           >
             <span className="mx-auto"><StatusDot online={online} /></span>
-            <span className="overflow-hidden whitespace-nowrap">{online ? "API conectada" : "API caída"}</span>
+            <span className="overflow-hidden whitespace-nowrap">{online ? t("shell.apiConnected") : t("shell.apiDown")}</span>
           </div>
         ) : null}
 
@@ -148,7 +147,7 @@ export function AppShell() {
                 key={item.to}
                 to={item.to}
                 end={item.to === "/"}
-                title={sidebarColapsado ? item.label : undefined}
+                title={sidebarColapsado ? t(item.labelKey) : undefined}
                 onClick={() => handleModuleOpen(item.to)}
                 className={({ isActive }) =>
                   cn(
@@ -158,7 +157,7 @@ export function AppShell() {
                 }
               >
                 <Icon className="mx-auto shrink-0" size={18} aria-hidden="true" />
-                <span className="overflow-hidden whitespace-nowrap pr-3">{item.label}</span>
+                <span className="overflow-hidden whitespace-nowrap pr-3">{t(item.labelKey)}</span>
               </NavLink>
             )
           })}
@@ -173,10 +172,29 @@ export function AppShell() {
               )}>
                 {!sidebarColapsado ? (
                   <div className="border-b border-[#393939] px-3 py-3">
-                    <div className="truncate text-xs tracking-[0.32px] text-[var(--lab-sidebar-text)]">Cuenta</div>
+                    <div className="truncate text-xs tracking-[0.32px] text-[var(--lab-sidebar-text)]">{t("account.title")}</div>
                     <div className="mt-1 truncate text-sm tracking-[0.16px] text-white">{usuario?.email}</div>
                   </div>
                 ) : null}
+                <div className="flex items-center gap-2 border-b border-[#393939] px-3 py-2 text-[var(--lab-sidebar-text)]">
+                  <Languages size={18} aria-hidden="true" />
+                  <span className="text-sm tracking-[0.16px]">{t("account.language")}</span>
+                  <div className="ml-auto flex">
+                    {langs.map((code) => (
+                      <button
+                        key={code}
+                        type="button"
+                        onClick={() => setLang(code)}
+                        className={cn(
+                          "px-2 py-1 text-xs uppercase tracking-[0.16px] transition-colors",
+                          lang === code ? "text-white" : "hover:text-white",
+                        )}
+                      >
+                        {code}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <button
                   type="button"
                   className="flex h-10 w-full items-center gap-2 px-3 text-left text-sm tracking-[0.16px] text-[var(--lab-sidebar-text)] hover:bg-[var(--lab-sidebar-hover)] hover:text-white"
@@ -192,7 +210,7 @@ export function AppShell() {
                   onClick={handleLogout}
                 >
                   <LogOut size={18} aria-hidden="true" />
-                  Cerrar sesión
+                  {t("account.logout")}
                 </button>
               </div>
             ) : null}
@@ -204,16 +222,16 @@ export function AppShell() {
                 "grid h-12 w-full grid-cols-[3rem_1fr] justify-start px-0 text-[var(--lab-sidebar-text)] hover:bg-[var(--lab-sidebar-hover)] hover:text-white",
                 accountMenuOpen && "bg-[var(--lab-sidebar-hover)] text-white",
               )}
-              aria-label="Abrir menú de cuenta"
+              aria-label={t("account.openMenu")}
               aria-expanded={accountMenuOpen}
-              title={sidebarColapsado ? "Cuenta" : undefined}
+              title={sidebarColapsado ? t("account.title") : undefined}
               onClick={() => setAccountMenuOpen((open) => !open)}
             >
               <UserCircle className="mx-auto" size={20} aria-hidden="true" />
               <span className="min-w-0 overflow-hidden text-left">
                 <span className="block truncate text-sm text-white">{usuario?.nombre}</span>
                 <span className="block truncate text-xs tracking-[0.32px] text-[var(--lab-sidebar-text)]">
-                  {usuario ? rolEtiqueta[usuario.rol] : ""}
+                  {usuario ? t(`roles.${usuario.rol}`) : ""}
                 </span>
               </span>
             </Button>
@@ -230,13 +248,13 @@ export function AppShell() {
               variant="ghost"
               size="icon"
               className="h-10 w-10"
-              aria-label={menuAbierto ? "Cerrar menú" : "Abrir menú"}
+              aria-label={t(menuAbierto ? "shell.closeMenu" : "shell.openMenu")}
               aria-expanded={menuAbierto}
               onClick={() => setMenuAbierto((abierto) => !abierto)}
             >
               {menuAbierto ? <X size={20} aria-hidden="true" /> : <Menu size={20} aria-hidden="true" />}
             </Button>
-            <div className="text-sm font-semibold tracking-[0.16px]">Lab Inventory</div>
+            <div className="text-sm font-semibold tracking-[0.16px]">{t("shell.appName")}</div>
           </div>
           {mostrarApi ? (
             <div className="flex items-center gap-2 text-xs tracking-[0.32px]">
@@ -251,14 +269,14 @@ export function AppShell() {
             <button
               type="button"
               className="absolute inset-0 bg-black/40"
-              aria-label="Cerrar menú"
+              aria-label={t("shell.closeMenu")}
               onClick={() => setMenuAbierto(false)}
             />
             <aside className="relative flex h-full w-[min(20rem,85vw)] flex-col bg-[var(--lab-sidebar-bg)] text-[var(--lab-sidebar-text)] shadow-xl">
               <div className="border-b border-[#393939] px-4 py-4">
                 <div className="text-sm font-semibold tracking-[0.16px] text-white">{usuario?.nombre}</div>
                 <div className="mt-1 text-xs tracking-[0.32px]">
-                  {usuario ? rolEtiqueta[usuario.rol] : ""}{usuario?.sector ? ` · ${usuario.sector}` : ""}
+                  {usuario ? t(`roles.${usuario.rol}`) : ""}{usuario?.sector ? ` · ${usuario.sector}` : ""}
                 </div>
               </div>
 
@@ -279,11 +297,31 @@ export function AppShell() {
                       }
                     >
                       <Icon size={18} aria-hidden="true" />
-                      {item.label}
+                      {t(item.labelKey)}
                     </NavLink>
                   )
                 })}
               </nav>
+
+              <div className="flex items-center gap-3 border-t border-[#393939] px-4 py-3 text-sm tracking-[0.16px] text-[var(--lab-sidebar-text)]">
+                <Languages size={18} aria-hidden="true" />
+                <span>{t("account.language")}</span>
+                <div className="ml-auto flex">
+                  {langs.map((code) => (
+                    <button
+                      key={code}
+                      type="button"
+                      onClick={() => setLang(code)}
+                      className={cn(
+                        "px-3 py-1 text-xs uppercase tracking-[0.16px] transition-colors",
+                        lang === code ? "text-white" : "hover:text-white",
+                      )}
+                    >
+                      {code}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               <div className="border-t border-[#393939]">
                 <button
@@ -299,14 +337,14 @@ export function AppShell() {
 
               <div className="flex items-center justify-between gap-2 border-t border-[#393939] p-3">
                 {mostrarApi ? (
-                  <div className="flex items-center gap-2 px-1 text-xs tracking-[0.32px] text-[var(--lab-sidebar-text)]" title={online ? "API conectada" : "API caída"}>
+                  <div className="flex items-center gap-2 px-1 text-xs tracking-[0.32px] text-[var(--lab-sidebar-text)]" title={online ? t("shell.apiConnected") : t("shell.apiDown")}>
                     <StatusDot online={online} />
-                    {online ? "API conectada" : "API caída"}
+                    {online ? t("shell.apiConnected") : t("shell.apiDown")}
                   </div>
                 ) : <div />}
-                <Button type="button" variant="ghost" className="h-10 justify-start text-[var(--lab-sidebar-text)]" aria-label="Cerrar sesión" title="Cerrar sesión" onClick={handleLogout}>
+                <Button type="button" variant="ghost" className="h-10 justify-start text-[var(--lab-sidebar-text)]" aria-label={t("account.logout")} title={t("account.logout")} onClick={handleLogout}>
                   <UserCircle size={18} aria-hidden="true" />
-                  Cerrar sesión
+                  {t("account.logout")}
                 </Button>
               </div>
             </aside>

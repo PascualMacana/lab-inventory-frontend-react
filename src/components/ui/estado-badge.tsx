@@ -1,7 +1,10 @@
+import { useTranslation } from "react-i18next"
+
 import { cn } from "../../lib/utils"
 
 export function EstadoBadge({ activo, labels }: { activo: boolean; labels?: { on: string; off: string } }) {
-  const { on, off } = labels ?? { on: "Activo", off: "Inactivo" }
+  const { t } = useTranslation()
+  const { on, off } = labels ?? { on: t("estado.activo"), off: t("estado.inactivo") }
   return (
     <span
       className={cn(

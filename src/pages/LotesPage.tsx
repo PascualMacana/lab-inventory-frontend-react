@@ -1,9 +1,8 @@
-import { FormEvent, useEffect, useMemo, useState } from "react"
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, CalendarClock, Camera, Check, Download, FileText, Package, PackagePlus, Plus, QrCode, Save, Search, X } from "lucide-react"
+import { CalendarClock, Camera, Check, Download, FileText, Package, PackagePlus, Plus, QrCode, Save, Search, X } from "lucide-react"
 import { useSearchParams } from "react-router-dom"
 
-import { ModuleNav } from "../components/ModuleNav"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
 import { Label } from "../components/ui/label"
@@ -12,8 +11,6 @@ import { useAuth } from "../lib/auth"
 import { parseFormNumber, requireFiniteNumber } from "../lib/forms"
 import { puede } from "../lib/permissions"
 import { cn } from "../lib/utils"
-
-type TabLotes = "listado" | "nuevo"
 
 const reactivosVacios: Reactivo[] = []
 const lotesVacios: Lote[] = []
@@ -74,7 +71,6 @@ export function LotesPage() {
   const [searchParams] = useSearchParams()
   const puedeCrearLote = puede(usuario, "crear_lote")
   const puedeImprimir = puede(usuario, "imprimir_hoja_avery")
-  const [tab, setTab] = useState<TabLotes>("listado")
   const [reactivoId, setReactivoId] = useState<number | null>(null)
   const [loteSeleccionadoId, setLoteSeleccionadoId] = useState<number | null>(null)
   const [busqueda, setBusqueda] = useState("")
@@ -128,7 +124,6 @@ export function LotesPage() {
         if (!activo) {
           return
         }
-        setTab("listado")
         setReactivoId(null)
         setLoteSeleccionadoId(lote.id)
         setBusqueda(lote.codigo_interno)
@@ -172,18 +167,7 @@ export function LotesPage() {
         <div className="mb-6 border-l-4 border-cds-supportError bg-cds-layer01 px-4 py-3 text-sm">{errorLocal}</div>
       ) : null}
 
-      <ModuleNav
-        actions={
-          tab === "nuevo"
-            ? [{ label: "Volver al listado", onClick: () => setTab("listado"), icon: <ArrowLeft size={18} aria-hidden="true" />, variant: "secondary" }]
-            : puedeCrearLote
-              ? [{ label: "Ingresar lote", onClick: () => setTab("nuevo"), icon: <PackagePlus size={18} aria-hidden="true" /> }]
-              : []
-        }
-      />
-
-      {tab === "listado" ? (
-        <ListadoLotes
+      <ListadoLotes
           token={token!}
           puedeEditar={puedeCrearLote}
           puedeImprimir={puedeImprimir}
@@ -196,7 +180,10 @@ export function LotesPage() {
           busqueda={busqueda}
           stockTotal={stockTotal}
           proximoVencimiento={proximoVencimiento}
-          onReactivoChange={setReactivoId}
+          onReactivoChange={(value) => {
+            setReactivoId(value)
+            setLoteSeleccionadoId(null)
+          }}
           onLoteSelect={setLoteSeleccionadoId}
           onBusquedaChange={setBusqueda}
           onBuscarTexto={async (texto) => {
@@ -229,25 +216,6 @@ export function LotesPage() {
             }
           }}
         />
-      ) : null}
-
-      {tab === "nuevo" && puedeCrearLote ? (
-        <NuevoLoteForm
-          token={token!}
-          usuarioId={usuario!.id}
-          reactivos={reactivos}
-          onSuccess={async (reactivoCreadoId, mensajeCreacion, quedarseEnFormulario) => {
-            setReactivoId(reactivoCreadoId)
-            await queryClient.invalidateQueries({ queryKey: ["reactivos"] })
-            await queryClient.invalidateQueries({ queryKey: ["lotes", reactivoCreadoId] })
-            await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
-            if (!quedarseEnFormulario) {
-              setTab("listado")
-            }
-            setMensaje(mensajeCreacion)
-          }}
-        />
-      ) : null}
     </section>
   )
 }
@@ -306,6 +274,16 @@ function ListadoLotes({
       onLoteSelect(null)
     }
   }, [isLoading, loteSeleccionadoId, lotesTodos, onLoteSelect])
+
+  // Al seleccionar un lote, traer el panel de edición a la vista: la tabla puede
+  // ser larga y el panel quedaba lejos.
+  const editarRef = useRef<HTMLDivElement>(null)
+  const loteEditarId = loteEditar?.id
+  useEffect(() => {
+    if (loteEditarId) {
+      editarRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+    }
+  }, [loteEditarId])
 
   return (
     <>
@@ -391,7 +369,9 @@ function ListadoLotes({
       <LotesTable lotes={lotes} isLoading={isLoading} selectedId={loteSeleccionadoId} onSelect={onLoteSelect} />
 
       {puedeEditar && loteEditar ? (
-        <EditarLoteForm token={token} lote={loteEditar} lotes={lotesTodos} onSelect={onLoteSelect} onUpdated={onUpdated} />
+        <div ref={editarRef} className="mt-6 scroll-mt-4">
+          <EditarLoteForm token={token} lote={loteEditar} lotes={lotesTodos} onSelect={onLoteSelect} onUpdated={onUpdated} />
+        </div>
       ) : puedeEditar ? (
         <div className="mt-6 bg-cds-layer01 p-4 text-sm text-cds-textSecondary">
           Seleccioná un lote de la tabla para editar datos, ajustar stock o reimprimir etiquetas.
@@ -411,21 +391,23 @@ function ListadoLotes({
 // "confianza alta" se leía como contradicción). Acá la confianza es solo dato.
 const CONFIANZA_PILL = "bg-cds-layer01 text-cds-textSecondary ring-1 ring-cds-borderSubtle"
 
-function NuevoLoteForm({
+export function NuevoLoteForm({
   token,
   usuarioId,
   reactivos,
   onSuccess,
+  modoInicial = "manual",
 }: {
   token: string
   usuarioId: number
   reactivos: Reactivo[]
-  onSuccess: (reactivoId: number, mensaje: string, quedarseEnFormulario?: boolean) => void | Promise<void>
+  onSuccess: (reactivoId: number, mensaje: string, quedarseEnFormulario?: boolean, codigoInterno?: string | null) => void | Promise<void>
+  modoInicial?: "manual" | "vision" | "multiple"
 }) {
   const [soloPendientes, setSoloPendientes] = useState(false)
   const [reactivoId, setReactivoId] = useState<number | null>(null)
   const [errorLocal, setErrorLocal] = useState<string | null>(null)
-  const [modoCarga, setModoCarga] = useState<"manual" | "vision" | "multiple">("manual")
+  const [modoCarga, setModoCarga] = useState<"manual" | "vision" | "multiple">(modoInicial)
   const [datosExtraidos, setDatosExtraidos] = useState<DatosEtiqueta | null>(null)
   const [matchResult, setMatchResult] = useState<ReactivoMatch | null>(null)
   // Sub-form para crear un reactivo nuevo cuando el match dice "nuevo" (o el
@@ -435,6 +417,7 @@ function NuevoLoteForm({
   const [nuevoNombre, setNuevoNombre] = useState("")
   const [nuevoUnidad, setNuevoUnidad] = useState("")
   const [nuevoCas, setNuevoCas] = useState("")
+  const [nuevoUbicacion, setNuevoUbicacion] = useState("")
   const [cantidadEnvases, setCantidadEnvases] = useState("2")
   const [cantidadInicial, setCantidadInicial] = useState("")
   const [unidadIngreso, setUnidadIngreso] = useState("")
@@ -576,6 +559,7 @@ function NuevoLoteForm({
         nombre,
         unidad,
         stock_minimo: 0,
+        ubicacion: nullable(nuevoUbicacion),
         cas_numero: nullable(nuevoCas),
       })
       await queryClient.invalidateQueries({ queryKey: ["reactivos"] })
@@ -620,6 +604,7 @@ function NuevoLoteForm({
         throw new Error("La cantidad de envases debe ser un entero mayor a 0.")
       }
       let mensajeCreacion = ""
+      let codigoCreado: string | null = null
       if (modoCarga === "multiple") {
         const payload: LoteCrearMultiple = {
           reactivo_id: reactivo.id,
@@ -653,6 +638,7 @@ function NuevoLoteForm({
           codigo_proveedor: nullable(codigoProveedor),
         }
         const resultado = await crearMutation.mutateAsync(payload)
+        codigoCreado = resultado.codigo_interno
         mensajeCreacion = `Lote creado: ${resultado.codigo_interno}.`
       }
       formElement.reset()
@@ -667,7 +653,7 @@ function NuevoLoteForm({
       setCodigoProveedor("")
       setProveedor("")
       setCostoTotal("0")
-      await onSuccess(reactivo.id, mensajeCreacion, modoCarga === "multiple")
+      await onSuccess(reactivo.id, mensajeCreacion, modoCarga === "multiple", codigoCreado)
     } catch (error) {
       setErrorLocal(mutationError(error, "No se pudo crear el lote"))
     }
@@ -716,7 +702,7 @@ function NuevoLoteForm({
       <div className="mb-5">
         <div className="mb-5">
           <div className="mb-2 text-xs tracking-[0.32px] text-cds-textSecondary">Modo de carga</div>
-          <div className="inline-flex gap-px bg-cds-borderSubtle">
+          <div className="flex flex-wrap gap-px bg-cds-borderSubtle">
             <button
               type="button"
               onClick={() => {
@@ -772,13 +758,16 @@ function NuevoLoteForm({
               className="sr-only"
               type="file"
               accept="image/jpeg,image/png,image/webp"
+              capture="environment"
               onChange={(event) => void handleEtiquetaFile(event.target.files?.[0] ?? null)}
             />
             <label
               htmlFor="foto_etiqueta_lote"
-              className="inline-flex h-10 cursor-pointer items-center border border-cds-buttonPrimary px-4 text-sm tracking-[0.16px] text-cds-linkPrimary transition-colors hover:bg-cds-layer01"
+              className="inline-flex h-12 w-full cursor-pointer items-center justify-center gap-2 border border-cds-buttonPrimary px-4 text-sm tracking-[0.16px] text-cds-linkPrimary transition-colors hover:bg-cds-layer01 sm:h-10 sm:w-auto sm:justify-start"
             >
-              Seleccionar imagen
+              <Camera size={18} aria-hidden="true" />
+              <span className="sm:hidden">Tomar foto</span>
+              <span className="hidden sm:inline">Seleccionar imagen</span>
             </label>
             <p className="mt-3 text-xs leading-4 tracking-[0.32px] text-cds-textSecondary">
               La IA solo prellena campos. Revisá el reactivo seleccionado y confirmá antes de guardar.
@@ -821,6 +810,13 @@ function NuevoLoteForm({
                   Quedó seleccionado abajo. Si no es correcto,{" "}
                   <button type="button" onClick={descartarSugerencia} className="text-cds-linkPrimary underline">elegí otro</button>.
                 </p>
+                <button
+                  type="button"
+                  onClick={() => setCreandoReactivo(true)}
+                  className="mt-3 inline-flex items-center gap-1.5 text-sm text-cds-linkPrimary"
+                >
+                  <Plus size={16} aria-hidden="true" /> No es este, crear reactivo nuevo
+                </button>
               </div>
             ) : null}
 
@@ -883,6 +879,7 @@ function NuevoLoteForm({
               <Field label="Nombre *" name="nuevo_reactivo_nombre" value={nuevoNombre} onChange={(event) => setNuevoNombre(event.target.value)} required />
               <Field label="Unidad base *" name="nuevo_reactivo_unidad" value={nuevoUnidad} onChange={(event) => setNuevoUnidad(event.target.value)} placeholder="Ej: g, ml, unidad" required />
               <Field label="Número CAS" name="nuevo_reactivo_cas" value={nuevoCas} onChange={(event) => setNuevoCas(event.target.value)} placeholder="Ej: 64-17-5" />
+              <Field label="Ubicación" name="nuevo_reactivo_ubicacion" value={nuevoUbicacion} onChange={(event) => setNuevoUbicacion(event.target.value)} placeholder="Ej: Estante A, repisa 2" />
             </div>
             <p className="mt-2 text-xs leading-4 text-cds-textSecondary">
               La unidad base es permanente y rige el FIFO. El stock mínimo arranca en 0 (lo ajustás después).

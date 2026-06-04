@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowLeft, Check, Plus, AlertTriangle, FlaskConical, PackageCheck, Search, Save } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import { ModuleNav } from "../components/ModuleNav"
 import { PageHeader } from "../components/PageHeader"
@@ -17,6 +18,14 @@ type FiltroEstado = "Todos" | "En tránsito" | "Sin stock" | "Con stock"
 type TabReactivos = "listado" | "detalle" | "nuevo"
 
 const filtros: FiltroEstado[] = ["Todos", "En tránsito", "Sin stock", "Con stock"]
+// Las claves de filtro son canónicas (la lógica de filtrado usa el valor en
+// español del dato); solo se traduce el label que se muestra.
+const filtroKey: Record<FiltroEstado, string> = {
+  "Todos": "todos",
+  "En tránsito": "transito",
+  "Sin stock": "sinStock",
+  "Con stock": "conStock",
+}
 const reactivosVacios: Reactivo[] = []
 const unidades = ["ml", "L", "g", "kg", "mg", "ug", "unidad"]
 
@@ -40,6 +49,7 @@ function nullable(value: string) {
 
 export function ReactivosPage() {
   const { token, usuario } = useAuth()
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const puedeCrear = puede(usuario, "crear_reactivo")
   const puedeEditar = puede(usuario, "editar_reactivo")
@@ -124,15 +134,14 @@ export function ReactivosPage() {
   return (
     <section>
       <PageHeader
-        title="Reactivos"
-        description="Catálogo maestro del laboratorio."
-        count={reactivosQuery.isLoading ? "Cargando reactivos..." : `${reactivosFiltrados.length} de ${reactivos.length} reactivos`}
+        title={t("reactivos.titulo")}
+        count={reactivosQuery.isLoading ? t("reactivos.cargando") : t("reactivos.count", { shown: reactivosFiltrados.length, total: reactivos.length })}
         plain
       />
 
       {reactivosQuery.isError ? (
         <div className="mb-6 border-l-4 border-cds-supportError bg-cds-layer01 px-4 py-3 text-sm">
-          No se pudieron cargar los reactivos.
+          {t("reactivos.loadError")}
         </div>
       ) : null}
 
@@ -143,9 +152,9 @@ export function ReactivosPage() {
       <ModuleNav
         actions={
           tab !== "listado"
-            ? [{ label: "Volver al listado", onClick: () => setTab("listado"), icon: <ArrowLeft size={18} aria-hidden="true" />, variant: "secondary" }]
+            ? [{ label: t("common.volverAlListado"), onClick: () => setTab("listado"), icon: <ArrowLeft size={18} aria-hidden="true" />, variant: "secondary" }]
             : puedeCrear
-              ? [{ label: "Nuevo reactivo", onClick: () => setTab("nuevo"), icon: <Plus size={18} aria-hidden="true" /> }]
+              ? [{ label: t("reactivos.nuevo"), onClick: () => setTab("nuevo"), icon: <Plus size={18} aria-hidden="true" /> }]
               : []
         }
       />
@@ -190,7 +199,7 @@ export function ReactivosPage() {
             await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
             setReactivoDetalleId(id)
             setTab("listado")
-            setMensaje(`Reactivo creado con ID ${id}.`)
+            setMensaje(t("reactivos.creadoMsg", { id }))
           }}
         />
       ) : null}
@@ -224,18 +233,19 @@ function ListadoReactivos({
   onFiltroChange: (value: FiltroEstado) => void
   onSelectDetalle: (id: number) => void
 }) {
+  const { t } = useTranslation()
   return (
     <>
       <div className="mb-4 grid gap-px bg-cds-borderSubtle md:grid-cols-4">
-        <MetricTile label="Total" value={resumen.total} icon={FlaskConical} />
-        <MetricTile label="Con stock" value={resumen.conStock} icon={PackageCheck} />
-        <MetricTile label="Sin stock" value={resumen.sinStock} icon={AlertTriangle} danger />
-        <MetricTile label="Stock bajo" value={resumen.stockBajo} icon={AlertTriangle} danger />
+        <MetricTile label={t("reactivos.metricTotal")} value={resumen.total} icon={FlaskConical} />
+        <MetricTile label={t("reactivos.metricConStock")} value={resumen.conStock} icon={PackageCheck} />
+        <MetricTile label={t("reactivos.metricSinStock")} value={resumen.sinStock} icon={AlertTriangle} danger />
+        <MetricTile label={t("reactivos.metricStockBajo")} value={resumen.stockBajo} icon={AlertTriangle} danger />
       </div>
 
       <div className="mb-4 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
         <label className="block">
-          <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">Buscar</span>
+          <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">{t("common.buscar")}</span>
           <div className="relative">
             <Search
               className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-cds-textSecondary"
@@ -246,13 +256,13 @@ function ListadoReactivos({
               className="pl-12"
               value={busqueda}
               onChange={(event) => onBusquedaChange(event.target.value)}
-              placeholder="Nombre, categoría o ubicación"
+              placeholder={t("reactivos.buscarPlaceholder")}
             />
           </div>
         </label>
 
         <div>
-          <div className="mb-2 text-xs tracking-[0.32px] text-cds-textSecondary">Filtrar</div>
+          <div className="mb-2 text-xs tracking-[0.32px] text-cds-textSecondary">{t("reactivos.filtrar")}</div>
           <div className="flex flex-wrap gap-px bg-cds-borderSubtle">
             {filtros.map((filtro) => (
               <button
@@ -264,7 +274,7 @@ function ListadoReactivos({
                   filtroEstado === filtro && "bg-cds-background text-cds-linkPrimary shadow-[inset_0_-2px_0_var(--cds-focus)]",
                 )}
               >
-                {filtro}
+                {t(`reactivos.filtro.${filtroKey[filtro]}`)}
               </button>
             ))}
           </div>
@@ -309,12 +319,13 @@ function ReactivosTable({
   selectedId: number | null
   onSelectDetalle: (id: number) => void
 }) {
+  const { t } = useTranslation()
   if (isLoading) {
-    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">Cargando tabla...</div>
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("common.cargandoTabla")}</div>
   }
 
   if (reactivos.length === 0) {
-    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">No hay reactivos para ese filtro.</div>
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("reactivos.sinFiltro")}</div>
   }
 
   return (
@@ -322,13 +333,13 @@ function ReactivosTable({
       <table className="w-full min-w-[920px] border-collapse text-left text-sm">
         <thead>
           <tr className="border-b border-cds-borderSubtle bg-cds-layer01 text-xs tracking-[0.32px] text-cds-textSecondary">
-            <th className="h-10 px-4 font-normal">ID</th>
-            <th className="h-10 px-4 font-normal">Nombre</th>
-            <th className="h-10 px-4 font-normal">Unidad</th>
-            <th className="h-10 px-4 text-right font-normal">Stock actual</th>
-            <th className="h-10 px-4 text-right font-normal">Stock mín.</th>
-            <th className="h-10 px-4 font-normal">Ubicación</th>
-            <th className="h-10 px-4 font-normal">Categoría</th>
+            <th className="h-10 px-4 font-normal">{t("reactivos.thId")}</th>
+            <th className="h-10 px-4 font-normal">{t("reactivos.thNombre")}</th>
+            <th className="h-10 px-4 font-normal">{t("reactivos.thUnidad")}</th>
+            <th className="h-10 px-4 text-right font-normal">{t("reactivos.thStockActual")}</th>
+            <th className="h-10 px-4 text-right font-normal">{t("reactivos.thStockMin")}</th>
+            <th className="h-10 px-4 font-normal">{t("reactivos.thUbicacion")}</th>
+            <th className="h-10 px-4 font-normal">{t("reactivos.thCategoria")}</th>
           </tr>
         </thead>
         <tbody>
@@ -374,6 +385,7 @@ function NuevoReactivoForm({
   token: string
   onSuccess: (id: number) => void | Promise<void>
 }) {
+  const { t } = useTranslation()
   const [errorLocal, setErrorLocal] = useState<string | null>(null)
   const crearMutation = useMutation({
     mutationFn: (data: ReactivoCrear) => api.crearReactivo(token, data),
@@ -387,7 +399,7 @@ function NuevoReactivoForm({
       const form = new FormData(formElement)
       const stockMinimo = requireFiniteNumber(
         parseFormNumber(form.get("stock_minimo"), 0),
-        "Stock mínimo debe ser un número válido.",
+        t("reactivos.errStockMin"),
       )
       const payload: ReactivoCrear = {
         nombre: String(form.get("nombre") ?? "").trim(),
@@ -401,17 +413,17 @@ function NuevoReactivoForm({
       formElement.reset()
       await onSuccess(resultado.id)
     } catch (error) {
-      setErrorLocal(mutationError(error, "No se pudo crear el reactivo"))
+      setErrorLocal(mutationError(error, t("reactivos.errCrear")))
     }
   }
 
   return (
     <form className="max-w-5xl bg-cds-layer01 p-4" onSubmit={handleSubmit}>
-      <h2 className="mb-6 text-[24px] leading-[1.33]">Agregar reactivo</h2>
+      <h2 className="mb-6 text-[24px] leading-[1.33]">{t("reactivos.agregar")}</h2>
       <div className="grid gap-5 md:grid-cols-2">
-        <Field label="Nombre *" name="nombre" required placeholder="Ej: Etanol absoluto" />
+        <Field label={t("reactivos.fNombre")} name="nombre" required placeholder={t("reactivos.fNombrePh")} />
         <label className="block">
-          <Label className="mb-2" htmlFor="unidad">Unidad base *</Label>
+          <Label className="mb-2" htmlFor="unidad">{t("reactivos.fUnidadBase")}</Label>
           <select
             id="unidad"
             name="unidad"
@@ -425,9 +437,9 @@ function NuevoReactivoForm({
             ))}
           </select>
         </label>
-        <DecimalField label="Stock mínimo *" name="stock_minimo" defaultValue="0" required />
-        <Field label="Ubicación" name="ubicacion" placeholder="Ej: Estante A, repisa 2" />
-        <Field label="Categoría" name="categoria" placeholder="Ej: Solventes, Sales, Buffers" />
+        <DecimalField label={t("reactivos.fStockMin")} name="stock_minimo" defaultValue="0" required />
+        <Field label={t("reactivos.fUbicacion")} name="ubicacion" placeholder={t("reactivos.fUbicacionPh")} />
+        <Field label={t("reactivos.fCategoria")} name="categoria" placeholder={t("reactivos.fCategoriaPh")} />
       </div>
 
       {errorLocal ? (
@@ -438,7 +450,7 @@ function NuevoReactivoForm({
 
       <Button className="mt-6" type="submit" disabled={crearMutation.isPending}>
         <Save size={18} aria-hidden="true" />
-        {crearMutation.isPending ? "Creando..." : "Crear reactivo"}
+        {crearMutation.isPending ? t("common.creando") : t("reactivos.crear")}
       </Button>
     </form>
   )
@@ -461,6 +473,7 @@ function DetalleReactivo({
   onSelect: (id: number) => void
   onUpdated: () => void | Promise<void>
 }) {
+  const { t } = useTranslation()
   const [errorLocal, setErrorLocal] = useState<string | null>(null)
   const [nombre, setNombre] = useState("")
   const [stockMinimo, setStockMinimo] = useState("")
@@ -517,7 +530,7 @@ function DetalleReactivo({
     try {
       const stockMinimoParseado = requireFiniteNumber(
         parseFormNumber(stockMinimo, 0),
-        "Stock mínimo debe ser un número válido.",
+        t("reactivos.errStockMin"),
       )
       const payload: ReactivoActualizar = {
         nombre: nombre.trim(),
@@ -530,9 +543,9 @@ function DetalleReactivo({
       }
       await actualizarMutation.mutateAsync({ id: reactivo.id, data: payload })
       await onUpdated()
-      setMensajeLocal("Reactivo actualizado correctamente.")
+      setMensajeLocal(t("reactivos.actualizadoMsg"))
     } catch (error) {
-      setErrorLocal(mutationError(error, "No se pudo actualizar el reactivo"))
+      setErrorLocal(mutationError(error, t("reactivos.errActualizar")))
     }
   }
 
@@ -544,7 +557,7 @@ function DetalleReactivo({
     setMensajeFusion(null)
     try {
       const res = await fusionMutation.mutateAsync({ sobreviviente: reactivo.id, duplicado: duplicadoId })
-      setMensajeFusion(res.mensaje ?? `Fusionado: ${res.lotes_movidos} lote(s) movido(s).`)
+      setMensajeFusion(res.mensaje ?? t("reactivos.fusionadoMsg", { n: res.lotes_movidos }))
       setDuplicadoId(null)
       setConfirmandoFusion(false)
       setBusquedaDup("")
@@ -553,7 +566,7 @@ function DetalleReactivo({
       queryClient.removeQueries({ queryKey: ["duplicados"] })
     } catch (error) {
       setConfirmandoFusion(false)
-      setErrorFusion(mutationError(error, "No se pudo fusionar"))
+      setErrorFusion(mutationError(error, t("reactivos.errFusionar")))
     }
   }
 
@@ -565,7 +578,7 @@ function DetalleReactivo({
   }
 
   if (!reactivo) {
-    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">No hay reactivos para mostrar.</div>
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("reactivos.sinReactivos")}</div>
   }
 
   const bajoMinimo = (reactivo.stock_total ?? 0) < (reactivo.stock_minimo ?? 0)
@@ -581,7 +594,7 @@ function DetalleReactivo({
     <>
     <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
       <aside>
-        <Label className="mb-2" htmlFor="reactivo_detalle">Seleccioná un reactivo</Label>
+        <Label className="mb-2" htmlFor="reactivo_detalle">{t("reactivos.seleccionaReactivo")}</Label>
         <select
           id="reactivo_detalle"
           className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
@@ -598,24 +611,24 @@ function DetalleReactivo({
         <div className="mt-4 bg-cds-layer01 p-4">
           <h2 className="text-[24px] leading-[1.33]">{reactivo.nombre}</h2>
           <dl className="mt-6 space-y-4 text-sm">
-            <InfoRow label="Unidad" value={reactivo.unidad} />
-            <InfoRow label="Stock actual" value={`${formatNumber(reactivo.stock_total)} ${reactivo.unidad}`} danger={bajoMinimo} />
-            <InfoRow label="Stock mínimo" value={`${formatNumber(reactivo.stock_minimo)} ${reactivo.unidad}`} />
-            <InfoRow label="Ubicación" value={reactivo.ubicacion || "-"} />
-            <InfoRow label="Categoría" value={reactivo.categoria || "-"} />
+            <InfoRow label={t("reactivos.infoUnidad")} value={reactivo.unidad} />
+            <InfoRow label={t("reactivos.infoStockActual")} value={`${formatNumber(reactivo.stock_total)} ${reactivo.unidad}`} danger={bajoMinimo} />
+            <InfoRow label={t("reactivos.infoStockMin")} value={`${formatNumber(reactivo.stock_minimo)} ${reactivo.unidad}`} />
+            <InfoRow label={t("reactivos.infoUbicacion")} value={reactivo.ubicacion || "-"} />
+            <InfoRow label={t("reactivos.infoCategoria")} value={reactivo.categoria || "-"} />
           </dl>
         </div>
       </aside>
 
       <form className="bg-cds-layer01 p-4" onSubmit={handleSubmit}>
         <div className="mb-6 flex items-center justify-between gap-4">
-          <h2 className="text-[24px] leading-[1.33]">Editar reactivo</h2>
-          {!puedeEditar ? <span className="text-xs tracking-[0.32px] text-cds-textSecondary">Solo lectura</span> : null}
+          <h2 className="text-[24px] leading-[1.33]">{t("reactivos.editar")}</h2>
+          {!puedeEditar ? <span className="text-xs tracking-[0.32px] text-cds-textSecondary">{t("common.soloLectura")}</span> : null}
         </div>
 
         <div className="grid gap-5 md:grid-cols-2">
           <Field
-            label="Nombre *"
+            label={t("reactivos.fNombre")}
             name="nombre"
             value={nombre}
             onChange={(event) => setNombre(event.target.value)}
@@ -623,7 +636,7 @@ function DetalleReactivo({
             disabled={!puedeEditar}
           />
           <Field
-            label="Stock mínimo *"
+            label={t("reactivos.fStockMin")}
             name="stock_minimo"
             inputMode="decimal"
             value={stockMinimo}
@@ -632,14 +645,14 @@ function DetalleReactivo({
             disabled={!puedeEditar}
           />
           <Field
-            label="Ubicación"
+            label={t("reactivos.fUbicacion")}
             name="ubicacion"
             value={ubicacion}
             onChange={(event) => setUbicacion(event.target.value)}
             disabled={!puedeEditar}
           />
           <Field
-            label="Categoría"
+            label={t("reactivos.fCategoria")}
             name="categoria"
             value={categoria}
             onChange={(event) => setCategoria(event.target.value)}
@@ -648,7 +661,7 @@ function DetalleReactivo({
         </div>
 
         <p className="mt-4 text-xs leading-4 tracking-[0.32px] text-cds-textSecondary">
-          El reactivo es el concepto general. Unidad base y stock actual no se editan desde acá; marca, proveedor, lote fabricante y costo se manejan a nivel lote.
+          {t("reactivos.editHelp")}
         </p>
 
         {errorLocal ? (
@@ -666,7 +679,7 @@ function DetalleReactivo({
         {puedeEditar ? (
           <Button className="mt-6" type="submit" disabled={actualizarMutation.isPending}>
             <Save size={18} aria-hidden="true" />
-            {actualizarMutation.isPending ? "Guardando..." : "Guardar cambios"}
+            {actualizarMutation.isPending ? t("common.guardando") : t("common.guardarCambios")}
           </Button>
         ) : null}
       </form>
@@ -674,13 +687,13 @@ function DetalleReactivo({
 
     {puedeFusionar ? (
       <section className="mt-6 bg-cds-layer01 p-4">
-        <h2 className="text-[24px] leading-[1.33]">Fusionar duplicado</h2>
+        <h2 className="text-[24px] leading-[1.33]">{t("reactivos.fusionarTitulo")}</h2>
         <p className="mt-2 text-xs leading-4 tracking-[0.32px] text-cds-textSecondary">
-          Si <strong>{reactivo.nombre}</strong> está cargado dos veces, elegí el reactivo duplicado: sus lotes se mueven a este y el duplicado se da de baja (soft delete, se preserva la trazabilidad). Solo se listan reactivos con la misma unidad ({reactivo.unidad}); la fusión no se puede deshacer desde acá.
+          {t("reactivos.fusionarHelp", { nombre: reactivo.nombre, unidad: reactivo.unidad })}
         </p>
 
         {duplicadosPosibles.length === 0 ? (
-          <p className="mt-4 text-sm text-cds-textSecondary">No hay otros reactivos con unidad {reactivo.unidad} para fusionar.</p>
+          <p className="mt-4 text-sm text-cds-textSecondary">{t("reactivos.sinOtrosUnidad", { unidad: reactivo.unidad })}</p>
         ) : (
           <div className="mt-4 max-w-xl">
             <Button
@@ -688,17 +701,17 @@ function DetalleReactivo({
               onClick={() => void duplicadosQuery.refetch()}
               disabled={duplicadosQuery.isFetching}
             >
-              {duplicadosQuery.isFetching ? "Buscando posibles duplicados..." : "Buscar posibles duplicados (IA)"}
+              {duplicadosQuery.isFetching ? t("reactivos.buscandoDup") : t("reactivos.buscarDupIA")}
             </Button>
 
             {duplicadosQuery.isError ? (
-              <p className="mt-3 text-sm text-cds-supportError">No se pudo consultar duplicados. Probá de nuevo o buscá manualmente abajo.</p>
+              <p className="mt-3 text-sm text-cds-supportError">{t("reactivos.errConsultarDup")}</p>
             ) : null}
 
             {duplicadosQuery.data ? (
               duplicadosQuery.data.candidatos.length > 0 ? (
                 <div className="mt-3">
-                  <p className="text-xs tracking-[0.32px] text-cds-textSecondary">Posibles duplicados</p>
+                  <p className="text-xs tracking-[0.32px] text-cds-textSecondary">{t("reactivos.posiblesDup")}</p>
                   <div className="mt-2 flex flex-col gap-2">
                     {duplicadosQuery.data.candidatos.map((candidato) => (
                       <button
@@ -723,22 +736,22 @@ function DetalleReactivo({
                   {duplicadosQuery.data.razon ? <p className="mt-2 text-xs leading-4 text-cds-textSecondary">{duplicadosQuery.data.razon}</p> : null}
                 </div>
               ) : (
-                <p className="mt-3 text-sm text-cds-textSecondary">La IA no encontró duplicados claros. Buscalo manualmente abajo.</p>
+                <p className="mt-3 text-sm text-cds-textSecondary">{t("reactivos.sinDupClaros")}</p>
               )
             ) : null}
 
             <div className="mt-5">
-              <Label className="mb-2" htmlFor="buscar_duplicado">O buscar en todos los de unidad {reactivo.unidad}</Label>
+              <Label className="mb-2" htmlFor="buscar_duplicado">{t("reactivos.buscarEnTodos", { unidad: reactivo.unidad })}</Label>
               <Input
                 id="buscar_duplicado"
                 value={busquedaDup}
                 onChange={(event) => setBusquedaDup(event.target.value)}
-                placeholder="Escribí parte del nombre..."
+                placeholder={t("reactivos.buscarDupPh")}
               />
               {busquedaDup.trim() ? (
                 <div className="mt-2 flex flex-col gap-2">
                   {duplicadosFiltrados.length === 0 ? (
-                    <p className="text-sm text-cds-textSecondary">Sin resultados.</p>
+                    <p className="text-sm text-cds-textSecondary">{t("common.sinResultados")}</p>
                   ) : (
                     duplicadosFiltrados.map((item) => (
                       <button
@@ -765,26 +778,26 @@ function DetalleReactivo({
             </div>
 
             {duplicadoId ? (
-              <p className="mt-4 text-sm">Duplicado elegido: <strong>{nombreDuplicado}</strong></p>
+              <p className="mt-4 text-sm">{t("reactivos.duplicadoElegido")} <strong>{nombreDuplicado}</strong></p>
             ) : null}
           </div>
         )}
 
         {duplicadoId && !confirmandoFusion ? (
           <Button className="mt-4" type="button" onClick={() => setConfirmandoFusion(true)}>
-            Fusionar
+            {t("reactivos.fusionar")}
           </Button>
         ) : null}
 
         {duplicadoId && confirmandoFusion ? (
           <div className="mt-4 border-l-4 border-lab-warm bg-cds-background px-4 py-3 text-sm">
-            Vas a mover los lotes de <strong>{nombreDuplicado}</strong> a <strong>{reactivo.nombre}</strong> y dar de baja el duplicado. No se puede deshacer desde acá.
+            {t("reactivos.confirmFusion", { dup: nombreDuplicado, sob: reactivo.nombre })}
             <div className="mt-3 flex items-center gap-3">
               <Button type="button" onClick={() => void handleFusionar()} disabled={fusionMutation.isPending}>
-                {fusionMutation.isPending ? "Fusionando..." : "Confirmar fusión"}
+                {fusionMutation.isPending ? t("reactivos.fusionando") : t("reactivos.confirmarFusion")}
               </Button>
               <button type="button" className="text-sm text-cds-textSecondary underline" onClick={() => setConfirmandoFusion(false)}>
-                Cancelar
+                {t("common.cancelar")}
               </button>
             </div>
           </div>
