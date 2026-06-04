@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Camera, ScanLine, Search, Trash2 } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
@@ -19,6 +20,7 @@ function mutationError(error: unknown, fallback: string) {
 
 export function MesadaPage() {
   const { token, usuario } = useAuth()
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [codigo, setCodigo] = useState("")
   const [lote, setLote] = useState<Lote | null>(null)
@@ -37,15 +39,15 @@ export function MesadaPage() {
       setMotivo("")
       setMensaje(
         loteEncontrado.cantidad_actual > 0
-          ? `Lote ${loteEncontrado.codigo_interno} listo para consumir.`
-          : `El lote ${loteEncontrado.codigo_interno} está vacío.`,
+          ? t("mesada.msgListo", { codigo: loteEncontrado.codigo_interno })
+          : t("mesada.msgVacio", { codigo: loteEncontrado.codigo_interno }),
       )
       setErrorLocal(null)
     },
     onError: (error) => {
       setLote(null)
       setMensaje(null)
-      setErrorLocal(mutationError(error, "No se pudo buscar el lote"))
+      setErrorLocal(mutationError(error, t("mesada.errBuscar")))
     },
   })
   const decodificarQrMutation = useMutation({
@@ -77,7 +79,7 @@ export function MesadaPage() {
   async function buscarCodigo(codigoInterno: string) {
     const codigoLimpio = codigoInterno.trim()
     if (!codigoLimpio) {
-      setErrorLocal("Ingresá un código interno.")
+      setErrorLocal(t("mesada.errCodigoVacio"))
       return
     }
     await buscarMutation.mutateAsync(codigoLimpio)
@@ -96,7 +98,7 @@ export function MesadaPage() {
     } catch (error) {
       setLote(null)
       setMensaje(null)
-      setErrorLocal(mutationError(error, "No se pudo leer el QR"))
+      setErrorLocal(mutationError(error, t("mesada.errQr")))
     }
   }
 
@@ -110,10 +112,10 @@ export function MesadaPage() {
     try {
       const cantidadParseada = requireFiniteNumber(
         parseFormNumber(cantidad),
-        "Cantidad debe ser un número válido.",
+        t("mesada.errCantidad"),
       )
       if (cantidadParseada <= 0) {
-        throw new Error("La cantidad debe ser mayor a 0.")
+        throw new Error(t("mesada.errCantidadMayorCero"))
       }
       const resultado = await consumirMutation.mutateAsync({
         reactivo_id: lote.reactivo_id,
@@ -124,7 +126,7 @@ export function MesadaPage() {
         lote_id: lote.id,
       })
       const movimiento = resultado.movimientos[0]
-      setMensaje(`Consumo registrado: ${formatNumber(movimiento.cantidad)} ${resultado.unidad} de ${movimiento.codigo_interno}.`)
+      setMensaje(t("mesada.msgConsumo", { cantidad: formatNumber(movimiento.cantidad), unidad: resultado.unidad, codigo: movimiento.codigo_interno }))
       setLote(null)
       setCodigo("")
       setCantidad("")
@@ -135,7 +137,7 @@ export function MesadaPage() {
       await queryClient.invalidateQueries({ queryKey: ["dashboard-series", 30] })
       await queryClient.invalidateQueries({ queryKey: ["movimientos"] })
     } catch (error) {
-      setErrorLocal(mutationError(error, "No se pudo registrar el consumo"))
+      setErrorLocal(mutationError(error, t("mesada.errConsumo")))
     }
   }
 
@@ -151,14 +153,14 @@ export function MesadaPage() {
   return (
     <section className="mx-auto max-w-2xl">
       <div className="mb-8">
-        <h1>Mesada</h1>
+        <h1>{t("mesada.title")}</h1>
         <p className="mt-2 text-sm leading-[1.29] tracking-[0.16px] text-cds-textSecondary">
-          Buscá un frasco por código interno y registrá consumo contra ese lote físico.
+          {t("mesada.desc")}
         </p>
       </div>
 
       <form className="bg-cds-layer01 p-4" onSubmit={handleBuscar}>
-        <Label className="mb-2" htmlFor="codigo_interno">Código interno</Label>
+        <Label className="mb-2" htmlFor="codigo_interno">{t("mesada.fCodigo")}</Label>
         <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
           <div className="relative">
             <ScanLine
@@ -176,7 +178,7 @@ export function MesadaPage() {
           </div>
           <Button type="submit" disabled={buscarMutation.isPending}>
             <Search size={18} aria-hidden="true" />
-            {buscarMutation.isPending ? "Buscando..." : "Buscar"}
+            {buscarMutation.isPending ? t("mesada.buscando") : t("common.buscar")}
           </Button>
           <input
             id="foto_qr_mesada"
@@ -194,7 +196,7 @@ export function MesadaPage() {
             className="inline-flex h-12 cursor-pointer items-center justify-center gap-2 border border-cds-borderStrong bg-cds-layer02 px-4 text-sm tracking-[0.16px] text-cds-textPrimary transition-colors hover:bg-cds-borderSubtle"
           >
             <Camera size={18} aria-hidden="true" />
-            {decodificarQrMutation.isPending ? "Leyendo..." : "Escanear QR"}
+            {decodificarQrMutation.isPending ? t("mesada.leyendo") : t("mesada.escanearQr")}
           </label>
         </div>
       </form>
@@ -210,18 +212,18 @@ export function MesadaPage() {
         <div className="mt-6 bg-cds-layer01 p-4">
           <h2 className="text-[24px] leading-[1.33]">{lote.reactivo_nombre}</h2>
           <div className="mt-5 grid gap-px bg-cds-borderSubtle sm:grid-cols-2">
-            <Metric label="Lote" value={lote.codigo_interno} mono />
-            <Metric label="Stock" value={`${formatNumber(lote.cantidad_actual)} ${lote.unidad}`} />
-            <Metric label="Vencimiento" value={lote.fecha_vencimiento} />
-            <Metric label="Ubicación" value={lote.ubicacion || "-"} />
+            <Metric label={t("mesada.mLote")} value={lote.codigo_interno} mono />
+            <Metric label={t("mesada.mStock")} value={`${formatNumber(lote.cantidad_actual)} ${lote.unidad}`} />
+            <Metric label={t("mesada.mVencimiento")} value={lote.fecha_vencimiento} />
+            <Metric label={t("mesada.mUbicacion")} value={lote.ubicacion || "-"} />
           </div>
 
           {lote.cantidad_actual > 0 ? (
             <form className="mt-6" onSubmit={handleConsumir}>
-              <h3 className="mb-5">Registrar consumo</h3>
+              <h3 className="mb-5">{t("mesada.registrarConsumo")}</h3>
               <div className="grid gap-5 sm:grid-cols-2">
                 <label className="block">
-                  <Label className="mb-2" htmlFor="cantidad_consumida">Cantidad consumida *</Label>
+                  <Label className="mb-2" htmlFor="cantidad_consumida">{t("mesada.fCantidad")}</Label>
                   <Input
                     id="cantidad_consumida"
                     value={cantidad}
@@ -231,7 +233,7 @@ export function MesadaPage() {
                   />
                 </label>
                 <label className="block">
-                  <Label className="mb-2" htmlFor="unidad_consumo">Unidad *</Label>
+                  <Label className="mb-2" htmlFor="unidad_consumo">{t("mesada.fUnidad")}</Label>
                   <select
                     id="unidad_consumo"
                     className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
@@ -246,22 +248,22 @@ export function MesadaPage() {
                   </select>
                 </label>
                 <label className="block sm:col-span-2">
-                  <Label className="mb-2" htmlFor="motivo">Motivo / muestra</Label>
+                  <Label className="mb-2" htmlFor="motivo">{t("mesada.fMotivo")}</Label>
                   <Input
                     id="motivo"
                     value={motivo}
                     onChange={(event) => setMotivo(event.target.value)}
-                    placeholder="Ej: Muestra A-245"
+                    placeholder={t("mesada.fMotivoPh")}
                   />
                 </label>
               </div>
               <div className="mt-6 flex flex-col gap-3 sm:flex-row">
                 <Button type="submit" disabled={consumirMutation.isPending}>
-                  {consumirMutation.isPending ? "Registrando..." : "Registrar consumo"}
+                  {consumirMutation.isPending ? t("mesada.registrando") : t("mesada.registrarConsumo")}
                 </Button>
                 <Button type="button" variant="ghost" onClick={limpiar}>
                   <Trash2 size={18} aria-hidden="true" />
-                  Limpiar lote
+                  {t("mesada.limpiarLote")}
                 </Button>
               </div>
             </form>

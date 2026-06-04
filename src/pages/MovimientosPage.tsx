@@ -2,6 +2,7 @@ import { FormEvent, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ArrowDownCircle, ArrowUpCircle, ListFilter, RotateCcw, SlidersHorizontal } from "lucide-react"
 import { Link } from "react-router-dom"
+import { useTranslation } from "react-i18next"
 
 import { PageHeader } from "../components/PageHeader"
 import { Button } from "../components/ui/button"
@@ -14,10 +15,10 @@ import { cn } from "../lib/utils"
 const reactivosVacios: Reactivo[] = []
 const movimientosVacios: Movimiento[] = []
 const tipos = [
-  { value: "", label: "Todos" },
-  { value: "entrada", label: "Entradas" },
-  { value: "salida", label: "Salidas" },
-  { value: "ajuste", label: "Ajustes" },
+  { value: "", labelKey: "mov.tTodos" },
+  { value: "entrada", labelKey: "mov.tEntradas" },
+  { value: "salida", labelKey: "mov.tSalidas" },
+  { value: "ajuste", labelKey: "mov.tAjustes" },
 ]
 
 function isoDatePlusDays(days: number) {
@@ -47,16 +48,6 @@ function formatNumber(value: number | null | undefined) {
   return new Intl.NumberFormat("es-AR", { maximumFractionDigits: 2 }).format(value ?? 0)
 }
 
-function tipoLabel(tipo: Movimiento["tipo"]) {
-  if (tipo === "entrada") {
-    return "Entrada"
-  }
-  if (tipo === "salida") {
-    return "Salida"
-  }
-  return "Ajuste"
-}
-
 function tipoBadgeClasses(tipo: Movimiento["tipo"]) {
   if (tipo === "entrada") {
     return "bg-lab-sageBg text-cds-supportSuccess ring-1 ring-cds-supportSuccess/40"
@@ -79,6 +70,7 @@ function TipoIcon({ tipo }: { tipo: Movimiento["tipo"] }) {
 
 export function MovimientosPage() {
   const { token } = useAuth()
+  const { t } = useTranslation()
   const [desde, setDesde] = useState(isoDatePlusDays(-30))
   const [hasta, setHasta] = useState(isoDatePlusDays(0))
   const [tipo, setTipo] = useState("")
@@ -156,35 +148,35 @@ export function MovimientosPage() {
   return (
     <section>
       <PageHeader
-        title="Movimientos"
-        description="Trazabilidad de entradas, consumos y ajustes registrados sobre lotes."
-        count={movimientosQuery.isLoading ? "Cargando movimientos..." : `${resumen.total} movimiento(s)`}
+        title={t("mov.title")}
+        description={t("mov.desc")}
+        count={movimientosQuery.isLoading ? t("mov.cargando") : t("mov.countN", { n: resumen.total })}
         plain
       />
 
       <div className="mb-4 grid gap-px bg-cds-borderSubtle md:grid-cols-4">
-        <Metric label="Total" value={String(resumen.total)} />
-        <Metric label="Entradas" value={String(resumen.entrada)} tone="success" />
-        <Metric label="Salidas" value={String(resumen.salida)} tone="error" />
-        <Metric label="Ajustes" value={String(resumen.ajuste)} tone="warning" />
+        <Metric label={t("mov.total")} value={String(resumen.total)} />
+        <Metric label={t("mov.tEntradas")} value={String(resumen.entrada)} tone="success" />
+        <Metric label={t("mov.tSalidas")} value={String(resumen.salida)} tone="error" />
+        <Metric label={t("mov.tAjustes")} value={String(resumen.ajuste)} tone="warning" />
       </div>
 
       <form className="mb-6 bg-cds-layer01 p-4" onSubmit={handleSubmit}>
         <div className="mb-5 flex items-center gap-3">
           <ListFilter size={20} aria-hidden="true" />
-          <h2 className="text-[24px] leading-[1.33]">Filtros</h2>
+          <h2 className="text-[24px] leading-[1.33]">{t("mov.filtros")}</h2>
         </div>
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-5">
           <label className="block">
-            <Label className="mb-2" htmlFor="mov_desde">Desde</Label>
+            <Label className="mb-2" htmlFor="mov_desde">{t("mov.fDesde")}</Label>
             <Input id="mov_desde" type="date" value={desde} onChange={(event) => setDesde(event.target.value)} />
           </label>
           <label className="block">
-            <Label className="mb-2" htmlFor="mov_hasta">Hasta</Label>
+            <Label className="mb-2" htmlFor="mov_hasta">{t("mov.fHasta")}</Label>
             <Input id="mov_hasta" type="date" value={hasta} onChange={(event) => setHasta(event.target.value)} />
           </label>
           <label className="block">
-            <Label className="mb-2" htmlFor="mov_tipo">Tipo</Label>
+            <Label className="mb-2" htmlFor="mov_tipo">{t("mov.fTipo")}</Label>
             <select
               id="mov_tipo"
               className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
@@ -193,20 +185,20 @@ export function MovimientosPage() {
             >
               {tipos.map((item) => (
                 <option key={item.value || "todos"} value={item.value}>
-                  {item.label}
+                  {t(item.labelKey)}
                 </option>
               ))}
             </select>
           </label>
           <label className="block">
-            <Label className="mb-2" htmlFor="mov_reactivo">Reactivo</Label>
+            <Label className="mb-2" htmlFor="mov_reactivo">{t("mov.fReactivo")}</Label>
             <select
               id="mov_reactivo"
               className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
               value={reactivoId}
               onChange={(event) => setReactivoId(event.target.value)}
             >
-              <option value="">Todos</option>
+              <option value="">{t("mov.tTodos")}</option>
               {reactivos.map((reactivo) => (
                 <option key={reactivo.id} value={reactivo.id}>
                   {reactivo.nombre}
@@ -215,7 +207,7 @@ export function MovimientosPage() {
             </select>
           </label>
           <label className="block">
-            <Label className="mb-2" htmlFor="mov_limite">Límite</Label>
+            <Label className="mb-2" htmlFor="mov_limite">{t("mov.fLimite")}</Label>
             <Input
               id="mov_limite"
               value={limite}
@@ -226,18 +218,18 @@ export function MovimientosPage() {
         </div>
         <div className="mt-5 flex flex-col gap-3 sm:flex-row">
           <Button type="submit" disabled={movimientosQuery.isFetching}>
-            {movimientosQuery.isFetching ? "Aplicando..." : "Aplicar filtros"}
+            {movimientosQuery.isFetching ? t("mov.aplicando") : t("mov.aplicarFiltros")}
           </Button>
           <Button type="button" variant="ghost" onClick={limpiarFiltros}>
             <RotateCcw size={18} aria-hidden="true" />
-            Limpiar
+            {t("mov.limpiar")}
           </Button>
         </div>
       </form>
 
       {movimientosQuery.isError ? (
         <div className="mb-4 border-l-4 border-cds-supportError bg-cds-layer01 px-4 py-3 text-sm">
-          No se pudieron cargar los movimientos.
+          {t("mov.errorCargar")}
         </div>
       ) : null}
 
@@ -265,12 +257,13 @@ function Metric({ label, value, tone }: { label: string; value: string; tone?: "
 }
 
 function MovimientosTable({ movimientos, isLoading }: { movimientos: Movimiento[]; isLoading: boolean }) {
+  const { t } = useTranslation()
   if (isLoading) {
-    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">Cargando tabla...</div>
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("common.cargandoTabla")}</div>
   }
 
   if (!movimientos.length) {
-    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">No hay movimientos para esos filtros.</div>
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("mov.sinMovimientos")}</div>
   }
 
   return (
@@ -278,13 +271,13 @@ function MovimientosTable({ movimientos, isLoading }: { movimientos: Movimiento[
       <table className="w-full min-w-[1120px] border-collapse text-left text-sm">
         <thead>
           <tr className="border-b border-cds-borderSubtle bg-cds-layer01 text-xs tracking-[0.32px] text-cds-textSecondary">
-            <th className="h-10 px-4 font-normal">Fecha</th>
-            <th className="h-10 px-4 font-normal">Tipo</th>
-            <th className="h-10 px-4 font-normal">Reactivo</th>
-            <th className="h-10 px-4 font-normal">Lote interno</th>
-            <th className="h-10 px-4 text-right font-normal">Cantidad</th>
-            <th className="h-10 px-4 font-normal">Usuario</th>
-            <th className="h-10 px-4 font-normal">Motivo</th>
+            <th className="h-10 px-4 font-normal">{t("mov.thFecha")}</th>
+            <th className="h-10 px-4 font-normal">{t("mov.thTipo")}</th>
+            <th className="h-10 px-4 font-normal">{t("mov.thReactivo")}</th>
+            <th className="h-10 px-4 font-normal">{t("mov.thLoteInterno")}</th>
+            <th className="h-10 px-4 text-right font-normal">{t("mov.thCantidad")}</th>
+            <th className="h-10 px-4 font-normal">{t("mov.thUsuario")}</th>
+            <th className="h-10 px-4 font-normal">{t("mov.thMotivo")}</th>
           </tr>
         </thead>
         <tbody>
@@ -299,7 +292,7 @@ function MovimientosTable({ movimientos, isLoading }: { movimientos: Movimiento[
                   )}
                 >
                   <TipoIcon tipo={movimiento.tipo} />
-                  {tipoLabel(movimiento.tipo)}
+                  {t(`mov.${movimiento.tipo}`)}
                 </span>
               </td>
               <td className="h-12 px-4">{movimiento.reactivo_nombre}</td>
@@ -307,7 +300,7 @@ function MovimientosTable({ movimientos, isLoading }: { movimientos: Movimiento[
                 <Link
                   to={`/lotes?codigo=${encodeURIComponent(movimiento.codigo_interno)}`}
                   className="inline-flex h-8 items-center border border-cds-borderSubtle bg-cds-layer01 px-3 font-mono text-xs tracking-[0.16px] text-cds-linkPrimary transition-colors hover:bg-[var(--cds-layer-hover-01)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-cds-focus"
-                  aria-label={`Abrir lote ${movimiento.codigo_interno}`}
+                  aria-label={t("mov.abrirLote", { codigo: movimiento.codigo_interno })}
                 >
                   {movimiento.codigo_interno}
                 </Link>

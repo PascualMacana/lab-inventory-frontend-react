@@ -1,10 +1,12 @@
 import { CSSProperties, FormEvent, ReactNode, useState } from "react"
+import { useTranslation } from "react-i18next"
 
 import { LANDING_CSS } from "./landingStyles"
 import { useAuth } from "../lib/auth"
 
 export function LoginPage() {
   const { login } = useAuth()
+  const { t } = useTranslation()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
@@ -17,7 +19,7 @@ export function LoginPage() {
     try {
       await login(email.trim(), password)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo iniciar sesión")
+      setError(err instanceof Error ? err.message : t("login.errLogin"))
     } finally {
       setIsSubmitting(false)
     }
@@ -26,23 +28,23 @@ export function LoginPage() {
   return (
     <AuthFrame>
       <form className="login-area" onSubmit={handleSubmit}>
-        <div className="login-eyebrow">Acceso seguro</div>
+        <div className="login-eyebrow">{t("login.accesoSeguro")}</div>
         <h1 className="login-title">
-          Iniciar
+          {t("login.iniciarL1")}
           <br />
-          <span className="em">sesión.</span>
+          <span className="em">{t("login.iniciarL2")}</span>
         </h1>
         <p className="login-sub">
-          Ingresá con tus credenciales institucionales. Cada acción queda <b>firmada con tu usuario</b> en la trazabilidad del laboratorio.
+          {t("login.subA")}<b>{t("login.subB")}</b>{t("login.subC")}
         </p>
 
         <div className="login-field">
-          <label className="login-field-label" htmlFor="login-email">Correo electrónico</label>
+          <label className="login-field-label" htmlFor="login-email">{t("login.email")}</label>
           <input
             className="login-input"
             id="login-email"
             type="email"
-            placeholder="usuario@institucion.org"
+            placeholder={t("login.emailPh")}
             autoComplete="username"
             required
             value={email}
@@ -51,7 +53,7 @@ export function LoginPage() {
         </div>
 
         <div className="login-field">
-          <label className="login-field-label" htmlFor="login-pass">Contraseña</label>
+          <label className="login-field-label" htmlFor="login-pass">{t("login.password")}</label>
           <input
             className="login-input"
             id="login-pass"
@@ -64,19 +66,19 @@ export function LoginPage() {
           />
         </div>
 
-        <a href="mailto:Ox.serv@hotmail.com" className="login-forgot">¿Olvidaste tu contraseña?</a>
+        <a href="mailto:Ox.serv@hotmail.com" className="login-forgot">{t("login.olvidaste")}</a>
 
         {error ? <div className="login-error">{error}</div> : null}
 
         <button className="login-submit" type="submit" disabled={isSubmitting}>
-          <span>{isSubmitting ? "Ingresando..." : "Iniciar sesión"}</span>
+          <span>{isSubmitting ? t("login.ingresando") : t("login.iniciarSesion")}</span>
           <span className="arrow">→</span>
         </button>
       </form>
 
       <footer className="login-foot">
         <span>labinventory.lat</span>
-        <span>Inventario de laboratorio</span>
+        <span>{t("login.footerSub")}</span>
       </footer>
     </AuthFrame>
   )
@@ -84,6 +86,7 @@ export function LoginPage() {
 
 export function ChangePasswordPage() {
   const { changePassword, logout } = useAuth()
+  const { t } = useTranslation()
   const [passwordActual, setPasswordActual] = useState("")
   const [passwordNueva, setPasswordNueva] = useState("")
   const [passwordConfirmacion, setPasswordConfirmacion] = useState("")
@@ -94,18 +97,18 @@ export function ChangePasswordPage() {
     event.preventDefault()
     setError(null)
     if (passwordNueva.length < 8) {
-      setError("La contraseña nueva debe tener al menos 8 caracteres.")
+      setError(t("login.errLargo"))
       return
     }
     if (passwordNueva !== passwordConfirmacion) {
-      setError("La confirmación no coincide con la contraseña nueva.")
+      setError(t("login.errNoCoincide"))
       return
     }
     setIsSubmitting(true)
     try {
       await changePassword(passwordActual, passwordNueva)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo cambiar la contraseña")
+      setError(err instanceof Error ? err.message : t("login.errCambiar"))
     } finally {
       setIsSubmitting(false)
     }
@@ -114,18 +117,18 @@ export function ChangePasswordPage() {
   return (
     <AuthFrame>
       <form className="login-area" onSubmit={handleSubmit}>
-        <div className="login-eyebrow">Cambio obligatorio</div>
+        <div className="login-eyebrow">{t("login.cambioObligatorio")}</div>
         <h1 className="login-title">
-          Cambiar
+          {t("login.cambiarL1")}
           <br />
-          <span className="em">contraseña.</span>
+          <span className="em">{t("login.cambiarL2")}</span>
         </h1>
         <p className="login-sub">
-          Antes de continuar, definí una contraseña propia para esta cuenta. Después vas a volver a iniciar sesión.
+          {t("login.changeSub")}
         </p>
 
         <div className="login-field">
-          <label className="login-field-label" htmlFor="password_actual">Contraseña actual</label>
+          <label className="login-field-label" htmlFor="password_actual">{t("login.passwordActual")}</label>
           <input
             className="login-input"
             id="password_actual"
@@ -138,7 +141,7 @@ export function ChangePasswordPage() {
         </div>
 
         <div className="login-field">
-          <label className="login-field-label" htmlFor="password_nueva">Contraseña nueva</label>
+          <label className="login-field-label" htmlFor="password_nueva">{t("login.passwordNueva")}</label>
           <input
             className="login-input"
             id="password_nueva"
@@ -152,7 +155,7 @@ export function ChangePasswordPage() {
         </div>
 
         <div className="login-field">
-          <label className="login-field-label" htmlFor="password_confirmacion">Confirmar contraseña nueva</label>
+          <label className="login-field-label" htmlFor="password_confirmacion">{t("login.confirmar")}</label>
           <input
             className="login-input"
             id="password_confirmacion"
@@ -168,24 +171,25 @@ export function ChangePasswordPage() {
         {error ? <div className="login-error">{error}</div> : null}
 
         <button className="login-submit" type="submit" disabled={isSubmitting}>
-          <span>{isSubmitting ? "Guardando..." : "Guardar contraseña"}</span>
+          <span>{isSubmitting ? t("common.guardando") : t("login.guardarPassword")}</span>
           <span className="arrow">→</span>
         </button>
 
         <button type="button" className="login-forgot" onClick={() => void logout()}>
-          Salir
+          {t("login.salir")}
         </button>
       </form>
 
       <footer className="login-foot">
         <span>labinventory.lat</span>
-        <span>Acceso seguro</span>
+        <span>{t("login.accesoSeguro")}</span>
       </footer>
     </AuthFrame>
   )
 }
 
 function AuthFrame({ children }: { children: ReactNode }) {
+  const { t } = useTranslation()
   return (
     <main className="lab-landing">
       <style>{LANDING_CSS}</style>
@@ -197,7 +201,7 @@ function AuthFrame({ children }: { children: ReactNode }) {
             <header className="login-masthead">
               <span className="brand">LabInventory</span>
               <span className="div" />
-              <span className="product">Sistema de inventario de laboratorio</span>
+              <span className="product">{t("login.sistemaInventario")}</span>
             </header>
             {children}
           </section>
@@ -208,10 +212,11 @@ function AuthFrame({ children }: { children: ReactNode }) {
 }
 
 function ConstellationPanel() {
+  const { t } = useTranslation()
   return (
     <aside className="const-panel">
       <div className="const-meta">
-        <span className="live">en producción</span>
+        <span className="live">{t("login.enProduccion")}</span>
         <span>·</span>
         <span>labinventory.lat</span>
       </div>

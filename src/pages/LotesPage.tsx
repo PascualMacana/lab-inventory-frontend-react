@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { CalendarClock, Camera, Check, Download, FileText, Package, PackagePlus, Plus, QrCode, Save, Search, X } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import { useSearchParams } from "react-router-dom"
 
 import { Button } from "../components/ui/button"
@@ -67,6 +68,7 @@ function downloadBlob(blob: Blob, filename: string) {
 
 export function LotesPage() {
   const { token, usuario } = useAuth()
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
   const puedeCrearLote = puede(usuario, "crear_lote")
@@ -127,36 +129,36 @@ export function LotesPage() {
         setReactivoId(null)
         setLoteSeleccionadoId(lote.id)
         setBusqueda(lote.codigo_interno)
-        setMensaje(`Lote ${lote.codigo_interno} seleccionado desde movimientos.`)
+        setMensaje(t("lotes.msgSeleccionadoMov", { codigo: lote.codigo_interno }))
       })
       .catch((error) => {
         if (!activo) {
           return
         }
-        setErrorLocal(mutationError(error, "No se pudo abrir el lote desde movimientos"))
+        setErrorLocal(mutationError(error, t("lotes.errAbrirMov")))
       })
     return () => {
       activo = false
     }
-  }, [codigoUrl, token])
+  }, [codigoUrl, token, t])
 
   return (
     <section>
       <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1>Lotes</h1>
+          <h1>{t("lotes.titulo")}</h1>
           <p className="mt-2 text-sm leading-[1.29] tracking-[0.16px] text-cds-textSecondary">
-            Ingreso y control de frascos activos por reactivo.
+            {t("lotes.descripcion")}
           </p>
         </div>
         <div className="text-sm tracking-[0.16px] text-cds-textSecondary">
-          {lotesQuery.isLoading ? "Cargando lotes..." : `${lotesFiltrados.length} lotes activos`}
+          {lotesQuery.isLoading ? t("lotes.cargando") : t("lotes.activosCount", { n: lotesFiltrados.length })}
         </div>
       </div>
 
       {reactivosQuery.isError ? (
         <div className="mb-6 border-l-4 border-cds-supportError bg-cds-layer01 px-4 py-3 text-sm">
-          No se pudieron cargar los reactivos.
+          {t("lotes.loadErrorReactivos")}
         </div>
       ) : null}
 
@@ -202,9 +204,9 @@ export function LotesPage() {
               setReactivoId(null)
               setLoteSeleccionadoId(lote.id)
               setBusqueda(lote.codigo_interno)
-              setMensaje(`Lote ${lote.codigo_interno} encontrado.`)
+              setMensaje(t("lotes.msgEncontrado", { codigo: lote.codigo_interno }))
             } catch (error) {
-              setErrorLocal(mutationError(error, "No se pudo buscar el lote"))
+              setErrorLocal(mutationError(error, t("lotes.errBuscarLote")))
             }
           }}
           onUpdated={async (mensajeActualizado) => {
@@ -259,6 +261,7 @@ function ListadoLotes({
   onBuscarCodigoInterno: (codigo: string) => void | Promise<void>
   onUpdated: (mensaje?: string) => void | Promise<void>
 }) {
+  const { t } = useTranslation()
   const loteEditar = useMemo(() => {
     if (!loteSeleccionadoId) {
       return null
@@ -289,23 +292,23 @@ function ListadoLotes({
     <>
       {pendientes.length ? (
         <div className="mb-4 bg-cds-layer01 p-4">
-          <h2 className="text-[20px] font-semibold leading-[1.4]">Reactivos sin lote o en tránsito</h2>
+          <h2 className="text-[20px] font-semibold leading-[1.4]">{t("lotes.pendientesTitulo")}</h2>
           <p className="mt-2 text-sm leading-[1.29] tracking-[0.16px] text-cds-textSecondary">
-            {pendientes.length} reactivo(s) conviene revisar para registrar llegada.
+            {t("lotes.pendientesDesc", { n: pendientes.length })}
           </p>
         </div>
       ) : null}
 
       <div className="mb-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <label className="block">
-          <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">Reactivo</span>
+          <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">{t("lotes.reactivo")}</span>
           <select
             className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
             value={reactivoSeleccionado?.id ?? ""}
             onChange={(event) => onReactivoChange(event.target.value ? Number(event.target.value) : null)}
             disabled={reactivos.length === 0}
           >
-            <option value="">Todos los reactivos</option>
+            <option value="">{t("lotes.todosReactivos")}</option>
             {reactivos.map((reactivo) => (
               <option key={reactivo.id} value={reactivo.id}>
                 {reactivo.nombre} | stock: {formatNumber(reactivo.stock_total)} {reactivo.unidad} | ID {reactivo.id}
@@ -315,7 +318,7 @@ function ListadoLotes({
         </label>
 
         <label className="block">
-          <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">Buscar lote</span>
+          <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">{t("lotes.buscarLote")}</span>
           <form
             className="grid gap-2 sm:grid-cols-[1fr_auto]"
             onSubmit={(event) => {
@@ -340,11 +343,11 @@ function ListadoLotes({
                 className="pl-12"
                 value={busqueda}
                 onChange={(event) => onBusquedaChange(event.target.value)}
-                placeholder="Reactivo, marca, proveedor, QR, CAS"
+                placeholder={t("lotes.buscarPlaceholder")}
               />
             </div>
             <Button type="submit" variant="secondary" size="compact" disabled={!busqueda.trim()}>
-              Buscar
+              {t("common.buscar")}
             </Button>
           </form>
         </label>
@@ -352,17 +355,17 @@ function ListadoLotes({
 
       <div className="mb-4 grid gap-px bg-cds-borderSubtle md:grid-cols-3">
         <MetricTile
-          label={reactivoSeleccionado ? "Stock activo" : "Reactivos con lote"}
+          label={reactivoSeleccionado ? t("lotes.metricStockActivo") : t("lotes.metricReactivosConLote")}
           value={reactivoSeleccionado ? `${formatNumber(stockTotal)} ${reactivoSeleccionado.unidad}` : String(reactivosConLote)}
           icon={Package}
         />
-        <MetricTile label="Lotes activos" value={String(lotesTodos.length)} icon={Package} />
-        <MetricTile label="Próximo vencimiento" value={formatDate(proximoVencimiento)} icon={CalendarClock} />
+        <MetricTile label={t("lotes.metricLotesActivos")} value={String(lotesTodos.length)} icon={Package} />
+        <MetricTile label={t("lotes.metricProximoVenc")} value={formatDate(proximoVencimiento)} icon={CalendarClock} />
       </div>
 
       {reactivoSeleccionado && lotesTodos[0] ? (
         <p className="mb-3 text-xs tracking-[0.32px] text-cds-textSecondary">
-          Lote FIFO: <span className="font-mono text-cds-textPrimary">{lotesTodos[0].codigo_interno}</span>
+          {t("lotes.fifo")} <span className="font-mono text-cds-textPrimary">{lotesTodos[0].codigo_interno}</span>
         </p>
       ) : null}
 
@@ -374,12 +377,12 @@ function ListadoLotes({
         </div>
       ) : puedeEditar ? (
         <div className="mt-6 bg-cds-layer01 p-4 text-sm text-cds-textSecondary">
-          Seleccioná un lote de la tabla para editar datos, ajustar stock o reimprimir etiquetas.
+          {t("lotes.seleccionaParaEditar")}
         </div>
       ) : null}
 
       {puedeImprimir && lotesTodos.length ? (
-        <EtiquetasLotes token={token} lotes={lotesTodos} reactivoNombre={reactivoSeleccionado?.nombre ?? "lotes"} />
+        <EtiquetasLotes token={token} lotes={lotesTodos} reactivoNombre={reactivoSeleccionado?.nombre ?? t("lotes.fallbackNombre")} />
       ) : null}
     </>
   )
@@ -404,6 +407,7 @@ export function NuevoLoteForm({
   onSuccess: (reactivoId: number, mensaje: string, quedarseEnFormulario?: boolean, codigoInterno?: string | null) => void | Promise<void>
   modoInicial?: "manual" | "vision" | "multiple"
 }) {
+  const { t } = useTranslation()
   const [soloPendientes, setSoloPendientes] = useState(false)
   const [reactivoId, setReactivoId] = useState<number | null>(null)
   const [errorLocal, setErrorLocal] = useState<string | null>(null)
@@ -480,7 +484,7 @@ export function NuevoLoteForm({
       const datos = await visionMutation.mutateAsync(file)
       if (!datos.es_etiqueta_reactivo) {
         setDatosExtraidos(null)
-        setErrorLocal("La imagen no parece ser una etiqueta de reactivo. Podés cargar el lote manualmente.")
+        setErrorLocal(t("lotes.imagenNoEtiqueta"))
         return
       }
       setDatosExtraidos(datos)
@@ -526,7 +530,7 @@ export function NuevoLoteForm({
       }
     } catch (error) {
       setDatosExtraidos(null)
-      setErrorLocal(mutationError(error, "No se pudieron extraer datos de la etiqueta"))
+      setErrorLocal(mutationError(error, t("lotes.errExtraer")))
     }
   }
 
@@ -547,11 +551,11 @@ export function NuevoLoteForm({
     const nombre = nuevoNombre.trim()
     const unidad = nuevoUnidad.trim()
     if (!nombre) {
-      setErrorLocal("El reactivo nuevo necesita un nombre.")
+      setErrorLocal(t("lotes.errNombreReactivo"))
       return
     }
     if (!unidad) {
-      setErrorLocal("El reactivo nuevo necesita una unidad base.")
+      setErrorLocal(t("lotes.errUnidadReactivo"))
       return
     }
     try {
@@ -569,7 +573,7 @@ export function NuevoLoteForm({
       setCreandoReactivo(false)
       setMatchResult(null)
     } catch (error) {
-      setErrorLocal(mutationError(error, "No se pudo crear el reactivo"))
+      setErrorLocal(mutationError(error, t("lotes.errCrearReactivo")))
     }
   }
 
@@ -584,24 +588,24 @@ export function NuevoLoteForm({
     try {
       const cantidadParseada = requireFiniteNumber(
         parseFormNumber(cantidadInicial),
-        "Cantidad debe ser un número válido.",
+        t("lotes.errCantidad"),
       )
       const cantidadEnvasesParseada = requireFiniteNumber(
         parseFormNumber(cantidadEnvases),
-        "Cantidad de envases debe ser un número válido.",
+        t("lotes.errCantidadEnvases"),
       )
       const costoParseado = requireFiniteNumber(
         parseFormNumber(costoTotal, 0),
-        "Costo total debe ser un número válido.",
+        t("lotes.errCosto"),
       )
       if (cantidadParseada <= 0) {
-        throw new Error("La cantidad debe ser mayor a 0.")
+        throw new Error(t("lotes.errCantidadMayorCero"))
       }
       if (costoParseado < 0) {
-        throw new Error("El costo total no puede ser negativo.")
+        throw new Error(t("lotes.errCostoNegativo"))
       }
       if (modoCarga === "multiple" && (!Number.isInteger(cantidadEnvasesParseada) || cantidadEnvasesParseada < 1)) {
-        throw new Error("La cantidad de envases debe ser un entero mayor a 0.")
+        throw new Error(t("lotes.errEnvasesEntero"))
       }
       let mensajeCreacion = ""
       let codigoCreado: string | null = null
@@ -622,7 +626,7 @@ export function NuevoLoteForm({
         }
         const resultado = await crearMultipleMutation.mutateAsync(payload)
         setAltaMultipleResultado(resultado)
-        mensajeCreacion = `Se crearon ${resultado.cantidad_envases} envases para ${reactivo.nombre}.`
+        mensajeCreacion = t("lotes.msgEnvasesCreados", { n: resultado.cantidad_envases, nombre: reactivo.nombre })
       } else {
         const payload: LoteCrear = {
           reactivo_id: reactivo.id,
@@ -639,7 +643,7 @@ export function NuevoLoteForm({
         }
         const resultado = await crearMutation.mutateAsync(payload)
         codigoCreado = resultado.codigo_interno
-        mensajeCreacion = `Lote creado: ${resultado.codigo_interno}.`
+        mensajeCreacion = t("lotes.msgLoteCreado", { codigo: resultado.codigo_interno })
       }
       formElement.reset()
       setDatosExtraidos(null)
@@ -655,7 +659,7 @@ export function NuevoLoteForm({
       setCostoTotal("0")
       await onSuccess(reactivo.id, mensajeCreacion, modoCarga === "multiple", codigoCreado)
     } catch (error) {
-      setErrorLocal(mutationError(error, "No se pudo crear el lote"))
+      setErrorLocal(mutationError(error, t("lotes.errCrearLote")))
     }
   }
 
@@ -669,21 +673,21 @@ export function NuevoLoteForm({
       const blob = await pdfAltaMultipleMutation.mutateAsync(ids)
       downloadBlob(blob, "etiquetas_alta_multiple.pdf")
     } catch (error) {
-      setErrorLocal(mutationError(error, "No se pudo generar el PDF de etiquetas"))
+      setErrorLocal(mutationError(error, t("lotes.errPdfEtiquetas")))
     }
   }
 
   if (!reactivos.length) {
-    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">Primero tenés que crear al menos un reactivo.</div>
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("lotes.primeroCrearReactivo")}</div>
   }
 
   return (
     <form className="max-w-5xl bg-cds-layer01 p-4" onSubmit={handleSubmit}>
       <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
-          <h2 className="text-[24px] leading-[1.33]">Registrar entrada de lote</h2>
+          <h2 className="text-[24px] leading-[1.33]">{t("lotes.registrarEntrada")}</h2>
           <p className="mt-2 text-sm tracking-[0.16px] text-cds-textSecondary">
-            Carga manual. La unidad se convierte automáticamente a la unidad base del reactivo.
+            {t("lotes.cargaManualDesc")}
           </p>
         </div>
         <label className="flex items-center gap-2 text-sm tracking-[0.16px]">
@@ -695,13 +699,13 @@ export function NuevoLoteForm({
               setReactivoId(null)
             }}
           />
-          Solo sin stock o en tránsito
+          {t("lotes.soloPendientes")}
         </label>
       </div>
 
       <div className="mb-5">
         <div className="mb-5">
-          <div className="mb-2 text-xs tracking-[0.32px] text-cds-textSecondary">Modo de carga</div>
+          <div className="mb-2 text-xs tracking-[0.32px] text-cds-textSecondary">{t("lotes.modoCarga")}</div>
           <div className="flex flex-wrap gap-px bg-cds-borderSubtle">
             <button
               type="button"
@@ -715,7 +719,7 @@ export function NuevoLoteForm({
                 modoCarga === "manual" && "bg-cds-background text-cds-linkPrimary shadow-[inset_0_-2px_0_var(--cds-focus)]",
               )}
             >
-              Manual
+              {t("lotes.modoManual")}
             </button>
             <button
               type="button"
@@ -728,7 +732,7 @@ export function NuevoLoteForm({
                 modoCarga === "vision" && "bg-cds-background text-cds-linkPrimary shadow-[inset_0_-2px_0_var(--cds-focus)]",
               )}
             >
-              Escanear etiqueta
+              {t("lotes.modoVision")}
             </button>
             <button
               type="button"
@@ -742,7 +746,7 @@ export function NuevoLoteForm({
                 modoCarga === "multiple" && "bg-cds-background text-cds-linkPrimary shadow-[inset_0_-2px_0_var(--cds-focus)]",
               )}
             >
-              Alta múltiple
+              {t("lotes.modoMultiple")}
             </button>
           </div>
         </div>
@@ -751,7 +755,7 @@ export function NuevoLoteForm({
           <div className="mb-5 border-l-4 border-cds-supportInfo bg-cds-background px-4 py-3">
             <div className="mb-2 flex items-center gap-2 text-sm tracking-[0.16px]">
               <Camera size={18} aria-hidden="true" />
-              Foto de etiqueta
+              {t("lotes.fotoEtiqueta")}
             </div>
             <input
               id="foto_etiqueta_lote"
@@ -766,28 +770,28 @@ export function NuevoLoteForm({
               className="inline-flex h-12 w-full cursor-pointer items-center justify-center gap-2 border border-cds-buttonPrimary px-4 text-sm tracking-[0.16px] text-cds-linkPrimary transition-colors hover:bg-cds-layer01 sm:h-10 sm:w-auto sm:justify-start"
             >
               <Camera size={18} aria-hidden="true" />
-              <span className="sm:hidden">Tomar foto</span>
-              <span className="hidden sm:inline">Seleccionar imagen</span>
+              <span className="sm:hidden">{t("lotes.tomarFoto")}</span>
+              <span className="hidden sm:inline">{t("lotes.seleccionarImagen")}</span>
             </label>
             <p className="mt-3 text-xs leading-4 tracking-[0.32px] text-cds-textSecondary">
-              La IA solo prellena campos. Revisá el reactivo seleccionado y confirmá antes de guardar.
+              {t("lotes.iaPrellenaDesc")}
             </p>
             {visionMutation.isPending ? (
-              <p className="mt-3 text-sm text-cds-textSecondary">Extrayendo datos...</p>
+              <p className="mt-3 text-sm text-cds-textSecondary">{t("lotes.extrayendo")}</p>
             ) : null}
             {datosExtraidos?.nombre_compuesto ? (
               <p className="mt-3 text-sm">
-                Compuesto detectado: <strong>{datosExtraidos.nombre_compuesto}</strong>
+                {t("lotes.compuestoLabel")} <strong>{datosExtraidos.nombre_compuesto}</strong>
               </p>
             ) : null}
             {datosExtraidos?.notas ? (
-              <p className="mt-2 text-sm text-cds-textSecondary">Notas detectadas: {datosExtraidos.notas}</p>
+              <p className="mt-2 text-sm text-cds-textSecondary">{t("lotes.notasLabel")} {datosExtraidos.notas}</p>
             ) : null}
           </div>
         ) : null}
 
         {matchMutation.isPending ? (
-          <p className="mb-5 text-sm text-cds-textSecondary">Buscando el reactivo en el catálogo...</p>
+          <p className="mb-5 text-sm text-cds-textSecondary">{t("lotes.buscandoCatalogo")}</p>
         ) : null}
 
         {modoCarga === "vision" && matchResult ? (
@@ -796,26 +800,26 @@ export function NuevoLoteForm({
               <div className="border-l-4 border-cds-supportSuccess bg-cds-background px-4 py-3">
                 <div className="flex flex-wrap items-center gap-2 text-sm tracking-[0.16px]">
                   <Check size={18} className="text-cds-supportSuccess" aria-hidden="true" />
-                  <span>Coincide con un reactivo del catálogo</span>
+                  <span>{t("lotes.matchCoincide")}</span>
                   <span className={cn("inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium tracking-[0.16px]", CONFIANZA_PILL)}>
-                    confianza {matchResult.confianza}
+                    {t("lotes.confianza", { n: matchResult.confianza })}
                   </span>
                 </div>
                 <p className="mt-2 text-sm">
-                  Detecté <strong>{datosExtraidos?.nombre_compuesto}</strong> → <strong>{matchResult.match.nombre}</strong>
-                  {matchResult.match.cas_numero ? <span className="text-cds-textSecondary"> · CAS {matchResult.match.cas_numero}</span> : null}
+                  {t("lotes.matchDetectePre")} <strong>{datosExtraidos?.nombre_compuesto}</strong> → <strong>{matchResult.match.nombre}</strong>
+                  {matchResult.match.cas_numero ? <span className="text-cds-textSecondary"> · {t("lotes.casSuffix", { cas: matchResult.match.cas_numero })}</span> : null}
                 </p>
                 <p className="mt-1 text-xs leading-4 text-cds-textSecondary">{matchResult.razon}</p>
                 <p className="mt-2 text-xs text-cds-textSecondary">
-                  Quedó seleccionado abajo. Si no es correcto,{" "}
-                  <button type="button" onClick={descartarSugerencia} className="text-cds-linkPrimary underline">elegí otro</button>.
+                  {t("lotes.quedoSeleccionado")}{" "}
+                  <button type="button" onClick={descartarSugerencia} className="text-cds-linkPrimary underline">{t("lotes.elegiOtro")}</button>.
                 </p>
                 <button
                   type="button"
                   onClick={() => setCreandoReactivo(true)}
                   className="mt-3 inline-flex items-center gap-1.5 text-sm text-cds-linkPrimary"
                 >
-                  <Plus size={16} aria-hidden="true" /> No es este, crear reactivo nuevo
+                  <Plus size={16} aria-hidden="true" /> {t("lotes.noEsEsteCrear")}
                 </button>
               </div>
             ) : null}
@@ -823,9 +827,9 @@ export function NuevoLoteForm({
             {matchResult.decision === "ambiguo" ? (
               <div className="border-l-4 border-lab-warm bg-cds-background px-4 py-3">
                 <div className="flex flex-wrap items-center gap-2 text-sm tracking-[0.16px]">
-                  <span>No estoy seguro de cuál es. Elegí uno:</span>
+                  <span>{t("lotes.ambiguoElegi")}</span>
                   <span className={cn("inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium tracking-[0.16px]", CONFIANZA_PILL)}>
-                    confianza {matchResult.confianza}
+                    {t("lotes.confianza", { n: matchResult.confianza })}
                   </span>
                 </div>
                 <p className="mt-1 text-xs leading-4 text-cds-textSecondary">{matchResult.razon}</p>
@@ -853,14 +857,14 @@ export function NuevoLoteForm({
                   onClick={() => setCreandoReactivo(true)}
                   className="mt-3 inline-flex items-center gap-1.5 text-sm text-cds-linkPrimary"
                 >
-                  <Plus size={16} aria-hidden="true" /> Ninguno, crear reactivo nuevo
+                  <Plus size={16} aria-hidden="true" /> {t("lotes.ningunoCrear")}
                 </button>
               </div>
             ) : null}
 
             {matchResult.decision === "nuevo" ? (
               <div className="border-l-4 border-cds-supportInfo bg-cds-background px-4 py-3 text-sm">
-                No encontré este reactivo en el catálogo. Cargá los datos abajo y crealo.
+                {t("lotes.nuevoNoEncontrado")}
                 <p className="mt-1 text-xs leading-4 text-cds-textSecondary">{matchResult.razon}</p>
               </div>
             ) : null}
@@ -870,27 +874,27 @@ export function NuevoLoteForm({
         {modoCarga === "vision" && creandoReactivo ? (
           <div className="mb-5 border-l-4 border-cds-supportInfo bg-cds-layer01 px-4 py-4">
             <div className="mb-3 flex items-center justify-between">
-              <span className="text-sm font-medium">Crear reactivo nuevo</span>
-              <button type="button" onClick={() => setCreandoReactivo(false)} className="text-cds-textSecondary hover:text-cds-textPrimary" aria-label="Cerrar">
+              <span className="text-sm font-medium">{t("lotes.crearReactivoNuevo")}</span>
+              <button type="button" onClick={() => setCreandoReactivo(false)} className="text-cds-textSecondary hover:text-cds-textPrimary" aria-label={t("lotes.cerrar")}>
                 <X size={16} aria-hidden="true" />
               </button>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Nombre *" name="nuevo_reactivo_nombre" value={nuevoNombre} onChange={(event) => setNuevoNombre(event.target.value)} required />
-              <Field label="Unidad base *" name="nuevo_reactivo_unidad" value={nuevoUnidad} onChange={(event) => setNuevoUnidad(event.target.value)} placeholder="Ej: g, ml, unidad" required />
-              <Field label="Número CAS" name="nuevo_reactivo_cas" value={nuevoCas} onChange={(event) => setNuevoCas(event.target.value)} placeholder="Ej: 64-17-5" />
-              <Field label="Ubicación" name="nuevo_reactivo_ubicacion" value={nuevoUbicacion} onChange={(event) => setNuevoUbicacion(event.target.value)} placeholder="Ej: Estante A, repisa 2" />
+              <Field label={t("lotes.fNuevoNombre")} name="nuevo_reactivo_nombre" value={nuevoNombre} onChange={(event) => setNuevoNombre(event.target.value)} required />
+              <Field label={t("lotes.fNuevoUnidad")} name="nuevo_reactivo_unidad" value={nuevoUnidad} onChange={(event) => setNuevoUnidad(event.target.value)} placeholder={t("lotes.fNuevoUnidadPh")} required />
+              <Field label={t("lotes.fCas")} name="nuevo_reactivo_cas" value={nuevoCas} onChange={(event) => setNuevoCas(event.target.value)} placeholder={t("lotes.fCasPh")} />
+              <Field label={t("lotes.fUbicacion")} name="nuevo_reactivo_ubicacion" value={nuevoUbicacion} onChange={(event) => setNuevoUbicacion(event.target.value)} placeholder={t("lotes.fUbicacionPh")} />
             </div>
             <p className="mt-2 text-xs leading-4 text-cds-textSecondary">
-              La unidad base es permanente y rige el FIFO. El stock mínimo arranca en 0 (lo ajustás después).
+              {t("lotes.unidadBaseDesc")}
             </p>
             <Button type="button" onClick={() => void handleCrearReactivo()} disabled={crearReactivoMutation.isPending} className="mt-3">
-              {crearReactivoMutation.isPending ? "Creando..." : "Crear y usar"}
+              {crearReactivoMutation.isPending ? t("common.creando") : t("lotes.crearYUsar")}
             </Button>
           </div>
         ) : null}
 
-        <Label className="mb-2" htmlFor="reactivo_nuevo_lote">Reactivo *</Label>
+        <Label className="mb-2" htmlFor="reactivo_nuevo_lote">{t("lotes.reactivoLabel")}</Label>
         <select
           id="reactivo_nuevo_lote"
           className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
@@ -900,7 +904,7 @@ export function NuevoLoteForm({
         >
           {reactivosFiltrados.map((item) => (
             <option key={item.id} value={item.id}>
-              {item.nombre} | stock: {formatNumber(item.stock_total)} {item.unidad} | {item.categoria || "sin categoría"}
+              {item.nombre} | stock: {formatNumber(item.stock_total)} {item.unidad} | {item.categoria || t("lotes.sinCategoria")}
             </option>
           ))}
         </select>
@@ -908,17 +912,17 @@ export function NuevoLoteForm({
 
       {!reactivo ? (
         <div className="border-l-4 border-cds-supportInfo bg-cds-background px-4 py-3 text-sm">
-          No hay reactivos para ese filtro.
+          {t("lotes.noHayReactivosFiltro")}
         </div>
       ) : (
         <>
           <div className="mb-5 border-l-4 border-cds-supportInfo bg-cds-background px-4 py-3 text-sm">
-            Unidad base: <strong>{reactivo.unidad}</strong>. Registrando como usuario ID {usuarioId}.
+            {t("lotes.unidadBaseInfo", { unidad: reactivo.unidad, id: usuarioId })}
           </div>
           <div className="grid gap-5 md:grid-cols-2">
             {modoCarga === "multiple" ? (
               <DecimalField
-                label="Cantidad de envases físicos *"
+                label={t("lotes.fCantidadEnvases")}
                 name="cantidad_envases"
                 value={cantidadEnvases}
                 onChange={(event) => setCantidadEnvases(event.target.value)}
@@ -926,14 +930,14 @@ export function NuevoLoteForm({
               />
             ) : null}
             <DecimalField
-              label={modoCarga === "multiple" ? "Cantidad por envase *" : "Cantidad *"}
+              label={modoCarga === "multiple" ? t("lotes.fCantidadPorEnvase") : t("lotes.fCantidad")}
               name="cantidad_inicial"
               value={cantidadInicial}
               onChange={(event) => setCantidadInicial(event.target.value)}
               required
             />
             <label className="block">
-              <Label className="mb-2" htmlFor="unidad_ingreso">Unidad de ingreso *</Label>
+              <Label className="mb-2" htmlFor="unidad_ingreso">{t("lotes.fUnidadIngreso")}</Label>
               <select
                 id="unidad_ingreso"
                 name="unidad_ingreso"
@@ -949,7 +953,7 @@ export function NuevoLoteForm({
               </select>
             </label>
             <Field
-              label="Fecha de vencimiento *"
+              label={t("lotes.fFechaVenc")}
               name="fecha_vencimiento"
               type="date"
               value={fechaVencimiento}
@@ -957,43 +961,43 @@ export function NuevoLoteForm({
               required
             />
             <Field
-              label="Número de lote fabricante"
+              label={t("lotes.fNumeroLote")}
               name="numero_lote"
               value={numeroLote}
               onChange={(event) => setNumeroLote(event.target.value)}
-              placeholder="Ej: BCBV1234"
+              placeholder={t("lotes.fNumeroLotePh")}
             />
             <Field
-              label="Marca / fabricante"
+              label={t("lotes.fMarca")}
               name="marca"
               value={marca}
               onChange={(event) => setMarca(event.target.value)}
-              placeholder="Ej: Sigma-Aldrich, Merck"
+              placeholder={t("lotes.fMarcaPh")}
             />
             <Field
-              label="Número CAS"
+              label={t("lotes.fCas")}
               name="cas_numero"
               value={casNumero}
               onChange={(event) => setCasNumero(event.target.value)}
               placeholder="Ej: 64-17-5"
             />
             <Field
-              label="Código de barras del producto"
+              label={t("lotes.fCodigoBarras")}
               name="codigo_proveedor"
               value={codigoProveedor}
               onChange={(event) => setCodigoProveedor(event.target.value)}
-              placeholder="Ej: 7501031311309"
+              placeholder={t("lotes.fCodigoBarrasPh")}
             />
             <Field
-              label="Proveedor *"
+              label={t("lotes.fProveedor")}
               name="proveedor"
               value={proveedor}
               onChange={(event) => setProveedor(event.target.value)}
-              placeholder="Ej: Sigma-Aldrich"
+              placeholder={t("lotes.fProveedorPh")}
               required
             />
             <DecimalField
-              label={modoCarga === "multiple" ? "Costo total de la compra ($)" : "Costo total ($)"}
+              label={modoCarga === "multiple" ? t("lotes.fCostoTotalCompra") : t("lotes.fCostoTotal")}
               name="costo_total"
               value={costoTotal}
               onChange={(event) => setCostoTotal(event.target.value)}
@@ -1012,10 +1016,10 @@ export function NuevoLoteForm({
         <section className="mt-5 border-l-4 border-cds-supportSuccess bg-cds-background px-4 py-3">
           <div className="mb-3 flex items-center gap-2 text-sm font-semibold tracking-[0.16px]">
             <PackagePlus size={18} aria-hidden="true" />
-            {altaMultipleResultado.cantidad_envases} envases creados
+            {t("lotes.envasesCreados", { n: altaMultipleResultado.cantidad_envases })}
           </div>
           <p className="text-sm text-cds-textSecondary">
-            Total guardado: {formatNumber(altaMultipleResultado.cantidad_total_guardada)} {altaMultipleResultado.unidad}.
+            {t("lotes.totalGuardado", { total: formatNumber(altaMultipleResultado.cantidad_total_guardada), unidad: altaMultipleResultado.unidad })}
           </p>
           <div className="mt-4 max-h-48 overflow-y-auto border-t border-cds-borderSubtle">
             {altaMultipleResultado.lotes.map((lote) => (
@@ -1041,10 +1045,10 @@ export function NuevoLoteForm({
       <Button className="mt-6" type="submit" disabled={!reactivo || crearMutation.isPending || crearMultipleMutation.isPending}>
         <Save size={18} aria-hidden="true" />
         {crearMutation.isPending || crearMultipleMutation.isPending
-          ? "Registrando..."
+          ? t("lotes.registrando")
           : modoCarga === "multiple"
-            ? "Registrar envases"
-            : "Registrar lote"}
+            ? t("lotes.registrarEnvases")
+            : t("lotes.registrarLote")}
       </Button>
     </form>
   )
@@ -1066,6 +1070,7 @@ function EditarLoteForm({
   const [errorLocal, setErrorLocal] = useState<string | null>(null)
   const [mensajeMetadata, setMensajeMetadata] = useState<string | null>(null)
   const [mensajeAjuste, setMensajeAjuste] = useState<string | null>(null)
+  const { t } = useTranslation()
   const actualizarMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: LoteActualizar }) => api.actualizarLote(token, id, data),
   })
@@ -1088,10 +1093,10 @@ function EditarLoteForm({
       const form = new FormData(event.currentTarget)
       const costoTotal = requireFiniteNumber(
         parseFormNumber(form.get("costo_total"), 0),
-        "Costo total debe ser un número válido.",
+        t("lotes.errCosto"),
       )
       if (costoTotal < 0) {
-        throw new Error("El costo total no puede ser negativo.")
+        throw new Error(t("lotes.errCostoNegativo"))
       }
       const payload: LoteActualizar = {
         numero_lote: nullable(String(form.get("numero_lote") ?? "")),
@@ -1103,10 +1108,10 @@ function EditarLoteForm({
         costo_total: costoTotal,
       }
       await actualizarMutation.mutateAsync({ id: lote.id, data: payload })
-      setMensajeMetadata("Datos del lote actualizados correctamente.")
+      setMensajeMetadata(t("lotes.metadataActualizada"))
       await onUpdated()
     } catch (error) {
-      setErrorLocal(mutationError(error, "No se pudo actualizar el lote"))
+      setErrorLocal(mutationError(error, t("lotes.errActualizarLote")))
     }
   }
 
@@ -1120,14 +1125,14 @@ function EditarLoteForm({
       const form = new FormData(formElement)
       const cantidadReal = requireFiniteNumber(
         parseFormNumber(form.get("cantidad_real")),
-        "Cantidad real debe ser un número válido.",
+        t("lotes.errCantidadReal"),
       )
       const motivo = String(form.get("motivo_ajuste") ?? "").trim()
       if (cantidadReal < 0) {
-        throw new Error("La cantidad real no puede ser negativa.")
+        throw new Error(t("lotes.errCantidadRealNeg"))
       }
       if (!motivo) {
-        throw new Error("El motivo es obligatorio para ajustar stock.")
+        throw new Error(t("lotes.errMotivoObligatorio"))
       }
       const payload: LoteAjusteStock = {
         cantidad_real: cantidadReal,
@@ -1136,10 +1141,10 @@ function EditarLoteForm({
       }
       const resultado = await ajusteMutation.mutateAsync({ id: lote.id, data: payload })
       formElement.reset()
-      setMensajeAjuste(`Stock ajustado: ${resultado.codigo_interno} quedó en ${formatNumber(resultado.cantidad_real)} ${resultado.unidad}.`)
+      setMensajeAjuste(t("lotes.msgStockAjustado", { codigo: resultado.codigo_interno, cantidad: formatNumber(resultado.cantidad_real), unidad: resultado.unidad }))
       await onUpdated()
     } catch (error) {
-      setErrorLocal(mutationError(error, "No se pudo ajustar el stock"))
+      setErrorLocal(mutationError(error, t("lotes.errAjustar")))
     }
   }
 
@@ -1148,13 +1153,13 @@ function EditarLoteForm({
       <form key={`metadata-${lote.id}`} onSubmit={handleSubmit}>
         <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
-            <h2 className="text-[24px] leading-[1.33]">Editar lote</h2>
+            <h2 className="text-[24px] leading-[1.33]">{t("lotes.editarLote")}</h2>
             <p className="mt-2 text-sm tracking-[0.16px] text-cds-textSecondary">
-              Metadata solamente. La cantidad actual se corrige con ajuste de stock y motivo.
+              {t("lotes.metadataDesc")}
             </p>
           </div>
           <label className="block min-w-[280px]">
-            <Label className="mb-2" htmlFor="lote_editar">Lote</Label>
+            <Label className="mb-2" htmlFor="lote_editar">{t("lotes.lote")}</Label>
             <select
               id="lote_editar"
               className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
@@ -1163,7 +1168,7 @@ function EditarLoteForm({
             >
               {lotes.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.codigo_interno} - {item.numero_lote || "sin lote fabricante"}
+                  {item.codigo_interno} - {item.numero_lote || t("lotes.sinLoteFabricante")}
                 </option>
               ))}
             </select>
@@ -1171,18 +1176,18 @@ function EditarLoteForm({
         </div>
 
         <div className="grid gap-5 md:grid-cols-2">
-          <Field label="Número de lote fabricante" name="numero_lote" defaultValue={lote.numero_lote ?? ""} />
-          <Field label="Marca / fabricante" name="marca" defaultValue={lote.marca ?? ""} />
-          <Field label="Número CAS" name="cas_numero" defaultValue={lote.cas_numero ?? ""} />
-          <Field label="Código proveedor" name="codigo_proveedor" defaultValue={lote.codigo_proveedor ?? ""} />
-          <Field label="Fecha de vencimiento" name="fecha_vencimiento" type="date" defaultValue={lote.fecha_vencimiento} required />
-          <Field label="Proveedor *" name="proveedor" defaultValue={lote.proveedor ?? ""} required />
-          <DecimalField label="Costo total" name="costo_total" defaultValue={String(lote.costo_total ?? 0)} />
+          <Field label={t("lotes.fNumeroLote")} name="numero_lote" defaultValue={lote.numero_lote ?? ""} />
+          <Field label={t("lotes.fMarca")} name="marca" defaultValue={lote.marca ?? ""} />
+          <Field label={t("lotes.fCas")} name="cas_numero" defaultValue={lote.cas_numero ?? ""} />
+          <Field label={t("lotes.fCodigoProveedor")} name="codigo_proveedor" defaultValue={lote.codigo_proveedor ?? ""} />
+          <Field label={t("lotes.fFechaVencEdit")} name="fecha_vencimiento" type="date" defaultValue={lote.fecha_vencimiento} required />
+          <Field label={t("lotes.fProveedor")} name="proveedor" defaultValue={lote.proveedor ?? ""} required />
+          <DecimalField label={t("lotes.fCostoTotalSimple")} name="costo_total" defaultValue={String(lote.costo_total ?? 0)} />
         </div>
 
         <Button className="mt-6" type="submit" disabled={actualizarMutation.isPending}>
           <Save size={18} aria-hidden="true" />
-          {actualizarMutation.isPending ? "Guardando..." : "Guardar cambios"}
+          {actualizarMutation.isPending ? t("common.guardando") : t("common.guardarCambios")}
         </Button>
         {mensajeMetadata ? (
           <div className="mt-5 border-l-4 border-cds-supportSuccess bg-cds-background px-4 py-3 text-sm">
@@ -1193,15 +1198,15 @@ function EditarLoteForm({
 
       <form key={`ajuste-${lote.id}`} className="mt-8 border-t border-cds-borderSubtle pt-6" onSubmit={handleAjusteSubmit}>
         <div className="mb-5">
-          <h3>Ajustar stock</h3>
+          <h3>{t("lotes.ajustarStock")}</h3>
           <p className="mt-2 text-sm tracking-[0.16px] text-cds-textSecondary">
-            Stock actual: <span className="font-mono text-cds-textPrimary">{formatNumber(lote.cantidad_actual)} {lote.unidad}</span>. El ajuste registra un movimiento auditable.
+            {t("lotes.stockActualInfo", { cantidad: formatNumber(lote.cantidad_actual), unidad: lote.unidad })}
           </p>
         </div>
         <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_220px]">
-          <DecimalField label="Cantidad real *" name="cantidad_real" defaultValue={String(lote.cantidad_actual ?? 0)} required />
+          <DecimalField label={t("lotes.fCantidadReal")} name="cantidad_real" defaultValue={String(lote.cantidad_actual ?? 0)} required />
           <label className="block">
-            <Label className="mb-2" htmlFor="unidad_ajuste">Unidad *</Label>
+            <Label className="mb-2" htmlFor="unidad_ajuste">{t("lotes.fUnidad")}</Label>
             <select
               id="unidad_ajuste"
               name="unidad_ajuste"
@@ -1217,15 +1222,15 @@ function EditarLoteForm({
           </label>
           <Field
             className="md:col-span-2"
-            label="Motivo obligatorio *"
+            label={t("lotes.fMotivo")}
             name="motivo_ajuste"
-            placeholder="Ej: Conteo físico, merma, evaporación, frasco roto"
+            placeholder={t("lotes.fMotivoPh")}
             required
           />
         </div>
         <Button className="mt-6" type="submit" disabled={ajusteMutation.isPending}>
           <Save size={18} aria-hidden="true" />
-          {ajusteMutation.isPending ? "Ajustando..." : "Registrar ajuste"}
+          {ajusteMutation.isPending ? t("lotes.ajustando") : t("lotes.registrarAjuste")}
         </Button>
         {mensajeAjuste ? (
           <div className="mt-5 border-l-4 border-cds-supportSuccess bg-cds-background px-4 py-3 text-sm">
@@ -1257,6 +1262,7 @@ function EtiquetasLotes({
   const [posicionInicio, setPosicionInicio] = useState("1")
   const [formato, setFormato] = useState("avery_l7160")
   const [errorLocal, setErrorLocal] = useState<string | null>(null)
+  const { t } = useTranslation()
   const qrMutation = useMutation({
     mutationFn: (lote: Lote) => api.qrLote(token, lote.id),
   })
@@ -1296,7 +1302,7 @@ function EtiquetasLotes({
       const blob = await qrMutation.mutateAsync(loteQr)
       downloadBlob(blob, `${loteQr.codigo_interno}.png`)
     } catch (error) {
-      setErrorLocal(mutationError(error, "No se pudo descargar el QR"))
+      setErrorLocal(mutationError(error, t("lotes.errDescargarQr")))
     }
   }
 
@@ -1306,20 +1312,20 @@ function EtiquetasLotes({
       // La posición inicial solo aplica a la grilla Avery; en rollo se ignora.
       let posicion = 1
       if (esGrilla) {
-        posicion = requireFiniteNumber(parseFormNumber(posicionInicio, 1), "Posición inicial inválida.")
+        posicion = requireFiniteNumber(parseFormNumber(posicionInicio, 1), t("lotes.errPosicionInvalida"))
         const tope = perfilSel.por_pagina
         if (posicion < 1 || posicion > tope || !Number.isInteger(posicion)) {
-          throw new Error(`La posición inicial debe ser un entero entre 1 y ${tope}.`)
+          throw new Error(t("lotes.errPosicionRango", { tope }))
         }
       }
       if (!seleccionPdf.length) {
-        throw new Error("Seleccioná al menos un lote.")
+        throw new Error(t("lotes.errSeleccionaLote"))
       }
       const blob = await pdfMutation.mutateAsync({ ids: seleccionPdf, posicion, fmt: formato })
       const nombre = reactivoNombre.trim().replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "")
       downloadBlob(blob, `etiquetas_${nombre || "reactivo"}_${formato}.pdf`)
     } catch (error) {
-      setErrorLocal(mutationError(error, "No se pudo generar el PDF"))
+      setErrorLocal(mutationError(error, t("lotes.errGenerarPdf")))
     }
   }
 
@@ -1334,10 +1340,10 @@ function EtiquetasLotes({
       <section className="bg-cds-layer01 p-4">
         <div className="mb-5 flex items-center gap-3">
           <QrCode size={20} aria-hidden="true" />
-          <h2 className="text-[24px] leading-[1.33]">Reimprimir QR</h2>
+          <h2 className="text-[24px] leading-[1.33]">{t("lotes.reimprimirQr")}</h2>
         </div>
         <label className="block">
-          <Label className="mb-2" htmlFor="lote_qr">Lote</Label>
+          <Label className="mb-2" htmlFor="lote_qr">{t("lotes.lote")}</Label>
           <select
             id="lote_qr"
             className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
@@ -1354,17 +1360,17 @@ function EtiquetasLotes({
         <p className="mt-4 font-mono text-sm tracking-[0.16px]">{loteQr.codigo_interno}</p>
         <Button className="mt-5" type="button" onClick={descargarQr} disabled={qrMutation.isPending}>
           <Download size={18} aria-hidden="true" />
-          {qrMutation.isPending ? "Descargando..." : "Descargar QR PNG"}
+          {qrMutation.isPending ? t("lotes.descargando") : t("lotes.descargarQrPng")}
         </Button>
       </section>
 
       <section className="bg-cds-layer01 p-4">
         <div className="mb-5 flex items-center gap-3">
           <FileText size={20} aria-hidden="true" />
-          <h2 className="text-[24px] leading-[1.33]">Imprimir etiquetas</h2>
+          <h2 className="text-[24px] leading-[1.33]">{t("lotes.imprimirEtiquetas")}</h2>
         </div>
         <label className="block">
-          <Label className="mb-2" htmlFor="formato_etiqueta">Tamaño / formato</Label>
+          <Label className="mb-2" htmlFor="formato_etiqueta">{t("lotes.tamanoFormato")}</Label>
           <select
             id="formato_etiqueta"
             className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
@@ -1380,8 +1386,8 @@ function EtiquetasLotes({
         </label>
         <p className="mb-4 mt-3 text-sm tracking-[0.16px] text-cds-textSecondary">
           {esGrilla
-            ? `PDF A4, ${perfilSel.por_pagina} etiquetas por hoja.`
-            : `Rollo: una etiqueta por página (${perfilSel.ancho_mm}×${perfilSel.alto_mm} mm).`}
+            ? t("lotes.pdfA4Hoja", { n: perfilSel.por_pagina })
+            : t("lotes.rolloUnaPorPagina", { ancho: perfilSel.ancho_mm, alto: perfilSel.alto_mm })}
         </p>
         <div className="max-h-56 overflow-y-auto border-t border-cds-borderSubtle">
           {lotes.map((lote) => (
@@ -1392,13 +1398,13 @@ function EtiquetasLotes({
                 onChange={() => toggleLotePdf(lote.id)}
               />
               <span className="font-mono text-xs">{lote.codigo_interno}</span>
-              <span className="text-cds-textSecondary">vence {formatDate(lote.fecha_vencimiento)}</span>
+              <span className="text-cds-textSecondary">{t("lotes.vence", { fecha: formatDate(lote.fecha_vencimiento) })}</span>
             </label>
           ))}
         </div>
         {esGrilla ? (
           <label className="mt-5 block max-w-48">
-            <Label className="mb-2" htmlFor="posicion_inicio">Empezar en posición</Label>
+            <Label className="mb-2" htmlFor="posicion_inicio">{t("lotes.empezarPosicion")}</Label>
             <Input
               id="posicion_inicio"
               value={posicionInicio}
@@ -1409,7 +1415,7 @@ function EtiquetasLotes({
         ) : null}
         <Button className="mt-5" type="button" onClick={descargarPdf} disabled={pdfMutation.isPending || !seleccionPdf.length}>
           <Download size={18} aria-hidden="true" />
-          {pdfMutation.isPending ? "Generando..." : "Descargar PDF"}
+          {pdfMutation.isPending ? t("lotes.generando") : t("lotes.descargarPdf")}
         </Button>
       </section>
 
@@ -1453,12 +1459,13 @@ function LotesTable({
   selectedId: number | null
   onSelect: (id: number) => void
 }) {
+  const { t } = useTranslation()
   if (isLoading) {
-    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">Cargando tabla...</div>
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("common.cargandoTabla")}</div>
   }
 
   if (lotes.length === 0) {
-    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">No hay lotes activos para mostrar.</div>
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("lotes.noHayLotes")}</div>
   }
 
   return (
@@ -1466,18 +1473,18 @@ function LotesTable({
       <table className="w-full min-w-[1340px] border-collapse text-left text-sm">
         <thead>
           <tr className="border-b border-cds-borderSubtle bg-cds-layer01 text-xs tracking-[0.32px] text-cds-textSecondary">
-            <th className="h-10 px-4 font-normal">QR interno</th>
-            <th className="h-10 px-4 font-normal">Reactivo</th>
-            <th className="h-10 px-4 font-normal">Lote fabricante</th>
-            <th className="h-10 px-4 font-normal">Marca</th>
-            <th className="h-10 px-4 font-normal">CAS</th>
-            <th className="h-10 px-4 font-normal">Cód. proveedor</th>
-            <th className="h-10 px-4 font-normal">Ingreso</th>
-            <th className="h-10 px-4 text-right font-normal">Stock</th>
-            <th className="h-10 px-4 text-right font-normal">Inicial</th>
-            <th className="h-10 px-4 font-normal">Vencimiento</th>
-            <th className="h-10 px-4 font-normal">Proveedor</th>
-            <th className="h-10 px-4 font-normal">Ubicación</th>
+            <th className="h-10 px-4 font-normal">{t("lotes.thQr")}</th>
+            <th className="h-10 px-4 font-normal">{t("lotes.thReactivo")}</th>
+            <th className="h-10 px-4 font-normal">{t("lotes.thLoteFab")}</th>
+            <th className="h-10 px-4 font-normal">{t("lotes.thMarca")}</th>
+            <th className="h-10 px-4 font-normal">{t("lotes.thCas")}</th>
+            <th className="h-10 px-4 font-normal">{t("lotes.thCodProveedor")}</th>
+            <th className="h-10 px-4 font-normal">{t("lotes.thIngreso")}</th>
+            <th className="h-10 px-4 text-right font-normal">{t("lotes.thStock")}</th>
+            <th className="h-10 px-4 text-right font-normal">{t("lotes.thInicial")}</th>
+            <th className="h-10 px-4 font-normal">{t("lotes.thVencimiento")}</th>
+            <th className="h-10 px-4 font-normal">{t("lotes.thProveedor")}</th>
+            <th className="h-10 px-4 font-normal">{t("lotes.thUbicacion")}</th>
           </tr>
         </thead>
         <tbody>

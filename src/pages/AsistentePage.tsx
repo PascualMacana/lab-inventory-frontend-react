@@ -1,6 +1,8 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react"
 import { useMutation } from "@tanstack/react-query"
 import { Bot, Download, Send, Trash2, User } from "lucide-react"
+import { useTranslation } from "react-i18next"
+import type { TFunction } from "i18next"
 
 import { Button } from "../components/ui/button"
 import { api, type AsistenteToolUsada, type AsistenteTurnoHistorial } from "../lib/api"
@@ -17,11 +19,11 @@ type ChatTurn = {
 
 const MAX_TURNOS_HISTORIAL = 10
 const ejemplos = [
-  "¿Qué lotes vencen en los próximos 30 días?",
-  "¿Cuánto etanol tengo en stock?",
-  "Mostrame los movimientos de hoy",
-  "Dame un protocolo orientativo para preparar PBS 1X",
-  "¿Cómo preparo PBS 1X usando lo que tengo en stock?",
+  "asistente.ej1",
+  "asistente.ej2",
+  "asistente.ej3",
+  "asistente.ej4",
+  "asistente.ej5",
 ]
 
 function pdfSafeText(value: string) {
@@ -78,8 +80,8 @@ function latin1Bytes(value: string) {
   return bytes
 }
 
-function buildAssistantPdf(text: string) {
-  const title = "Respuesta del asistente"
+function buildAssistantPdf(text: string, t: TFunction) {
+  const title = t("asistente.pdfTitulo")
   const rawLines = pdfSafeText(text).split("\n")
   const wrapped = rawLines.flatMap((line) => wrapPdfLine(line.trimEnd()))
   const linesPerPage = 45
@@ -88,7 +90,7 @@ function buildAssistantPdf(text: string) {
     pages.push(wrapped.slice(index, index + linesPerPage))
   }
   if (!pages.length) {
-    pages.push(["(sin respuesta)"])
+    pages.push([t("asistente.sinRespuesta")])
   }
 
   const objects: string[] = []
@@ -112,7 +114,7 @@ function buildAssistantPdf(text: string) {
       `(${escapePdfLiteral(title)}) Tj`,
       "/F1 10 Tf",
       "0 -18 Td",
-      `(${escapePdfLiteral(`Lab Inventory - Pagina ${pageIndex + 1} de ${totalPages}`)}) Tj`,
+      `(${escapePdfLiteral(t("asistente.pdfPagina", { n: pageIndex + 1, total: totalPages }))}) Tj`,
       "/F1 11 Tf",
       "14 TL",
       "0 -28 Td",
@@ -150,8 +152,8 @@ function buildAssistantPdf(text: string) {
   return new Blob(parts, { type: "application/pdf" })
 }
 
-function downloadAssistantPdf(text: string) {
-  const blob = buildAssistantPdf(text)
+function downloadAssistantPdf(text: string, t: TFunction) {
+  const blob = buildAssistantPdf(text, t)
   const url = URL.createObjectURL(blob)
   const link = document.createElement("a")
   link.href = url
@@ -171,7 +173,7 @@ function userRequestedPdf(text: string) {
   return /(pdf|descarg|export|archivo|reporte|informe)/.test(normalized)
 }
 
-function pdfPreviewText(text: string) {
+function pdfPreviewText(text: string, t: TFunction) {
   const cleaned = text
     .split("\n")
     .map((line) => line.trim())
@@ -180,7 +182,7 @@ function pdfPreviewText(text: string) {
     .join(" ")
 
   if (!cleaned) {
-    return "(sin contenido para previsualizar)"
+    return t("asistente.sinPreview")
   }
   return cleaned.length > 280 ? `${cleaned.slice(0, 280)}...` : cleaned
 }
@@ -208,14 +210,14 @@ function toolTotal(tool: AsistenteToolUsada) {
   return typeof total === "number" ? total : 0
 }
 
-function renderAssistantText(text: string) {
+function renderAssistantText(text: string, t: TFunction) {
   const blocks = text
     .split(/\n{2,}/)
     .map((block) => block.trim())
     .filter(Boolean)
 
   if (!blocks.length) {
-    return <p className="text-base leading-6 tracking-[0.16px]">(sin respuesta)</p>
+    return <p className="text-base leading-6 tracking-[0.16px]">{t("asistente.sinRespuesta")}</p>
   }
 
   return (
@@ -246,6 +248,7 @@ function renderAssistantText(text: string) {
 
 export function AsistentePage() {
   const { token, usuario } = useAuth()
+  const { t } = useTranslation()
   const [turnos, setTurnos] = useState<ChatTurn[]>([])
   const [loadedKey, setLoadedKey] = useState<string | null>(null)
   const [pregunta, setPregunta] = useState("")
@@ -293,7 +296,7 @@ export function AsistentePage() {
           { role: "user", text: limpia },
           {
             role: "assistant",
-            text: "Preparé un PDF descargable con la última respuesta del asistente.",
+            text: t("asistente.msgPdf"),
             pdfRequested: true,
             pdfText,
           },
@@ -313,13 +316,13 @@ export function AsistentePage() {
         ...actual,
         {
           role: "assistant",
-          text: respuesta.respuesta || "(sin respuesta)",
+          text: respuesta.respuesta || t("asistente.sinRespuesta"),
           tools: respuesta.tools_usadas ?? [],
           pdfRequested,
         },
       ])
     } catch (error) {
-      const message = mutationError(error, "No se pudo consultar el asistente")
+      const message = mutationError(error, t("asistente.errConsultar"))
       setTurnos((actual) => [...actual, { role: "assistant", text: message, tools: [] }])
       setErrorLocal(message)
     }
@@ -340,14 +343,14 @@ export function AsistentePage() {
     <section className="mx-auto flex min-h-[calc(100vh-7rem)] max-w-5xl flex-col">
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1>Asistente</h1>
+          <h1>{t("asistente.title")}</h1>
           <p className="mt-2 text-sm leading-[1.29] tracking-[0.16px] text-cds-textSecondary">
-            Consultá inventario o pedí orientación técnica y protocolos. No modifica registros.
+            {t("asistente.desc")}
           </p>
         </div>
         <Button type="button" variant="ghost" onClick={limpiarChat} disabled={!turnos.length || preguntarMutation.isPending}>
           <Trash2 size={18} aria-hidden="true" />
-          Limpiar chat
+          {t("asistente.limpiarChat")}
         </Button>
       </div>
 
@@ -360,16 +363,16 @@ export function AsistentePage() {
       <div className="flex-1 space-y-4 overflow-y-auto pb-6">
         {!turnos.length ? (
           <div className="bg-cds-layer01 p-4">
-            <h2 className="text-[24px] leading-[1.33]">Preguntas rápidas</h2>
+            <h2 className="text-[24px] leading-[1.33]">{t("asistente.preguntasRapidas")}</h2>
             <div className="mt-5 grid gap-3 md:grid-cols-2">
               {ejemplos.map((ejemplo) => (
                 <button
                   key={ejemplo}
                   type="button"
                   className="min-h-12 border border-cds-borderSubtle bg-cds-background px-4 py-3 text-left text-sm tracking-[0.16px] transition-colors hover:bg-cds-layer01 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-cds-focus"
-                  onClick={() => void enviarPregunta(ejemplo)}
+                  onClick={() => void enviarPregunta(t(ejemplo))}
                 >
-                  {ejemplo}
+                  {t(ejemplo)}
                 </button>
               ))}
             </div>
@@ -385,7 +388,7 @@ export function AsistentePage() {
             <div className="flex h-10 w-10 shrink-0 items-center justify-center bg-cds-layer01 text-cds-textSecondary">
               <Bot size={20} aria-hidden="true" />
             </div>
-            <div className="bg-cds-layer01 px-4 py-3 text-sm text-cds-textSecondary">Consultando...</div>
+            <div className="bg-cds-layer01 px-4 py-3 text-sm text-cds-textSecondary">{t("asistente.consultando")}</div>
           </div>
         ) : null}
         <div ref={endRef} />
@@ -397,7 +400,7 @@ export function AsistentePage() {
             className="min-h-12 resize-y border-0 border-b-2 border-b-transparent bg-cds-field px-4 py-3 text-sm text-cds-textPrimary outline-none transition-colors placeholder:text-cds-textPlaceholder focus:border-b-cds-focus"
             value={pregunta}
             onChange={(event) => setPregunta(event.target.value)}
-            placeholder="Hacé tu pregunta..."
+            placeholder={t("asistente.preguntaPh")}
             rows={1}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
@@ -408,7 +411,7 @@ export function AsistentePage() {
           />
           <Button type="submit" disabled={!pregunta.trim() || preguntarMutation.isPending}>
             <Send size={18} aria-hidden="true" />
-            Enviar
+            {t("asistente.enviar")}
           </Button>
         </div>
       </form>
@@ -417,6 +420,7 @@ export function AsistentePage() {
 }
 
 function ChatBubble({ turno }: { turno: ChatTurn }) {
+  const { t } = useTranslation()
   const isUser = turno.role === "user"
   const tools = turno.tools ?? []
 
@@ -432,7 +436,7 @@ function ChatBubble({ turno }: { turno: ChatTurn }) {
           <div className="whitespace-pre-wrap text-sm leading-5 tracking-[0.16px]">{turno.text}</div>
         ) : (
           <>
-            {renderAssistantText(turno.text)}
+            {renderAssistantText(turno.text, t)}
             {turno.pdfRequested ? <AssistantPdfCard text={turno.pdfText ?? turno.text} /> : null}
           </>
         )}
@@ -448,18 +452,19 @@ function ChatBubble({ turno }: { turno: ChatTurn }) {
 }
 
 function AssistantPdfCard({ text }: { text: string }) {
+  const { t } = useTranslation()
   return (
     <div className="mt-4 border border-cds-borderSubtle bg-cds-background p-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="font-mono text-xs tracking-[0.32px] text-cds-textSecondary">PDF listo para descargar</div>
+          <div className="font-mono text-xs tracking-[0.32px] text-cds-textSecondary">{t("asistente.pdfListo")}</div>
           <p className="mt-2 line-clamp-3 text-sm leading-5 tracking-[0.16px] text-cds-textPrimary">
-            {pdfPreviewText(text)}
+            {pdfPreviewText(text, t)}
           </p>
         </div>
-        <Button type="button" variant="secondary" size="compact" onClick={() => downloadAssistantPdf(text)}>
+        <Button type="button" variant="secondary" size="compact" onClick={() => downloadAssistantPdf(text, t)}>
           <Download size={16} aria-hidden="true" />
-          Descargar PDF
+          {t("asistente.descargarPdf")}
         </Button>
       </div>
     </div>
@@ -467,9 +472,10 @@ function AssistantPdfCard({ text }: { text: string }) {
 }
 
 function ToolsPanel({ tools }: { tools: AsistenteToolUsada[] }) {
+  const { t } = useTranslation()
   return (
     <details className="mt-4 border-t border-cds-borderSubtle pt-3 text-sm">
-      <summary className="cursor-pointer text-cds-linkPrimary">Tools usadas ({tools.length})</summary>
+      <summary className="cursor-pointer text-cds-linkPrimary">{t("asistente.toolsUsadas", { n: tools.length })}</summary>
       <div className="mt-3 space-y-3">
         {tools.map((tool, index) => (
           <div key={`${tool.nombre}-${index}`} className="bg-cds-background p-3">
@@ -479,12 +485,12 @@ function ToolsPanel({ tools }: { tools: AsistenteToolUsada[] }) {
                 {JSON.stringify(tool.args, null, 2)}
               </pre>
             ) : (
-              <div className="mt-2 text-xs text-cds-textSecondary">sin argumentos</div>
+              <div className="mt-2 text-xs text-cds-textSecondary">{t("asistente.sinArgumentos")}</div>
             )}
             {tool.resultado?.error ? (
               <div className="mt-2 text-xs text-cds-supportError">{tool.resultado.error}</div>
             ) : (
-              <div className="mt-2 text-xs text-cds-textSecondary">{toolTotal(tool)} resultado(s)</div>
+              <div className="mt-2 text-xs text-cds-textSecondary">{t("asistente.resultados", { n: toolTotal(tool) })}</div>
             )}
           </div>
         ))}

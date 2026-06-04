@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowLeft, Eye, EyeOff, History, Microscope, Plus, Search, Wrench } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import { ModuleNav } from "../components/ModuleNav"
 import { Button } from "../components/ui/button"
@@ -59,23 +60,13 @@ function formatDateTime(value: string | null | undefined) {
   return new Intl.DateTimeFormat("es-AR", { dateStyle: "short", timeStyle: "short" }).format(date)
 }
 
-function tipoLabel(tipo: TipoEvento) {
-  const labels: Record<TipoEvento, string> = {
-    alta: "Alta",
-    rotura: "Rotura",
-    calibracion: "Calibración",
-    reparacion: "Reparación",
-    baja: "Baja",
-  }
-  return labels[tipo]
-}
-
 function mutationError(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
 }
 
 export function EquipamientoPage() {
   const { token, usuario } = useAuth()
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const puedeCrear = puede(usuario, "crear_equipamiento")
   const puedeEvento = puede(usuario, "registrar_evento_equipamiento")
@@ -149,13 +140,13 @@ export function EquipamientoPage() {
     <section>
       <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1>Equipamiento</h1>
+          <h1>{t("equip.title")}</h1>
           <p className="mt-2 text-sm leading-[1.29] tracking-[0.16px] text-cds-textSecondary">
-            Inventario de instrumentos reutilizables, estado operativo e historial de eventos.
+            {t("equip.desc")}
           </p>
         </div>
         <div className="text-sm tracking-[0.16px] text-cds-textSecondary">
-          {equiposQuery.isLoading ? "Cargando equipos..." : `${equiposFiltrados.length} equipo(s)`}
+          {equiposQuery.isLoading ? t("equip.cargando") : t("equip.countN", { n: equiposFiltrados.length })}
         </div>
       </div>
 
@@ -169,14 +160,14 @@ export function EquipamientoPage() {
       <ModuleNav
         actions={
           tab === "nuevo" || tab === "eventos"
-            ? [{ label: "Volver al listado", onClick: () => setTab("listado"), icon: <ArrowLeft size={18} aria-hidden="true" />, variant: "secondary" }]
+            ? [{ label: t("common.volverAlListado"), onClick: () => setTab("listado"), icon: <ArrowLeft size={18} aria-hidden="true" />, variant: "secondary" }]
             : puedeCrear
-              ? [{ label: "Nuevo equipamiento", onClick: () => setTab("nuevo"), icon: <Plus size={18} aria-hidden="true" /> }]
+              ? [{ label: t("equip.nuevoEquipamiento"), onClick: () => setTab("nuevo"), icon: <Plus size={18} aria-hidden="true" /> }]
               : []
         }
         more={
           tab === "listado"
-            ? [{ label: "Historial global", onClick: () => setTab("eventos"), icon: <History size={18} aria-hidden="true" /> }]
+            ? [{ label: t("equip.historialGlobal"), onClick: () => setTab("eventos"), icon: <History size={18} aria-hidden="true" /> }]
             : []
         }
       />
@@ -186,14 +177,14 @@ export function EquipamientoPage() {
           <div className="mb-4 bg-cds-layer01 p-4">
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_240px_auto]">
               <label className="block">
-                <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">Buscar</span>
+                <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">{t("common.buscar")}</span>
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-cds-textSecondary" size={18} aria-hidden="true" />
-                  <Input className="pl-12" value={busqueda} onChange={(event) => setBusqueda(event.target.value)} placeholder="Nombre, marca, modelo, ubicación" />
+                  <Input className="pl-12" value={busqueda} onChange={(event) => setBusqueda(event.target.value)} placeholder={t("equip.buscarPh")} />
                 </div>
               </label>
               <label className="block">
-                <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">Categoría</span>
+                <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">{t("equip.categoria")}</span>
                 <select
                   className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
                   value={categoria}
@@ -202,7 +193,7 @@ export function EquipamientoPage() {
                     setEquipoId(null)
                   }}
                 >
-                  <option value="">Todas</option>
+                  <option value="">{t("equip.todas")}</option>
                   {(categoriasQuery.data?.categorias ?? []).map((item) => (
                     <option key={item} value={item}>
                       {item}
@@ -211,7 +202,7 @@ export function EquipamientoPage() {
                 </select>
               </label>
               <div className="block">
-                <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">Stock operativo</span>
+                <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">{t("equip.stockOperativo")}</span>
                 <Button
                   type="button"
                   variant={soloOperativos ? "primary" : "secondary"}
@@ -223,7 +214,7 @@ export function EquipamientoPage() {
                   }}
                 >
                   {soloOperativos ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
-                  {soloOperativos ? "Ver todos" : "Solo en uso"}
+                  {soloOperativos ? t("equip.verTodos") : t("equip.soloEnUso")}
                 </Button>
               </div>
             </div>
@@ -242,7 +233,7 @@ export function EquipamientoPage() {
             />
           ) : (
             <div className="mt-6 bg-cds-layer01 p-4 text-sm text-cds-textSecondary">
-              Seleccioná un equipo de la tabla para ver detalle, registrar eventos e historial.
+              {t("equip.seleccionarEquipo")}
             </div>
           )}
         </>
@@ -255,7 +246,7 @@ export function EquipamientoPage() {
           onSuccess={async (id, nombre) => {
             setEquipoId(id)
             setTab("listado")
-            await refrescar(`Equipamiento creado: ${nombre}.`)
+            await refrescar(t("equip.msgCreado", { nombre }))
           }}
         />
       ) : null}
@@ -276,22 +267,23 @@ function EquipamientoTable({
   selectedId: number | null
   onSelect: (id: number) => void
 }) {
+  const { t } = useTranslation()
   if (isLoading) {
-    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">Cargando tabla...</div>
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("common.cargandoTabla")}</div>
   }
   if (!equipos.length) {
-    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">No hay equipamiento para mostrar.</div>
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("equip.sinEquipos")}</div>
   }
   return (
     <div className="overflow-x-auto border-t border-cds-borderSubtle">
       <table className="w-full min-w-[820px] border-collapse text-left text-sm">
         <thead>
           <tr className="border-b border-cds-borderSubtle bg-cds-layer01 text-xs tracking-[0.32px] text-cds-textSecondary">
-            <th className="h-10 px-4 font-normal">Nombre</th>
-            <th className="h-10 px-4 font-normal">Categoría</th>
-            <th className="h-10 px-4 text-right font-normal">Total</th>
-            <th className="h-10 px-4 text-right font-normal">En uso</th>
-            <th className="h-10 px-4 font-normal">Ubicación</th>
+            <th className="h-10 px-4 font-normal">{t("equip.thNombre")}</th>
+            <th className="h-10 px-4 font-normal">{t("equip.categoria")}</th>
+            <th className="h-10 px-4 text-right font-normal">{t("equip.total")}</th>
+            <th className="h-10 px-4 text-right font-normal">{t("equip.enUso")}</th>
+            <th className="h-10 px-4 font-normal">{t("equip.ubicacion")}</th>
           </tr>
         </thead>
         <tbody>
@@ -303,7 +295,7 @@ function EquipamientoTable({
             >
               <td className="h-12 px-4">
                 <div className="font-medium">{equipo.nombre}</div>
-                <div className="mt-1 text-xs text-cds-textSecondary">{[equipo.marca, equipo.modelo].filter(Boolean).join(" ") || "Sin marca/modelo"}</div>
+                <div className="mt-1 text-xs text-cds-textSecondary">{[equipo.marca, equipo.modelo].filter(Boolean).join(" ") || t("equip.sinMarca")}</div>
               </td>
               <td className="h-12 px-4 text-cds-textSecondary">{equipo.categoria || "-"}</td>
               <td className="h-12 px-4 text-right font-mono">{formatNumber(equipo.cantidad_total)}</td>
@@ -332,6 +324,7 @@ function EquipoDetalle({
   onError: (message: string | null) => void
   onUpdated: (message?: string) => void | Promise<void>
 }) {
+  const { t } = useTranslation()
   const eventosQuery = useQuery({
     queryKey: ["eventos-equipamiento", equipo.id],
     queryFn: () => api.eventosEquipamiento(token, equipo.id, 200),
@@ -349,13 +342,13 @@ function EquipoDetalle({
     try {
       const form = new FormData(formElement)
       const tipo = String(form.get("tipo") ?? "alta") as TipoEvento
-      const cantidad = requireFiniteNumber(parseFormNumber(form.get("cantidad"), 1), "Cantidad inválida.")
+      const cantidad = requireFiniteNumber(parseFormNumber(form.get("cantidad"), 1), t("equip.errCantidad"))
       const motivo = String(form.get("motivo") ?? "").trim()
       if (!Number.isInteger(cantidad) || cantidad <= 0) {
-        throw new Error("La cantidad debe ser un entero mayor a 0.")
+        throw new Error(t("equip.errCantidadEntero"))
       }
       if (!motivo) {
-        throw new Error("El motivo es obligatorio.")
+        throw new Error(t("equip.errMotivo"))
       }
       await eventoMutation.mutateAsync({
         equipamiento_id: equipo.id,
@@ -365,9 +358,9 @@ function EquipoDetalle({
         motivo,
       })
       formElement.reset()
-      await onUpdated(`Evento registrado: ${tipoLabel(tipo)}.`)
+      await onUpdated(t("equip.msgEvento", { tipo: t(`equip.tipoEvento.${tipo}`) }))
     } catch (error) {
-      onError(mutationError(error, "No se pudo registrar el evento"))
+      onError(mutationError(error, t("equip.errEvento")))
     }
   }
 
@@ -379,56 +372,56 @@ function EquipoDetalle({
         </div>
         <div>
           <h2 className="text-[24px] leading-[1.33]">{equipo.nombre}</h2>
-          <p className="mt-2 text-sm text-cds-textSecondary">{[equipo.marca, equipo.modelo].filter(Boolean).join(" ") || "Sin marca/modelo"}</p>
+          <p className="mt-2 text-sm text-cds-textSecondary">{[equipo.marca, equipo.modelo].filter(Boolean).join(" ") || t("equip.sinMarca")}</p>
         </div>
       </div>
 
       <div className="mb-5 grid gap-px bg-cds-borderSubtle sm:grid-cols-2 lg:grid-cols-4">
-        <Metric label="Total" value={formatNumber(equipo.cantidad_total)} />
-        <Metric label="En uso" value={formatNumber(equipo.cantidad_operativa)} />
-        <Metric label="Fuera de uso" value={formatNumber(equipo.cantidad_total - equipo.cantidad_operativa)} />
-        <Metric label="Eventos" value={String(eventos.length)} />
+        <Metric label={t("equip.total")} value={formatNumber(equipo.cantidad_total)} />
+        <Metric label={t("equip.enUso")} value={formatNumber(equipo.cantidad_operativa)} />
+        <Metric label={t("equip.mFueraUso")} value={formatNumber(equipo.cantidad_total - equipo.cantidad_operativa)} />
+        <Metric label={t("equip.mEventos")} value={String(eventos.length)} />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div>
           <div className="grid gap-3 border-t border-cds-borderSubtle pt-4 text-sm md:grid-cols-2 xl:grid-cols-3">
-            <Info label="Categoría" value={equipo.categoria || "-"} />
-            <Info label="N° serie" value={equipo.numero_serie || "-"} />
-            <Info label="Ubicación" value={equipo.ubicacion || "-"} />
-            <Info label="Proveedor" value={equipo.proveedor_nombre || "-"} />
-            <Info label="Costo total" value={equipo.costo_total === null || equipo.costo_total === undefined ? "-" : `$${formatNumber(equipo.costo_total)}`} />
-            <Info label="Fecha ingreso" value={formatDate(equipo.fecha_ingreso)} />
-            {equipo.enlace_compra ? <Info label="Enlace compra" value={equipo.enlace_compra} /> : null}
-            {equipo.notas ? <Info label="Notas" value={equipo.notas} /> : null}
+            <Info label={t("equip.categoria")} value={equipo.categoria || "-"} />
+            <Info label={t("equip.iSerie")} value={equipo.numero_serie || "-"} />
+            <Info label={t("equip.ubicacion")} value={equipo.ubicacion || "-"} />
+            <Info label={t("equip.proveedor")} value={equipo.proveedor_nombre || "-"} />
+            <Info label={t("equip.iCosto")} value={equipo.costo_total === null || equipo.costo_total === undefined ? "-" : `$${formatNumber(equipo.costo_total)}`} />
+            <Info label={t("equip.iFechaIngreso")} value={formatDate(equipo.fecha_ingreso)} />
+            {equipo.enlace_compra ? <Info label={t("equip.iEnlace")} value={equipo.enlace_compra} /> : null}
+            {equipo.notas ? <Info label={t("equip.notas")} value={equipo.notas} /> : null}
           </div>
 
           <div className="mt-6 border-t border-cds-borderSubtle pt-5">
-            <h3 className="mb-4">Historial del equipo</h3>
+            <h3 className="mb-4">{t("equip.historialEquipo")}</h3>
             <EventosList eventos={eventos} isLoading={eventosQuery.isLoading} />
           </div>
         </div>
 
         {puedeEvento ? (
           <form className="border-t border-cds-borderSubtle pt-5 xl:border-t-0 xl:pt-0" onSubmit={registrarEvento}>
-            <h3 className="mb-4">Registrar evento</h3>
+            <h3 className="mb-4">{t("equip.registrarEvento")}</h3>
             <div className="grid gap-4">
               <label className="block">
-                <Label className="mb-2" htmlFor={`tipo-${equipo.id}`}>Tipo</Label>
+                <Label className="mb-2" htmlFor={`tipo-${equipo.id}`}>{t("equip.tipo")}</Label>
                 <select id={`tipo-${equipo.id}`} name="tipo" className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none">
                   {tiposEvento.map((tipo) => (
                     <option key={tipo} value={tipo}>
-                      {tipoLabel(tipo)}
+                      {t(`equip.tipoEvento.${tipo}`)}
                     </option>
                   ))}
                 </select>
               </label>
-              <Field label="Cantidad *" name="cantidad" defaultValue="1" inputMode="numeric" required />
-              <Field label="Motivo *" name="motivo" placeholder="Ej: Service, rotura, alta inicial adicional" required />
+              <Field label={t("equip.fCantidad")} name="cantidad" defaultValue="1" inputMode="numeric" required />
+              <Field label={t("equip.fMotivo")} name="motivo" placeholder={t("equip.fMotivoPh")} required />
             </div>
             <Button className="mt-5" type="submit" disabled={eventoMutation.isPending}>
               <Wrench size={18} aria-hidden="true" />
-              {eventoMutation.isPending ? "Registrando..." : "Registrar evento"}
+              {eventoMutation.isPending ? t("equip.registrando") : t("equip.registrarEvento")}
             </Button>
           </form>
         ) : null}
@@ -446,6 +439,7 @@ function NuevoEquipamientoForm({
   onError: (message: string | null) => void
   onSuccess: (id: number, nombre: string) => void | Promise<void>
 }) {
+  const { t } = useTranslation()
   const crearMutation = useMutation({
     mutationFn: (data: EquipamientoCrear) => api.crearEquipamiento(token, data),
   })
@@ -462,17 +456,17 @@ function NuevoEquipamientoForm({
     try {
       const form = new FormData(formElement)
       const nombre = String(form.get("nombre") ?? "").trim()
-      const cantidadInicial = requireFiniteNumber(parseFormNumber(form.get("cantidad_inicial"), 0), "Cantidad inicial inválida.")
+      const cantidadInicial = requireFiniteNumber(parseFormNumber(form.get("cantidad_inicial"), 0), t("equip.errCantInicial"))
       const costoRaw = parseFormNumber(form.get("costo_total"), 0)
-      const costo = requireFiniteNumber(costoRaw, "Costo total inválido.")
+      const costo = requireFiniteNumber(costoRaw, t("equip.errCosto"))
       if (!nombre) {
-        throw new Error("El nombre es obligatorio.")
+        throw new Error(t("equip.errNombre"))
       }
       if (!Number.isInteger(cantidadInicial) || cantidadInicial < 0) {
-        throw new Error("La cantidad inicial debe ser un entero mayor o igual a 0.")
+        throw new Error(t("equip.errCantInicialEntero"))
       }
       if (costo < 0) {
-        throw new Error("El costo total no puede ser negativo.")
+        throw new Error(t("equip.errCostoNeg"))
       }
       const proveedorId = Number(form.get("proveedor_id") || 0)
       const payload: EquipamientoCrear = {
@@ -492,29 +486,29 @@ function NuevoEquipamientoForm({
       formElement.reset()
       await onSuccess(resultado.id, nombre)
     } catch (error) {
-      onError(mutationError(error, "No se pudo crear el equipamiento"))
+      onError(mutationError(error, t("equip.errCrear")))
     }
   }
 
   return (
     <form className="max-w-5xl bg-cds-layer01 p-4" onSubmit={handleSubmit}>
       <div className="mb-6">
-        <h2 className="text-[24px] leading-[1.33]">Nuevo equipamiento</h2>
+        <h2 className="text-[24px] leading-[1.33]">{t("equip.nuevoEquipamiento")}</h2>
         <p className="mt-2 text-sm tracking-[0.16px] text-cds-textSecondary">
-          Si la cantidad inicial es mayor a 0 se registra automáticamente un evento de alta.
+          {t("equip.formDesc")}
         </p>
       </div>
       <div className="grid gap-5 md:grid-cols-2">
-        <Field label="Nombre *" name="nombre" required />
-        <Field label="Categoría" name="categoria" placeholder="Ej: Balanzas, Micropipetas" />
-        <Field label="Marca" name="marca" />
-        <Field label="Modelo" name="modelo" />
-        <Field label="N° de serie" name="numero_serie" />
-        <Field label="Ubicación" name="ubicacion" />
+        <Field label={t("equip.fNombre")} name="nombre" required />
+        <Field label={t("equip.categoria")} name="categoria" placeholder={t("equip.fCategoriaPh")} />
+        <Field label={t("equip.fMarca")} name="marca" />
+        <Field label={t("equip.fModelo")} name="modelo" />
+        <Field label={t("equip.fSerie")} name="numero_serie" />
+        <Field label={t("equip.ubicacion")} name="ubicacion" />
         <label className="block">
-          <Label className="mb-2" htmlFor="proveedor_id">Proveedor</Label>
+          <Label className="mb-2" htmlFor="proveedor_id">{t("equip.proveedor")}</Label>
           <select id="proveedor_id" name="proveedor_id" className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none">
-            <option value="">Sin proveedor</option>
+            <option value="">{t("equip.sinProveedor")}</option>
             {proveedores.map((proveedor) => (
               <option key={proveedor.id} value={proveedor.id}>
                 {proveedor.nombre}
@@ -522,20 +516,21 @@ function NuevoEquipamientoForm({
             ))}
           </select>
         </label>
-        <Field label="Enlace de compra" name="enlace_compra" />
-        <Field label="Costo total" name="costo_total" inputMode="decimal" defaultValue="0" />
-        <Field label="Cantidad inicial" name="cantidad_inicial" inputMode="numeric" defaultValue="1" />
-        <Field className="md:col-span-2" label="Notas" name="notas" />
+        <Field label={t("equip.fEnlace")} name="enlace_compra" />
+        <Field label={t("equip.fCosto")} name="costo_total" inputMode="decimal" defaultValue="0" />
+        <Field label={t("equip.fCantInicial")} name="cantidad_inicial" inputMode="numeric" defaultValue="1" />
+        <Field className="md:col-span-2" label={t("equip.notas")} name="notas" />
       </div>
       <Button className="mt-6" type="submit" disabled={crearMutation.isPending}>
         <Plus size={18} aria-hidden="true" />
-        {crearMutation.isPending ? "Creando..." : "Crear equipamiento"}
+        {crearMutation.isPending ? t("common.creando") : t("equip.crearEquipamiento")}
       </Button>
     </form>
   )
 }
 
 function HistorialGlobal({ token }: { token: string }) {
+  const { t } = useTranslation()
   const [limite, setLimite] = useState("100")
   const [tipo, setTipo] = useState("")
   const [busqueda, setBusqueda] = useState("")
@@ -557,19 +552,19 @@ function HistorialGlobal({ token }: { token: string }) {
   return (
     <>
       <div className="mb-4 grid gap-4 md:grid-cols-[180px_220px_minmax(0,1fr)]">
-        <Field label="Límite" name="limite_eventos" value={limite} onChange={(event) => setLimite(event.target.value)} inputMode="numeric" />
+        <Field label={t("equip.fLimite")} name="limite_eventos" value={limite} onChange={(event) => setLimite(event.target.value)} inputMode="numeric" />
         <label className="block">
-          <Label className="mb-2" htmlFor="tipo_evento_global">Tipo</Label>
+          <Label className="mb-2" htmlFor="tipo_evento_global">{t("equip.tipo")}</Label>
           <select id="tipo_evento_global" className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none" value={tipo} onChange={(event) => setTipo(event.target.value)}>
-            <option value="">Todos</option>
+            <option value="">{t("equip.todos")}</option>
             {tiposEvento.map((item) => (
               <option key={item} value={item}>
-                {tipoLabel(item)}
+                {t(`equip.tipoEvento.${item}`)}
               </option>
             ))}
           </select>
         </label>
-        <Field label="Buscar" name="buscar_evento" value={busqueda} onChange={(event) => setBusqueda(event.target.value)} placeholder="Equipo, usuario, motivo" />
+        <Field label={t("common.buscar")} name="buscar_evento" value={busqueda} onChange={(event) => setBusqueda(event.target.value)} placeholder={t("equip.buscarEventoPh")} />
       </div>
       <EventosTable eventos={filtrados} isLoading={eventosQuery.isLoading} />
     </>
@@ -577,22 +572,23 @@ function HistorialGlobal({ token }: { token: string }) {
 }
 
 function EventosList({ eventos, isLoading }: { eventos: EventoEquipamiento[]; isLoading: boolean }) {
+  const { t } = useTranslation()
   if (isLoading) {
-    return <div className="bg-cds-background p-3 text-sm text-cds-textSecondary">Cargando eventos...</div>
+    return <div className="bg-cds-background p-3 text-sm text-cds-textSecondary">{t("equip.cargandoEventos")}</div>
   }
   if (!eventos.length) {
-    return <div className="bg-cds-background p-3 text-sm text-cds-textSecondary">Sin eventos registrados.</div>
+    return <div className="bg-cds-background p-3 text-sm text-cds-textSecondary">{t("equip.sinEventos")}</div>
   }
   return (
     <div className="space-y-3">
       {eventos.slice(0, 8).map((evento) => (
         <article key={evento.id} className="border border-cds-borderSubtle bg-cds-background p-3 text-sm">
           <div className="flex items-center justify-between gap-3">
-            <span className="font-medium">{tipoLabel(evento.tipo)}</span>
+            <span className="font-medium">{t(`equip.tipoEvento.${evento.tipo}`)}</span>
             <span className="text-xs text-cds-textSecondary">{formatDateTime(evento.fecha)}</span>
           </div>
           <div className="mt-2 text-cds-textSecondary">
-            {evento.cantidad} unidad(es) por {evento.usuario_nombre}
+            {t("equip.unidadesPor", { cantidad: evento.cantidad, usuario: evento.usuario_nombre })}
           </div>
           <div className="mt-2">{evento.motivo}</div>
         </article>
@@ -602,23 +598,24 @@ function EventosList({ eventos, isLoading }: { eventos: EventoEquipamiento[]; is
 }
 
 function EventosTable({ eventos, isLoading }: { eventos: EventoEquipamiento[]; isLoading: boolean }) {
+  const { t } = useTranslation()
   if (isLoading) {
-    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">Cargando historial...</div>
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("equip.cargandoHistorial")}</div>
   }
   if (!eventos.length) {
-    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">No hay eventos para mostrar.</div>
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("equip.sinEventosTabla")}</div>
   }
   return (
     <div className="overflow-x-auto border-t border-cds-borderSubtle">
       <table className="w-full min-w-[980px] border-collapse text-left text-sm">
         <thead>
           <tr className="border-b border-cds-borderSubtle bg-cds-layer01 text-xs tracking-[0.32px] text-cds-textSecondary">
-            <th className="h-10 px-4 font-normal">Fecha</th>
-            <th className="h-10 px-4 font-normal">Equipo</th>
-            <th className="h-10 px-4 font-normal">Tipo</th>
-            <th className="h-10 px-4 text-right font-normal">Cantidad</th>
-            <th className="h-10 px-4 font-normal">Usuario</th>
-            <th className="h-10 px-4 font-normal">Motivo</th>
+            <th className="h-10 px-4 font-normal">{t("equip.thFecha")}</th>
+            <th className="h-10 px-4 font-normal">{t("equip.thEquipo")}</th>
+            <th className="h-10 px-4 font-normal">{t("equip.tipo")}</th>
+            <th className="h-10 px-4 text-right font-normal">{t("equip.thCantidad")}</th>
+            <th className="h-10 px-4 font-normal">{t("equip.thUsuario")}</th>
+            <th className="h-10 px-4 font-normal">{t("equip.thMotivo")}</th>
           </tr>
         </thead>
         <tbody>
@@ -626,7 +623,7 @@ function EventosTable({ eventos, isLoading }: { eventos: EventoEquipamiento[]; i
             <tr key={evento.id} className="border-b border-cds-borderSubtle hover:bg-cds-layer01">
               <td className="h-12 px-4 text-cds-textSecondary">{formatDateTime(evento.fecha)}</td>
               <td className="h-12 px-4">{evento.equipamiento_nombre}</td>
-              <td className="h-12 px-4">{tipoLabel(evento.tipo)}</td>
+              <td className="h-12 px-4">{t(`equip.tipoEvento.${evento.tipo}`)}</td>
               <td className="h-12 px-4 text-right font-mono">{evento.cantidad}</td>
               <td className="h-12 px-4 text-cds-textSecondary">{evento.usuario_nombre}</td>
               <td className="h-12 max-w-[360px] px-4 text-cds-textSecondary">

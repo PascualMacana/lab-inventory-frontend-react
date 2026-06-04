@@ -1,6 +1,7 @@
 import { FormEvent, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Camera, RotateCcw, Search } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
@@ -22,6 +23,7 @@ function mutationError(error: unknown, fallback: string) {
 
 export function ConsumoPage() {
   const { token, usuario } = useAuth()
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [reactivoId, setReactivoId] = useState<number | null>(null)
   const [loteElegido, setLoteElegido] = useState<Lote | null>(null)
@@ -110,14 +112,14 @@ export function ConsumoPage() {
       setReactivoId(lote.reactivo_id)
       setUnidadIngreso(lote.unidad)
       setLoteElegido(lote)
-      setMensaje(`Lote ${lote.codigo_interno} corresponde a ${lote.reactivo_nombre}. Cambié el selector a ese reactivo.`)
+      setMensaje(t("consumo.msgCorresponde", { codigo: lote.codigo_interno, nombre: lote.reactivo_nombre }))
       return
     }
     if (lote.cantidad_actual <= 0) {
-      throw new Error(`El lote ${lote.codigo_interno} está vacío.`)
+      throw new Error(t("consumo.msgVacio", { codigo: lote.codigo_interno }))
     }
     setLoteElegido(lote)
-    setMensaje(`Lote ${lote.codigo_interno} confirmado.`)
+    setMensaje(t("consumo.msgConfirmado", { codigo: lote.codigo_interno }))
   }
 
   async function buscarCodigoLote(codigo: string) {
@@ -126,7 +128,7 @@ export function ConsumoPage() {
     }
     const codigoLimpio = codigo.trim()
     if (!codigoLimpio) {
-      setErrorLocal("Ingresá un código interno.")
+      setErrorLocal(t("consumo.errCodigoVacio"))
       return
     }
     setErrorLocal(null)
@@ -136,7 +138,7 @@ export function ConsumoPage() {
       aplicarLoteEncontrado(lote)
     } catch (error) {
       setLoteElegido(null)
-      setErrorLocal(mutationError(error, "No se pudo buscar el lote"))
+      setErrorLocal(mutationError(error, t("consumo.errBuscar")))
     }
   }
 
@@ -157,7 +159,7 @@ export function ConsumoPage() {
       await buscarCodigoLote(resultado.codigo_interno)
     } catch (error) {
       setLoteElegido(null)
-      setErrorLocal(mutationError(error, "No se pudo leer el QR"))
+      setErrorLocal(mutationError(error, t("consumo.errQr")))
     }
   }
 
@@ -171,10 +173,10 @@ export function ConsumoPage() {
     try {
       const cantidadParseada = requireFiniteNumber(
         parseFormNumber(cantidad),
-        "Cantidad debe ser un número válido.",
+        t("consumo.errCantidad"),
       )
       if (cantidadParseada <= 0) {
-        throw new Error("La cantidad debe ser mayor a 0.")
+        throw new Error(t("consumo.errCantidadMayorCero"))
       }
       const resultado = await consumirMutation.mutateAsync({
         reactivo_id: reactivo.id,
@@ -186,12 +188,12 @@ export function ConsumoPage() {
       })
       if (resultado.movimientos.length === 1) {
         const mov = resultado.movimientos[0]
-        setMensaje(`Consumo registrado: ${formatNumber(mov.cantidad)} ${resultado.unidad} de ${mov.codigo_interno}.`)
+        setMensaje(t("consumo.msgConsumo", { cantidad: formatNumber(mov.cantidad), unidad: resultado.unidad, codigo: mov.codigo_interno }))
       } else {
         const detalle = resultado.movimientos
-          .map((mov) => `${formatNumber(mov.cantidad)} ${resultado.unidad} de ${mov.codigo_interno}`)
+          .map((mov) => t("consumo.detalleItem", { cantidad: formatNumber(mov.cantidad), unidad: resultado.unidad, codigo: mov.codigo_interno }))
           .join(" · ")
-        setMensaje(`Consumo distribuido en ${resultado.movimientos.length} lotes: ${detalle}.`)
+        setMensaje(t("consumo.msgDistribuido", { n: resultado.movimientos.length, detalle }))
       }
       setLoteElegido(null)
       setCodigoManual("")
@@ -203,25 +205,25 @@ export function ConsumoPage() {
       await queryClient.invalidateQueries({ queryKey: ["dashboard-series", 30] })
       await queryClient.invalidateQueries({ queryKey: ["movimientos"] })
     } catch (error) {
-      setErrorLocal(mutationError(error, "No se pudo registrar el consumo"))
+      setErrorLocal(mutationError(error, t("consumo.errConsumo")))
     }
   }
 
   if (!reactivos.length && !reactivosQuery.isLoading) {
-    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">No hay reactivos disponibles.</div>
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("consumo.sinReactivos")}</div>
   }
 
   return (
     <section>
       <div className="mb-8">
-        <h1>Consumo</h1>
+        <h1>{t("consumo.title")}</h1>
         <p className="mt-2 text-sm leading-[1.29] tracking-[0.16px] text-cds-textSecondary">
-          FIFO automático por defecto. También podés fijar un lote por código interno.
+          {t("consumo.desc")}
         </p>
       </div>
 
       <div className="mb-6 bg-cds-layer01 p-4">
-        <Label className="mb-2" htmlFor="reactivo_consumo">Reactivo *</Label>
+        <Label className="mb-2" htmlFor="reactivo_consumo">{t("consumo.fReactivo")}</Label>
         <select
           id="reactivo_consumo"
           className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
@@ -238,7 +240,7 @@ export function ConsumoPage() {
 
       {reactivo && stockTotal < reactivo.stock_minimo ? (
         <div className="mb-4 border-l-4 border-cds-supportWarning bg-cds-layer01 px-4 py-3 text-sm">
-          Stock total ({formatNumber(stockTotal)} {reactivo.unidad}) por debajo del mínimo ({formatNumber(reactivo.stock_minimo)} {reactivo.unidad}).
+          {t("consumo.stockBajo", { total: formatNumber(stockTotal), unidad: reactivo.unidad, minimo: formatNumber(reactivo.stock_minimo) })}
         </div>
       ) : null}
 
@@ -250,25 +252,25 @@ export function ConsumoPage() {
       ) : null}
 
       {!loteActivo ? (
-        <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">Este reactivo no tiene stock disponible.</div>
+        <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("consumo.sinStock")}</div>
       ) : (
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
           <section className="bg-cds-layer01 p-4">
             <h2 className="text-[24px] leading-[1.33]">
-              {modo === "scan" ? "Lote elegido" : "Lote sugerido FIFO"}
+              {modo === "scan" ? t("consumo.loteElegido") : t("consumo.loteFifo")}
             </h2>
             <div className="mt-5 grid gap-px bg-cds-borderSubtle md:grid-cols-2">
-              <Metric label="Código" value={loteActivo.codigo_interno} mono />
-              <Metric label="Disponible" value={`${formatNumber(loteActivo.cantidad_actual)} ${loteActivo.unidad}`} />
-              <Metric label="Vencimiento" value={loteActivo.fecha_vencimiento} />
-              <Metric label="Ubicación" value={loteActivo.ubicacion || "-"} />
+              <Metric label={t("consumo.mCodigo")} value={loteActivo.codigo_interno} mono />
+              <Metric label={t("consumo.mDisponible")} value={`${formatNumber(loteActivo.cantidad_actual)} ${loteActivo.unidad}`} />
+              <Metric label={t("consumo.mVencimiento")} value={loteActivo.fecha_vencimiento} />
+              <Metric label={t("consumo.mUbicacion")} value={loteActivo.ubicacion || "-"} />
             </div>
             <p className="mt-4 text-sm text-cds-textSecondary">
-              Total del reactivo: {formatNumber(stockTotal)} {reactivo?.unidad} en {lotes.length} lote(s).
+              {t("consumo.totalReactivo", { total: formatNumber(stockTotal), unidad: reactivo?.unidad, n: lotes.length })}
             </p>
             {otrosLotes.length ? (
               <div className="mt-5 border-t border-cds-borderSubtle pt-4">
-                <h3 className="text-base leading-6">Otros lotes disponibles</h3>
+                <h3 className="text-base leading-6">{t("consumo.otrosLotes")}</h3>
                 <div className="mt-3 divide-y divide-cds-borderSubtle border border-cds-borderSubtle">
                   {otrosLotes.map((lote) => (
                     <div
@@ -276,17 +278,17 @@ export function ConsumoPage() {
                       className="grid gap-3 bg-cds-background p-3 text-sm md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)]"
                     >
                       <div>
-                        <div className="text-xs tracking-[0.32px] text-cds-textSecondary">Código</div>
+                        <div className="text-xs tracking-[0.32px] text-cds-textSecondary">{t("consumo.mCodigo")}</div>
                         <div className="mt-1 break-all font-mono text-cds-textPrimary">{lote.codigo_interno}</div>
                       </div>
                       <div>
-                        <div className="text-xs tracking-[0.32px] text-cds-textSecondary">Disponible</div>
+                        <div className="text-xs tracking-[0.32px] text-cds-textSecondary">{t("consumo.mDisponible")}</div>
                         <div className="mt-1 text-cds-textPrimary">
                           {formatNumber(lote.cantidad_actual)} {lote.unidad}
                         </div>
                       </div>
                       <div>
-                        <div className="text-xs tracking-[0.32px] text-cds-textSecondary">Vencimiento</div>
+                        <div className="text-xs tracking-[0.32px] text-cds-textSecondary">{t("consumo.mVencimiento")}</div>
                         <div className="mt-1 text-cds-textPrimary">{lote.fecha_vencimiento}</div>
                       </div>
                     </div>
@@ -297,11 +299,11 @@ export function ConsumoPage() {
             {modo === "scan" ? (
               <>
                 <div className="mt-4 border-l-4 border-cds-supportInfo bg-cds-background px-4 py-3 text-sm">
-                  Este modo descuenta solo del frasco elegido. Si querés cascada multi-lote, volvé al FIFO.
+                  {t("consumo.scanInfo")}
                 </div>
                 <Button className="mt-5" type="button" variant="ghost" onClick={() => setLoteElegido(null)}>
                   <RotateCcw size={18} aria-hidden="true" />
-                  Volver al FIFO
+                  {t("consumo.volverFifo")}
                 </Button>
               </>
             ) : null}
@@ -309,8 +311,8 @@ export function ConsumoPage() {
 
           <aside className="space-y-6">
             <form className="bg-cds-layer01 p-4" onSubmit={handleBuscarLote}>
-              <h3 className="mb-4">Usar otro lote</h3>
-              <Label className="mb-2" htmlFor="codigo_lote_consumo">Código interno</Label>
+              <h3 className="mb-4">{t("consumo.usarOtroLote")}</h3>
+              <Label className="mb-2" htmlFor="codigo_lote_consumo">{t("consumo.fCodigo")}</Label>
               <Input
                 id="codigo_lote_consumo"
                 className="font-mono"
@@ -321,7 +323,7 @@ export function ConsumoPage() {
               <div className="mt-4 flex flex-col gap-3 sm:flex-row">
                 <Button type="submit" disabled={buscarLoteMutation.isPending}>
                   <Search size={18} aria-hidden="true" />
-                  {buscarLoteMutation.isPending ? "Buscando..." : "Buscar lote"}
+                  {buscarLoteMutation.isPending ? t("consumo.buscando") : t("consumo.buscarLote")}
                 </Button>
                 <input
                   id="foto_qr_consumo"
@@ -339,16 +341,16 @@ export function ConsumoPage() {
                   className="inline-flex h-12 cursor-pointer items-center justify-center gap-2 border border-cds-borderStrong bg-cds-layer02 px-4 text-sm tracking-[0.16px] text-cds-textPrimary transition-colors hover:bg-cds-borderSubtle"
                 >
                   <Camera size={18} aria-hidden="true" />
-                  {decodificarQrMutation.isPending ? "Leyendo..." : "Escanear QR"}
+                  {decodificarQrMutation.isPending ? t("consumo.leyendo") : t("consumo.escanearQr")}
                 </label>
               </div>
             </form>
 
             <form className="bg-cds-layer01 p-4" onSubmit={handleConsumir}>
-              <h3 className="mb-4">Registrar consumo</h3>
+              <h3 className="mb-4">{t("consumo.registrarConsumo")}</h3>
               <div className="space-y-5">
                 <label className="block">
-                  <Label className="mb-2" htmlFor="cantidad_consumo">Cantidad *</Label>
+                  <Label className="mb-2" htmlFor="cantidad_consumo">{t("consumo.fCantidad")}</Label>
                   <Input
                     id="cantidad_consumo"
                     value={cantidad}
@@ -358,7 +360,7 @@ export function ConsumoPage() {
                   />
                 </label>
                 <label className="block">
-                  <Label className="mb-2" htmlFor="unidad_consumo">Unidad *</Label>
+                  <Label className="mb-2" htmlFor="unidad_consumo">{t("consumo.fUnidad")}</Label>
                   <select
                     id="unidad_consumo"
                     className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
@@ -373,20 +375,20 @@ export function ConsumoPage() {
                   </select>
                 </label>
                 <label className="block">
-                  <Label className="mb-2" htmlFor="motivo_consumo">Motivo / muestra</Label>
+                  <Label className="mb-2" htmlFor="motivo_consumo">{t("consumo.fMotivo")}</Label>
                   <Input
                     id="motivo_consumo"
                     value={motivo}
                     onChange={(event) => setMotivo(event.target.value)}
-                    placeholder="Ej: Análisis muestra A-245"
+                    placeholder={t("consumo.fMotivoPh")}
                   />
                 </label>
               </div>
               <p className="mt-4 text-xs leading-4 tracking-[0.32px] text-cds-textSecondary">
-                Modo: {modo === "scan" ? "lote elegido, sin overflow" : "FIFO automático con cascada multi-lote si hace falta"}.
+                {t("consumo.modoLabel", { modo: modo === "scan" ? t("consumo.modoScan") : t("consumo.modoFifo") })}
               </p>
               <Button className="mt-5" type="submit" disabled={consumirMutation.isPending}>
-                {consumirMutation.isPending ? "Registrando..." : "Registrar consumo"}
+                {consumirMutation.isPending ? t("consumo.registrando") : t("consumo.registrarConsumo")}
               </Button>
             </form>
           </aside>

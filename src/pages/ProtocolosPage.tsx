@@ -1,6 +1,8 @@
 import { FormEvent, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowLeft, Camera, Check, Download, FileText, FlaskConical, History, Play, Plus, RotateCcw, Search, X } from "lucide-react"
+import { useTranslation } from "react-i18next"
+import type { TFunction } from "i18next"
 
 import { ModuleNav } from "../components/ModuleNav"
 import { Button } from "../components/ui/button"
@@ -76,15 +78,15 @@ function normalizarParametros(protocolo: Protocolo, parametros: Record<string, s
   return normalizados
 }
 
-function validarLoteParaInsumo(lote: Lote, insumo: ProtocoloInsumo) {
+function validarLoteParaInsumo(lote: Lote, insumo: ProtocoloInsumo, t: TFunction) {
   if (!insumo.reactivo) {
-    return `${insumo.nombre} no está vinculado a un reactivo del catálogo.`
+    return t("protocolos.errInsumoSinReactivo", { nombre: insumo.nombre })
   }
   if (lote.reactivo_id !== insumo.reactivo.id) {
-    return `El lote escaneado corresponde a ${lote.reactivo_nombre}, no a ${insumo.nombre}.`
+    return t("protocolos.errLoteOtroReactivo", { reactivo: lote.reactivo_nombre, nombre: insumo.nombre })
   }
   if (lote.cantidad_actual < insumo.cantidad_base) {
-    return `${lote.codigo_interno} tiene ${formatNumber(lote.cantidad_actual)} ${lote.unidad}; el protocolo requiere ${formatNumber(insumo.cantidad_base)} ${insumo.unidad_base}.`
+    return t("protocolos.errStockInsuficiente", { codigo: lote.codigo_interno, cantidad: formatNumber(lote.cantidad_actual), unidad: lote.unidad, requerido: formatNumber(insumo.cantidad_base), unidadBase: insumo.unidad_base })
   }
   return null
 }
@@ -100,6 +102,7 @@ function downloadBlob(blob: Blob, filename: string) {
 
 export function ProtocolosPage() {
   const { token, usuario } = useAuth()
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const puedeGestionar = puede(usuario, "gestionar_protocolos")
   const [tab, setTab] = useState<TabKey>("plantillas")
@@ -166,15 +169,15 @@ export function ProtocolosPage() {
       setCalculo(resultado)
       setLotesValidados({})
       setInsumoActivo("")
-      setMessage({ type: "success", text: "Insumos calculados. Validá los lotes antes de registrar la ejecución." })
+      setMessage({ type: "success", text: t("protocolos.msgCalculado") })
     },
-    onError: (error) => setMessage({ type: "error", text: mutationError(error, "No se pudo calcular el protocolo.") }),
+    onError: (error) => setMessage({ type: "error", text: mutationError(error, t("protocolos.errCalcular")) }),
   })
 
   const ejecutarMutation = useMutation({
     mutationFn: () => {
       if (!usuario || !calculo) {
-        throw new Error("No hay un cálculo activo.")
+        throw new Error(t("protocolos.errSinCalculo"))
       }
       return api.ejecutarProtocolo(token!, calculo.protocolo.id, {
         usuario_id: usuario.id,
@@ -187,7 +190,7 @@ export function ProtocolosPage() {
       })
     },
     onSuccess: async (resultado) => {
-      setMessage({ type: "success", text: `Ejecución #${resultado.id} registrada con ${resultado.movimientos.length} movimiento(s) de stock.` })
+      setMessage({ type: "success", text: t("protocolos.msgEjecutada", { id: resultado.id, n: resultado.movimientos.length }) })
       setCalculo(null)
       setLotesValidados({})
       setObservaciones("")
@@ -197,7 +200,7 @@ export function ProtocolosPage() {
       await queryClient.invalidateQueries({ queryKey: ["dashboard-series", 30] })
       await queryClient.invalidateQueries({ queryKey: ["movimientos"] })
     },
-    onError: (error) => setMessage({ type: "error", text: mutationError(error, "No se pudo registrar la ejecución.") }),
+    onError: (error) => setMessage({ type: "error", text: mutationError(error, t("protocolos.errEjecutar")) }),
   })
 
   const buscarLoteMutation = useMutation({
@@ -209,11 +212,11 @@ export function ProtocolosPage() {
   const crearPlantillaMutation = useMutation({
     mutationFn: (data: Parameters<typeof api.crearProtocoloPlantilla>[1]) => api.crearProtocoloPlantilla(token!, data),
     onSuccess: async (resultado) => {
-      setMessage({ type: "success", text: `Plantilla creada: ${resultado.protocolo_id}.` })
+      setMessage({ type: "success", text: t("protocolos.msgPlantillaCreada", { id: resultado.protocolo_id }) })
       await queryClient.invalidateQueries({ queryKey: ["protocolos"] })
       await queryClient.invalidateQueries({ queryKey: ["protocolos-plantillas"] })
     },
-    onError: (error) => setMessage({ type: "error", text: mutationError(error, "No se pudo crear la plantilla.") }),
+    onError: (error) => setMessage({ type: "error", text: mutationError(error, t("protocolos.errCrearPlantilla")) }),
   })
   const cambiarPlantillaMutation = useMutation({
     mutationFn: ({ id, activo }: { id: number; activo: boolean }) =>
@@ -233,21 +236,21 @@ export function ProtocolosPage() {
   async function validarCodigo(codigo: string, insumo: ProtocoloInsumo) {
     const limpio = codigo.trim()
     if (!limpio) {
-      setMessage({ type: "error", text: "Ingresá un código interno de lote." })
+      setMessage({ type: "error", text: t("protocolos.errCodigoVacio") })
       return
     }
     try {
       const lote = await buscarLoteMutation.mutateAsync(limpio)
-      const error = validarLoteParaInsumo(lote, insumo)
+      const error = validarLoteParaInsumo(lote, insumo, t)
       if (error) {
         setMessage({ type: "error", text: error })
         return
       }
       setLotesValidados((current) => ({ ...current, [insumo.id]: lote }))
       setCodigoManual("")
-      setMessage({ type: "success", text: `${lote.codigo_interno} validado para ${insumo.nombre}.` })
+      setMessage({ type: "success", text: t("protocolos.msgLoteValidado", { codigo: lote.codigo_interno, nombre: insumo.nombre }) })
     } catch (error) {
-      setMessage({ type: "error", text: mutationError(error, "No se pudo validar el lote.") })
+      setMessage({ type: "error", text: mutationError(error, t("protocolos.errValidarLote")) })
     }
   }
 
@@ -259,7 +262,7 @@ export function ProtocolosPage() {
       const resultado = await decodificarQrMutation.mutateAsync(file)
       await validarCodigo(resultado.codigo_interno, insumo)
     } catch (error) {
-      setMessage({ type: "error", text: mutationError(error, "No se pudo leer la imagen del QR.") })
+      setMessage({ type: "error", text: mutationError(error, t("protocolos.errQr")) })
     }
   }
 
@@ -321,9 +324,9 @@ export function ProtocolosPage() {
   return (
     <section className="space-y-6">
       <div>
-        <h1>Protocolos</h1>
+        <h1>{t("protocolos.title")}</h1>
         <p className="mt-2 max-w-3xl text-sm leading-[1.29] tracking-[0.16px] text-cds-textSecondary">
-          Calculá insumos, validá lotes físicos y registrá ejecuciones determinísticas de protocolos.
+          {t("protocolos.desc")}
         </p>
       </div>
 
@@ -331,11 +334,11 @@ export function ProtocolosPage() {
         actions={
           tab === "plantillas"
             ? puedeGestionar
-              ? [{ label: "Crear plantilla", onClick: () => setTab("crear"), icon: <Plus size={18} aria-hidden="true" /> }]
+              ? [{ label: t("protocolos.crearPlantilla"), onClick: () => setTab("crear"), icon: <Plus size={18} aria-hidden="true" /> }]
               : []
-            : [{ label: "Volver a plantillas", onClick: () => setTab("plantillas"), icon: <ArrowLeft size={18} aria-hidden="true" />, variant: "secondary" }]
+            : [{ label: t("protocolos.volverPlantillas"), onClick: () => setTab("plantillas"), icon: <ArrowLeft size={18} aria-hidden="true" />, variant: "secondary" }]
         }
-        more={tab === "plantillas" ? [{ label: "Historial", onClick: () => setTab("historial"), icon: <History size={18} aria-hidden="true" /> }] : []}
+        more={tab === "plantillas" ? [{ label: t("protocolos.historial"), onClick: () => setTab("historial"), icon: <History size={18} aria-hidden="true" /> }] : []}
       />
 
       {message ? (
@@ -348,7 +351,7 @@ export function ProtocolosPage() {
         <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
           <div className="space-y-4">
             <div className="border border-cds-borderSubtle bg-cds-layer01 p-4">
-              <Label className="mb-2" htmlFor="protocolo">Protocolo</Label>
+              <Label className="mb-2" htmlFor="protocolo">{t("protocolos.fProtocolo")}</Label>
               <select
                 id="protocolo"
                 className="h-10 w-full border-0 border-b border-cds-borderStrong bg-cds-field px-3 text-sm outline-none focus:ring-2 focus:ring-cds-focus"
@@ -382,7 +385,7 @@ export function ProtocolosPage() {
                   ))}
                   <Button type="submit" className="w-full" disabled={calcularMutation.isPending}>
                     <Play size={18} aria-hidden="true" />
-                    {calcularMutation.isPending ? "Calculando..." : calculo ? "Recalcular insumos" : "Calcular insumos"}
+                    {calcularMutation.isPending ? t("protocolos.calculando") : calculo ? t("protocolos.recalcular") : t("protocolos.calcular")}
                   </Button>
                 </form>
               ) : null}
@@ -393,11 +396,11 @@ export function ProtocolosPage() {
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <h2 className="text-[22px] leading-[1.27]">{calculo.protocolo.nombre}</h2>
-                    <p className="mt-1 text-xs text-cds-textSecondary">{trackeables.length - pendientes.length - bloqueados.length}/{trackeables.length} insumos validados</p>
+                    <p className="mt-1 text-xs text-cds-textSecondary">{t("protocolos.insumosValidados", { validados: trackeables.length - pendientes.length - bloqueados.length, total: trackeables.length })}</p>
                   </div>
                   <Button type="button" variant="ghost" size="compact" onClick={() => { setCalculo(null); setLotesValidados({}); }}>
                     <RotateCcw size={16} aria-hidden="true" />
-                    Limpiar
+                    {t("protocolos.limpiar")}
                   </Button>
                 </div>
                 {trackeables.length ? (
@@ -411,7 +414,7 @@ export function ProtocolosPage() {
 
           <div className="space-y-4">
             {!calculo ? (
-              <div className="border border-cds-borderSubtle bg-cds-layer01 p-4 text-sm text-cds-textSecondary">Calculá un protocolo para iniciar la ejecución.</div>
+              <div className="border border-cds-borderSubtle bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("protocolos.calcularPrimero")}</div>
             ) : (
               <>
                 <div className="grid gap-3 lg:grid-cols-2">
@@ -436,7 +439,7 @@ export function ProtocolosPage() {
 
                 {pendientes.length ? (
                   <div className="border border-cds-borderSubtle bg-cds-layer01 p-4">
-                    <h3 className="mb-4">Validar lote</h3>
+                    <h3 className="mb-4">{t("protocolos.validarLote")}</h3>
                     <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
                       <select
                         className="h-10 border-0 border-b border-cds-borderStrong bg-cds-field px-3 text-sm outline-none focus:ring-2 focus:ring-cds-focus"
@@ -457,7 +460,7 @@ export function ProtocolosPage() {
                         }}
                       >
                         <Search size={18} aria-hidden="true" />
-                        Validar
+                        {t("protocolos.validar")}
                       </Button>
                     </div>
                     <div className="mt-3">
@@ -475,14 +478,14 @@ export function ProtocolosPage() {
                       />
                       <label htmlFor="protocolo_qr" className="inline-flex h-10 cursor-pointer items-center gap-2 border border-cds-borderStrong bg-cds-layer02 px-3 text-sm hover:bg-cds-borderSubtle">
                         <Camera size={18} aria-hidden="true" />
-                        {decodificarQrMutation.isPending ? "Leyendo QR..." : "Escanear foto de QR"}
+                        {decodificarQrMutation.isPending ? t("protocolos.leyendoQr") : t("protocolos.escanearQr")}
                       </label>
                     </div>
                   </div>
                 ) : null}
 
                 <div className="border border-cds-borderSubtle bg-cds-layer01 p-4">
-                  <h3>Pasos</h3>
+                  <h3>{t("protocolos.pasos")}</h3>
                   <div className="mt-4 space-y-3">
                     {calculo.pasos.map((paso, index) => (
                       <label key={`${index}-${paso}`} className="flex items-start gap-3 text-sm">
@@ -494,14 +497,14 @@ export function ProtocolosPage() {
                 </div>
 
                 <div className="border border-cds-borderSubtle bg-cds-layer01 p-4">
-                  <Label className="mb-2" htmlFor="observaciones">Observaciones</Label>
-                  <Input id="observaciones" value={observaciones} onChange={(event) => setObservaciones(event.target.value)} placeholder="Preparado para sala de cultivo celular" />
-                  {bloqueados.length ? <p className="mt-3 text-sm text-cds-supportError">Algunos insumos no tienen stock suficiente.</p> : null}
-                  {pendientes.length ? <p className="mt-3 text-sm text-cds-textSecondary">Validá todos los insumos requeridos antes de registrar.</p> : null}
-                  {!trackeables.length ? <p className="mt-3 text-sm text-cds-textSecondary">Esta calculadora es informativa y no registra movimientos de stock.</p> : null}
+                  <Label className="mb-2" htmlFor="observaciones">{t("protocolos.observaciones")}</Label>
+                  <Input id="observaciones" value={observaciones} onChange={(event) => setObservaciones(event.target.value)} placeholder={t("protocolos.observacionesPh")} />
+                  {bloqueados.length ? <p className="mt-3 text-sm text-cds-supportError">{t("protocolos.errStockInsuf")}</p> : null}
+                  {pendientes.length ? <p className="mt-3 text-sm text-cds-textSecondary">{t("protocolos.validarTodos")}</p> : null}
+                  {!trackeables.length ? <p className="mt-3 text-sm text-cds-textSecondary">{t("protocolos.calculadoraInfo")}</p> : null}
                   <Button type="button" className="mt-4 w-full" disabled={!puedeRegistrar || ejecutarMutation.isPending} onClick={() => ejecutarMutation.mutate()}>
                     <Check size={18} aria-hidden="true" />
-                    {ejecutarMutation.isPending ? "Registrando..." : "Registrar ejecución"}
+                    {ejecutarMutation.isPending ? t("protocolos.registrando") : t("protocolos.registrarEjecucion")}
                   </Button>
                 </div>
               </>
@@ -529,6 +532,7 @@ export function ProtocolosPage() {
 }
 
 function ParametroInput({ parametro, reactivos, value, onChange }: { parametro: ProtocoloParametro; reactivos: Reactivo[]; value: string | number; onChange: (value: string | number) => void }) {
+  const { t } = useTranslation()
   const label = `${parametro.label ?? parametro.nombre}${parametro.unidad ? ` (${parametro.unidad})` : ""}`
   if (parametro.tipo === "opcion") {
     return (
@@ -546,7 +550,7 @@ function ParametroInput({ parametro, reactivos, value, onChange }: { parametro: 
       <label className="block">
         <Label className="mb-2">{label}</Label>
         <select className="h-10 w-full border-0 border-b border-cds-borderStrong bg-cds-field px-3 text-sm outline-none focus:ring-2 focus:ring-cds-focus" value={String(value)} onChange={(event) => onChange(Number(event.target.value))}>
-          <option value="">Seleccionar reactivo</option>
+          <option value="">{t("protocolos.seleccionarReactivo")}</option>
           {opciones.map((reactivo) => <option key={reactivo.id} value={reactivo.id}>{reactivo.nombre} ({reactivo.unidad})</option>)}
         </select>
       </label>
@@ -567,7 +571,8 @@ function ParametroInput({ parametro, reactivos, value, onChange }: { parametro: 
 }
 
 function InsumoCard({ insumo, lote, onUseSuggested, onRemove }: { insumo: ProtocoloInsumo; lote?: Lote; onUseSuggested: () => void; onRemove: () => void }) {
-  const estado = !insumo.reactivo ? "informativo" : lote ? "validado" : insumo.alcanza_stock ? "pendiente" : "stock insuficiente"
+  const { t } = useTranslation()
+  const estado = !insumo.reactivo ? t("protocolos.estInformativo") : lote ? t("protocolos.estValidado") : insumo.alcanza_stock ? t("protocolos.estPendiente") : t("protocolos.estStockInsuf")
   return (
     <article className="border border-cds-borderSubtle bg-cds-layer01 p-4">
       <div className="flex items-start justify-between gap-4">
@@ -580,17 +585,17 @@ function InsumoCard({ insumo, lote, onUseSuggested, onRemove }: { insumo: Protoc
         {lote ? <Check className="text-cds-supportSuccess" size={20} aria-hidden="true" /> : <FlaskConical className="text-cds-textSecondary" size={20} aria-hidden="true" />}
       </div>
       <div className="mt-4 grid gap-2 text-sm">
-        <div>Base: {formatNumber(insumo.cantidad_base)} {insumo.unidad_base}</div>
-        {insumo.reactivo ? <div>Catálogo: {insumo.reactivo.nombre}</div> : <div>Sin reactivo de catálogo vinculado.</div>}
-        {insumo.reactivo ? <div>Stock: {formatNumber(insumo.stock_total)} {insumo.unidad_base}</div> : null}
-        {insumo.lote_sugerido ? <div>Sugerido: <span className="font-mono">{insumo.lote_sugerido.codigo_interno}</span> · {formatNumber(insumo.lote_sugerido.cantidad_actual)} {insumo.lote_sugerido.unidad}</div> : null}
-        {lote ? <div className="text-cds-supportSuccess">Validado: <span className="font-mono">{lote.codigo_interno}</span></div> : null}
+        <div>{t("protocolos.base", { cantidad: formatNumber(insumo.cantidad_base), unidad: insumo.unidad_base })}</div>
+        {insumo.reactivo ? <div>{t("protocolos.catalogo", { nombre: insumo.reactivo.nombre })}</div> : <div>{t("protocolos.sinCatalogo")}</div>}
+        {insumo.reactivo ? <div>{t("protocolos.stock", { cantidad: formatNumber(insumo.stock_total), unidad: insumo.unidad_base })}</div> : null}
+        {insumo.lote_sugerido ? <div>{t("protocolos.sugeridoLabel")} <span className="font-mono">{insumo.lote_sugerido.codigo_interno}</span> · {formatNumber(insumo.lote_sugerido.cantidad_actual)} {insumo.lote_sugerido.unidad}</div> : null}
+        {lote ? <div className="text-cds-supportSuccess">{t("protocolos.validadoLabel")} <span className="font-mono">{lote.codigo_interno}</span></div> : null}
       </div>
       <div className="mt-4 flex gap-2">
         {lote ? (
-          <Button type="button" variant="ghost" size="compact" onClick={onRemove}><X size={16} aria-hidden="true" />Quitar</Button>
+          <Button type="button" variant="ghost" size="compact" onClick={onRemove}><X size={16} aria-hidden="true" />{t("protocolos.quitar")}</Button>
         ) : insumo.lote_sugerido && insumo.lote_sugerido.cantidad_actual >= insumo.cantidad_base ? (
-          <Button type="button" variant="secondary" size="compact" onClick={onUseSuggested}>Usar sugerido</Button>
+          <Button type="button" variant="secondary" size="compact" onClick={onUseSuggested}>{t("protocolos.usarSugerido")}</Button>
         ) : null}
       </div>
     </article>
@@ -598,16 +603,17 @@ function InsumoCard({ insumo, lote, onUseSuggested, onRemove }: { insumo: Protoc
 }
 
 function Historial({ ejecuciones, loading, token }: { ejecuciones: Awaited<ReturnType<typeof api.protocolosEjecuciones>>; loading: boolean; token: string | null }) {
+  const { t } = useTranslation()
   const pdfMutation = useMutation({
     mutationFn: (id: number) => api.protocoloEjecucionPdf(token!, id),
     onSuccess: (blob, id) => downloadBlob(blob, `protocolo_ejecucion_${id}.pdf`),
   })
 
   if (loading) {
-    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">Cargando ejecuciones...</div>
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("protocolos.cargandoEjecuciones")}</div>
   }
   if (!ejecuciones.length) {
-    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">Todavía no hay ejecuciones registradas.</div>
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("protocolos.sinEjecuciones")}</div>
   }
   return (
     <div className="space-y-3">
@@ -616,7 +622,7 @@ function Historial({ ejecuciones, loading, token }: { ejecuciones: Awaited<Retur
           <summary className="cursor-pointer text-sm font-semibold">#{ejecucion.id} · {ejecucion.nombre} · {ejecucion.fecha} · {ejecucion.usuario_nombre}</summary>
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
             <div>
-              <h3>Insumos planificados</h3>
+              <h3>{t("protocolos.insumosPlanificados")}</h3>
               <div className="mt-3 space-y-2 text-sm">
                 {(ejecucion.insumos_planificados ?? []).length ? (
                   (ejecucion.insumos_planificados ?? []).map((insumo) => (
@@ -626,13 +632,13 @@ function Historial({ ejecuciones, loading, token }: { ejecuciones: Awaited<Retur
                   ))
                 ) : (
                   <div className="border border-cds-borderSubtle bg-cds-background p-3 text-cds-textSecondary">
-                    No se pudieron reconstruir los insumos planificados.
+                    {t("protocolos.sinInsumosPlan")}
                   </div>
                 )}
               </div>
             </div>
             <div>
-              <h3>Movimientos de stock</h3>
+              <h3>{t("protocolos.movimientosStock")}</h3>
               <div className="mt-3 space-y-2 text-sm">
                 {(ejecucion.movimientos ?? []).length ? (
                   (ejecucion.movimientos ?? []).map((movimiento) => (
@@ -643,7 +649,7 @@ function Historial({ ejecuciones, loading, token }: { ejecuciones: Awaited<Retur
                   ))
                 ) : (
                   <div className="border border-cds-borderSubtle bg-cds-background p-3 text-cds-textSecondary">
-                    Sin movimientos vinculados. Esto puede pasar en calculadoras informativas o ejecuciones que no descuentan stock.
+                    {t("protocolos.sinMovimientos")}
                   </div>
                 )}
               </div>
@@ -652,7 +658,7 @@ function Historial({ ejecuciones, loading, token }: { ejecuciones: Awaited<Retur
           {ejecucion.observaciones ? <p className="mt-4 text-sm text-cds-textSecondary">{ejecucion.observaciones}</p> : null}
           <Button type="button" className="mt-4" variant="secondary" size="compact" onClick={() => pdfMutation.mutate(ejecucion.id)}>
             <Download size={16} aria-hidden="true" />
-            Descargar PDF
+            {t("protocolos.descargarPdf")}
           </Button>
         </details>
       ))}
@@ -661,6 +667,7 @@ function Historial({ ejecuciones, loading, token }: { ejecuciones: Awaited<Retur
 }
 
 function Plantillas({ plantillas, reactivos, loading, onCrear, creando, onCambiar }: { plantillas: Protocolo[]; reactivos: Reactivo[]; loading: boolean; onCrear: (event: FormEvent<HTMLFormElement>) => void; creando: boolean; onCambiar: (id: number, activo: boolean) => void }) {
+  const { t } = useTranslation()
   const [paramLabels, setParamLabels] = useState<Record<number, string>>({})
   const [inputModes, setInputModes] = useState<Record<number, string>>({})
   const parametrosDisponibles = [1, 2, 3]
@@ -670,22 +677,22 @@ function Plantillas({ plantillas, reactivos, loading, onCrear, creando, onCambia
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(520px,620px)_minmax(0,1fr)]">
       <form className="border border-cds-borderSubtle bg-cds-layer01 p-4" onSubmit={onCrear}>
-        <h3 className="mb-4 flex items-center gap-2"><Plus size={18} aria-hidden="true" />Crear plantilla</h3>
+        <h3 className="mb-4 flex items-center gap-2"><Plus size={18} aria-hidden="true" />{t("protocolos.crearPlantilla")}</h3>
         <div className="grid gap-4">
           <div className="grid gap-3 sm:grid-cols-[1fr_150px]">
-            <label><Label className="mb-2">Nombre</Label><Input name="nombre" required /></label>
-            <label><Label className="mb-2">Versión</Label><Input name="version" defaultValue="v1" /></label>
+            <label><Label className="mb-2">{t("protocolos.fNombre")}</Label><Input name="nombre" required /></label>
+            <label><Label className="mb-2">{t("protocolos.fVersion")}</Label><Input name="version" defaultValue="v1" /></label>
           </div>
-          <label><Label className="mb-2">Categoría</Label><Input name="categoria" defaultValue="Plantilla editable" /></label>
-          <label><Label className="mb-2">Pasos</Label><textarea name="pasos" required rows={4} className="w-full border-0 border-b border-cds-borderStrong bg-cds-field p-3 text-sm outline-none focus:ring-2 focus:ring-cds-focus" placeholder="Un paso por línea" /></label>
+          <label><Label className="mb-2">{t("protocolos.fCategoria")}</Label><Input name="categoria" defaultValue="Plantilla editable" /></label>
+          <label><Label className="mb-2">{t("protocolos.fPasos")}</Label><textarea name="pasos" required rows={4} className="w-full border-0 border-b border-cds-borderStrong bg-cds-field p-3 text-sm outline-none focus:ring-2 focus:ring-cds-focus" placeholder={t("protocolos.pasoPorLinea")} /></label>
 
           <div>
-            <h4 className="mb-2 text-sm font-semibold">Parámetros</h4>
+            <h4 className="mb-2 text-sm font-semibold">{t("protocolos.parametros")}</h4>
             {[1, 2, 3].map((idx) => (
               <div key={idx} className="mt-2 grid gap-2 sm:grid-cols-[1fr_80px_90px]">
                 <Input
                   name={`param_label_${idx}`}
-                  placeholder={`Parámetro ${idx}`}
+                  placeholder={t("protocolos.paramN", { n: idx })}
                   value={paramLabels[idx] ?? ""}
                   onChange={(event) => setParamLabels((current) => ({ ...current, [idx]: event.target.value }))}
                 />
@@ -696,42 +703,42 @@ function Plantillas({ plantillas, reactivos, loading, onCrear, creando, onCambia
           </div>
 
           <div>
-            <h4 className="mb-2 text-sm font-semibold">Insumos</h4>
+            <h4 className="mb-2 text-sm font-semibold">{t("protocolos.insumos")}</h4>
             {[1, 2, 3, 4, 5].map((idx) => (
               <div key={idx} className="mt-3 border border-cds-borderSubtle bg-cds-background p-3">
                 <div className="grid gap-2 sm:grid-cols-[1fr_130px_100px]">
                   <label>
-                    <Label className="mb-2">Reactivo {idx}</Label>
+                    <Label className="mb-2">{t("protocolos.reactivoN", { n: idx })}</Label>
                     <select name={`insumo_reactivo_${idx}`} className="h-10 w-full border-0 border-b border-cds-borderStrong bg-cds-field px-3 text-sm outline-none focus:ring-2 focus:ring-cds-focus">
-                      <option value="">Seleccionar reactivo</option>
+                      <option value="">{t("protocolos.seleccionarReactivo")}</option>
                       {reactivos.map((reactivo) => <option key={reactivo.id} value={reactivo.id}>{reactivo.nombre} ({reactivo.unidad})</option>)}
                     </select>
                   </label>
                   <label>
-                    <Label className="mb-2">Cálculo</Label>
+                    <Label className="mb-2">{t("protocolos.fCalculo")}</Label>
                     <select
                       name={`insumo_modo_${idx}`}
                       className="h-10 w-full border-0 border-b border-cds-borderStrong bg-cds-field px-3 text-sm outline-none focus:ring-2 focus:ring-cds-focus"
                       value={inputModes[idx] ?? "fijo"}
                       onChange={(event) => setInputModes((current) => ({ ...current, [idx]: event.target.value }))}
                     >
-                      <option value="fijo">Fijo</option>
-                      <option value="proporcional">Por parámetro</option>
+                      <option value="fijo">{t("protocolos.fijo")}</option>
+                      <option value="proporcional">{t("protocolos.porParametro")}</option>
                     </select>
                   </label>
                   <label>
-                    <Label className="mb-2">{(inputModes[idx] ?? "fijo") === "proporcional" ? "Factor" : "Cantidad"}</Label>
+                    <Label className="mb-2">{(inputModes[idx] ?? "fijo") === "proporcional" ? t("protocolos.factor") : t("protocolos.cantidad")}</Label>
                     <Input name={`insumo_cantidad_${idx}`} type="text" inputMode="decimal" placeholder="0" />
                   </label>
                 </div>
                 {(inputModes[idx] ?? "fijo") === "proporcional" ? (
                   <label className="mt-3 block">
-                    <Label className="mb-2">Parámetro</Label>
+                    <Label className="mb-2">{t("protocolos.parametro")}</Label>
                     <select name={`insumo_parametro_${idx}`} className="h-10 w-full border-0 border-b border-cds-borderStrong bg-cds-field px-3 text-sm outline-none focus:ring-2 focus:ring-cds-focus">
                       {parametrosDisponibles.length ? (
                         parametrosDisponibles.map((label) => <option key={label} value={label}>{label}</option>)
                       ) : (
-                        <option value="">Definí un parámetro primero</option>
+                        <option value="">{t("protocolos.definiParametro")}</option>
                       )}
                     </select>
                   </label>
@@ -739,27 +746,27 @@ function Plantillas({ plantillas, reactivos, loading, onCrear, creando, onCambia
               </div>
             ))}
           </div>
-          <Button type="submit" disabled={creando}><FileText size={18} aria-hidden="true" />{creando ? "Creando..." : "Crear plantilla"}</Button>
+          <Button type="submit" disabled={creando}><FileText size={18} aria-hidden="true" />{creando ? t("common.creando") : t("protocolos.crearPlantilla")}</Button>
         </div>
       </form>
 
       <div className="space-y-3">
         <div className="border border-cds-borderSubtle bg-cds-layer01 p-4">
-          <h3>Plantillas existentes</h3>
-          <p className="mt-1 text-sm text-cds-textSecondary">Activá o desactivá plantillas editables de protocolos.</p>
+          <h3>{t("protocolos.plantillasExistentes")}</h3>
+          <p className="mt-1 text-sm text-cds-textSecondary">{t("protocolos.plantillasDesc")}</p>
         </div>
-        {loading ? <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">Cargando plantillas...</div> : null}
-        {!loading && !plantillas.length ? <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">Todavía no hay plantillas editables.</div> : null}
+        {loading ? <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("protocolos.cargandoPlantillas")}</div> : null}
+        {!loading && !plantillas.length ? <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("protocolos.sinPlantillas")}</div> : null}
         {plantillas.map((plantilla) => (
           <article key={plantilla.id} className="border border-cds-borderSubtle bg-cds-layer01 p-4">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h3>{plantilla.nombre}</h3>
-                <p className="mt-1 text-sm text-cds-textSecondary">{plantilla.categoria ?? "Plantilla"} · {plantilla.version ?? "v1"} · {plantilla.activo ? "Activa" : "Inactiva"}</p>
+                <p className="mt-1 text-sm text-cds-textSecondary">{plantilla.categoria ?? t("protocolos.plantillaDefault")} · {plantilla.version ?? "v1"} · {plantilla.activo ? t("protocolos.activa") : t("protocolos.inactiva")}</p>
               </div>
               {plantilla.plantilla_id ? (
                 <Button type="button" variant={plantilla.activo ? "danger" : "secondary"} size="compact" onClick={() => onCambiar(plantilla.plantilla_id!, !plantilla.activo)}>
-                  {plantilla.activo ? "Desactivar" : "Activar"}
+                  {plantilla.activo ? t("protocolos.desactivar") : t("protocolos.activar")}
                 </Button>
               ) : null}
             </div>

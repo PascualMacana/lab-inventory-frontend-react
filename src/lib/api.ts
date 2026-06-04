@@ -1,3 +1,5 @@
+import i18n from "./i18n"
+
 const API_URL = (import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "")
 
 export type Usuario = {
@@ -694,11 +696,11 @@ async function request<T>(endpoint: string, options: ApiOptions = {}): Promise<T
       headers,
     })
   } catch {
-    throw new Error(`No se pudo conectar con la API en ${API_URL}. Revisá que FastAPI esté corriendo y que VITE_API_URL apunte al puerto correcto.`)
+    throw new Error(i18n.t("common.errConexion", { url: API_URL }))
   }
 
   if (!response.ok) {
-    let message = `Error HTTP ${response.status}`
+    let message = i18n.t("common.errHttp", { status: response.status })
     try {
       const payload = await response.json()
       if (payload?.detail) {
@@ -740,11 +742,11 @@ async function requestBlob(endpoint: string, options: ApiOptions = {}) {
       headers,
     })
   } catch {
-    throw new Error(`No se pudo conectar con la API en ${API_URL}. Revisá que FastAPI esté corriendo y que VITE_API_URL apunte al puerto correcto.`)
+    throw new Error(i18n.t("common.errConexion", { url: API_URL }))
   }
 
   if (!response.ok) {
-    let message = `Error HTTP ${response.status}`
+    let message = i18n.t("common.errHttp", { status: response.status })
     try {
       const payload = await response.json()
       if (payload?.detail) {

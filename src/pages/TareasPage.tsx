@@ -1,6 +1,7 @@
 import { FormEvent, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { CalendarClock, MessageSquarePlus, Plus, RotateCcw, Save, UserRound } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import { ModuleNav } from "../components/ModuleNav"
 import { PageHeader } from "../components/PageHeader"
@@ -12,32 +13,24 @@ import { useAuth } from "../lib/auth"
 import { puede } from "../lib/permissions"
 import { cn } from "../lib/utils"
 
-const estados: Array<{ value: "" | EstadoTarea; label: string }> = [
-  { value: "", label: "Todos" },
-  { value: "pendiente", label: "Pendiente" },
-  { value: "en_progreso", label: "En progreso" },
-  { value: "bloqueada", label: "Bloqueada" },
-  { value: "completada", label: "Completada" },
-  { value: "cancelada", label: "Cancelada" },
+const estados: Array<{ value: "" | EstadoTarea }> = [
+  { value: "" },
+  { value: "pendiente" },
+  { value: "en_progreso" },
+  { value: "bloqueada" },
+  { value: "completada" },
+  { value: "cancelada" },
 ]
 
-const prioridades: Array<{ value: PrioridadTarea; label: string }> = [
-  { value: "baja", label: "Baja" },
-  { value: "media", label: "Media" },
-  { value: "alta", label: "Alta" },
-  { value: "urgente", label: "Urgente" },
+const prioridades: Array<{ value: PrioridadTarea }> = [
+  { value: "baja" },
+  { value: "media" },
+  { value: "alta" },
+  { value: "urgente" },
 ]
 
 const tareasVacias: Tarea[] = []
 const usuariosVacios: Usuario[] = []
-
-function estadoLabel(value: EstadoTarea | "") {
-  return estados.find((item) => item.value === value)?.label ?? value
-}
-
-function prioridadLabel(value: PrioridadTarea) {
-  return prioridades.find((item) => item.value === value)?.label ?? value
-}
 
 function formatDate(value: string | null | undefined) {
   if (!value) {
@@ -98,6 +91,7 @@ function prioridadClasses(prioridad: PrioridadTarea) {
 
 export function TareasPage() {
   const { token, usuario } = useAuth()
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const puedeGestionar = puede(usuario, "gestionar_tareas")
   const puedeCrear = puede(usuario, "crear_tarea")
@@ -172,9 +166,9 @@ export function TareasPage() {
   return (
     <section>
       <PageHeader
-        title="Tareas"
-        description="Seguimiento operativo de tareas asignadas al equipo."
-        count={tab === "nueva" ? "Nueva tarea" : tareasQuery.isLoading ? "Cargando tareas..." : `${resumen.total} tarea(s)`}
+        title={t("tareas.title")}
+        description={t("tareas.desc")}
+        count={tab === "nueva" ? t("tareas.nuevaTarea") : tareasQuery.isLoading ? t("tareas.cargando") : t("tareas.countN", { n: resumen.total })}
         plain
       />
 
@@ -183,12 +177,12 @@ export function TareasPage() {
 
       <ModuleNav
         actions={[
-          { label: "Mis tareas", onClick: () => cambiarTab("mis"), icon: <UserRound size={18} aria-hidden="true" />, variant: tab === "mis" ? "primary" : "secondary" },
+          { label: t("tareas.misTareas"), onClick: () => cambiarTab("mis"), icon: <UserRound size={18} aria-hidden="true" />, variant: tab === "mis" ? "primary" : "secondary" },
           ...(puedeGestionar
-            ? [{ label: "Equipo", onClick: () => cambiarTab("equipo"), icon: <CalendarClock size={18} aria-hidden="true" />, variant: tab === "equipo" ? "primary" as const : "secondary" as const }]
+            ? [{ label: t("tareas.equipo"), onClick: () => cambiarTab("equipo"), icon: <CalendarClock size={18} aria-hidden="true" />, variant: tab === "equipo" ? "primary" as const : "secondary" as const }]
             : []),
           ...(puedeCrear
-            ? [{ label: "Nueva tarea", onClick: () => cambiarTab("nueva"), icon: <Plus size={18} aria-hidden="true" />, variant: tab === "nueva" ? "primary" as const : "secondary" as const }]
+            ? [{ label: t("tareas.nuevaTarea"), onClick: () => cambiarTab("nueva"), icon: <Plus size={18} aria-hidden="true" />, variant: tab === "nueva" ? "primary" as const : "secondary" as const }]
             : []),
         ]}
       />
@@ -201,31 +195,31 @@ export function TareasPage() {
           onSuccess={async (tarea) => {
             cambiarTab("equipo")
             setSelectedId(tarea.id)
-            await refrescar(`Tarea #${tarea.id} creada.`)
+            await refrescar(t("tareas.msgCreada", { id: tarea.id }))
           }}
         />
       ) : (
         <>
           <div className="mb-4 grid gap-px bg-cds-borderSubtle md:grid-cols-5">
-            <Metric label="Pendientes" value={String(resumen.pendiente)} />
-            <Metric label="En progreso" value={String(resumen.en_progreso)} />
-            <Metric label="Bloqueadas" value={String(resumen.bloqueada)} />
-            <Metric label="Completadas" value={String(resumen.completada)} />
-            <Metric label="Vencidas" value={String(resumen.vencidas)} tone="error" />
+            <Metric label={t("tareas.mPendientes")} value={String(resumen.pendiente)} />
+            <Metric label={t("tareas.mEnProgreso")} value={String(resumen.en_progreso)} />
+            <Metric label={t("tareas.mBloqueadas")} value={String(resumen.bloqueada)} />
+            <Metric label={t("tareas.mCompletadas")} value={String(resumen.completada)} />
+            <Metric label={t("tareas.mVencidas")} value={String(resumen.vencidas)} tone="error" />
           </div>
 
           <div className="mb-6 grid gap-4 bg-cds-layer01 p-4 md:grid-cols-3">
             <label className="block">
-              <Label className="mb-2" htmlFor="tarea_estado">Estado</Label>
+              <Label className="mb-2" htmlFor="tarea_estado">{t("tareas.fEstado")}</Label>
               <select id="tarea_estado" className="h-12 w-full border-b border-cds-borderStrong bg-cds-field px-4 text-sm" value={estado} onChange={(event) => setEstado(event.target.value)}>
-                {estados.map((item) => <option key={item.value || "todos"} value={item.value}>{item.label}</option>)}
+                {estados.map((item) => <option key={item.value || "todos"} value={item.value}>{t(`tareas.estadoOpt.${item.value || "todos"}`)}</option>)}
               </select>
             </label>
             {tab === "equipo" && puedeGestionar ? (
               <label className="block">
-                <Label className="mb-2" htmlFor="tarea_asignado">Asignado a</Label>
+                <Label className="mb-2" htmlFor="tarea_asignado">{t("tareas.fAsignadoA")}</Label>
                 <select id="tarea_asignado" className="h-12 w-full border-b border-cds-borderStrong bg-cds-field px-4 text-sm" value={asignadoA} onChange={(event) => setAsignadoA(event.target.value)}>
-                  <option value="">Todos</option>
+                  <option value="">{t("tareas.todos")}</option>
                   {usuarios.map((item) => <option key={item.id} value={item.id}>{item.nombre}</option>)}
                 </select>
               </label>
@@ -233,7 +227,7 @@ export function TareasPage() {
             <div className="flex items-end">
               <Button type="button" variant="secondary" onClick={() => void tareasQuery.refetch()}>
                 <RotateCcw size={18} aria-hidden="true" />
-                Actualizar
+                {t("tareas.actualizar")}
               </Button>
             </div>
           </div>
@@ -267,31 +261,32 @@ function Metric({ label, value, tone }: { label: string; value: string; tone?: "
 }
 
 function TareasTable({ tareas, selectedId, isLoading, onSelect }: { tareas: Tarea[]; selectedId: number | null; isLoading: boolean; onSelect: (id: number) => void }) {
+  const { t } = useTranslation()
   if (isLoading) {
-    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">Cargando tabla...</div>
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("common.cargandoTabla")}</div>
   }
   if (!tareas.length) {
-    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">No hay tareas para mostrar.</div>
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("tareas.sinTareas")}</div>
   }
   return (
     <div className="overflow-x-auto border-t border-cds-borderSubtle">
       <table className="w-full min-w-[860px] border-collapse text-left text-sm">
         <thead>
           <tr className="border-b border-cds-borderSubtle bg-cds-layer01 text-xs tracking-[0.32px] text-cds-textSecondary">
-            <th className="h-10 px-4 font-normal">Tarea</th>
-            <th className="h-10 px-4 font-normal">Estado</th>
-            <th className="h-10 px-4 font-normal">Prioridad</th>
-            <th className="h-10 px-4 font-normal">Asignado</th>
-            <th className="h-10 px-4 font-normal">Fecha límite</th>
+            <th className="h-10 px-4 font-normal">{t("tareas.thTarea")}</th>
+            <th className="h-10 px-4 font-normal">{t("tareas.thEstado")}</th>
+            <th className="h-10 px-4 font-normal">{t("tareas.thPrioridad")}</th>
+            <th className="h-10 px-4 font-normal">{t("tareas.thAsignado")}</th>
+            <th className="h-10 px-4 font-normal">{t("tareas.fFechaLimite")}</th>
           </tr>
         </thead>
         <tbody>
           {tareas.map((tarea) => (
             <tr key={tarea.id} className={cn("cursor-pointer border-b border-cds-borderSubtle transition-colors hover:bg-cds-layer01", selectedId === tarea.id && "bg-cds-layer01")} onClick={() => onSelect(tarea.id)}>
               <td className="h-12 px-4 font-medium">#{tarea.id} · {tarea.titulo}</td>
-              <td className="h-12 px-4"><span className={cn("inline-flex rounded-full px-2 py-1 text-xs ring-1", estadoClasses(tarea.estado))}>{estadoLabel(tarea.estado)}</span></td>
-              <td className={cn("h-12 px-4 font-medium", prioridadClasses(tarea.prioridad))}>{prioridadLabel(tarea.prioridad)}</td>
-              <td className="h-12 px-4 text-cds-textSecondary">{tarea.asignado_nombre || "Sin asignar"}</td>
+              <td className="h-12 px-4"><span className={cn("inline-flex rounded-full px-2 py-1 text-xs ring-1", estadoClasses(tarea.estado))}>{t(`tareas.estadoOpt.${tarea.estado}`)}</span></td>
+              <td className={cn("h-12 px-4 font-medium", prioridadClasses(tarea.prioridad))}>{t(`tareas.prioridadOpt.${tarea.prioridad}`)}</td>
+              <td className="h-12 px-4 text-cds-textSecondary">{tarea.asignado_nombre || t("tareas.sinAsignar")}</td>
               <td className={cn("h-12 px-4 text-cds-textSecondary", isVencida(tarea) && "text-cds-supportError")}>{formatDate(tarea.fecha_limite)}</td>
             </tr>
           ))}
@@ -303,6 +298,7 @@ function TareasTable({ tareas, selectedId, isLoading, onSelect }: { tareas: Tare
 
 function TareaDetalle({ tarea, token, usuarios, puedeGestionar, onError, onUpdated }: { tarea: Tarea; token: string; usuarios: Usuario[]; puedeGestionar: boolean; onError: (message: string | null) => void; onUpdated: (message?: string) => void | Promise<void> }) {
   const queryClient = useQueryClient()
+  const { t } = useTranslation()
   const [comentario, setComentario] = useState("")
   const eventosQuery = useQuery({
     queryKey: ["tarea-eventos", tarea.id],
@@ -315,30 +311,30 @@ function TareaDetalle({ tarea, token, usuarios, puedeGestionar, onError, onUpdat
     mutationFn: (estado: EstadoTarea) => api.cambiarEstadoTarea(token, tarea.id, estado),
     onSuccess: async () => {
       onError(null)
-      await onUpdated("Estado actualizado.")
+      await onUpdated(t("tareas.msgEstadoAct"))
       await queryClient.invalidateQueries({ queryKey: ["tarea-eventos", tarea.id] })
     },
-    onError: (error) => onError(mutationError(error, "No se pudo actualizar el estado.")),
+    onError: (error) => onError(mutationError(error, t("tareas.errEstado"))),
   })
 
   const reasignarMutation = useMutation({
     mutationFn: (asignadoA: number | null) => api.reasignarTarea(token, tarea.id, asignadoA),
     onSuccess: async () => {
       onError(null)
-      await onUpdated("Tarea reasignada.")
+      await onUpdated(t("tareas.msgReasignada"))
       await queryClient.invalidateQueries({ queryKey: ["tarea-eventos", tarea.id] })
     },
-    onError: (error) => onError(mutationError(error, "No se pudo reasignar la tarea.")),
+    onError: (error) => onError(mutationError(error, t("tareas.errReasignar"))),
   })
 
   const editarMutation = useMutation({
     mutationFn: (data: TareaActualizar) => api.actualizarTarea(token, tarea.id, data),
     onSuccess: async () => {
       onError(null)
-      await onUpdated("Tarea actualizada.")
+      await onUpdated(t("tareas.msgActualizada"))
       await queryClient.invalidateQueries({ queryKey: ["tarea-eventos", tarea.id] })
     },
-    onError: (error) => onError(mutationError(error, "No se pudo actualizar la tarea.")),
+    onError: (error) => onError(mutationError(error, t("tareas.errActualizar"))),
   })
 
   const comentarioMutation = useMutation({
@@ -346,10 +342,10 @@ function TareaDetalle({ tarea, token, usuarios, puedeGestionar, onError, onUpdat
     onSuccess: async () => {
       setComentario("")
       onError(null)
-      await onUpdated("Comentario agregado.")
+      await onUpdated(t("tareas.msgComentario"))
       await queryClient.invalidateQueries({ queryKey: ["tarea-eventos", tarea.id] })
     },
-    onError: (error) => onError(mutationError(error, "No se pudo agregar el comentario.")),
+    onError: (error) => onError(mutationError(error, t("tareas.errComentario"))),
   })
 
   function handleEdit(event: FormEvent<HTMLFormElement>) {
@@ -367,24 +363,24 @@ function TareaDetalle({ tarea, token, usuarios, puedeGestionar, onError, onUpdat
     <aside className="bg-cds-layer01 p-4">
       <h2 className="text-[24px] leading-[1.33]">#{tarea.id} · {tarea.titulo}</h2>
       <div className="mt-3 space-y-2 text-sm text-cds-textSecondary">
-        <p>Asignado a: {tarea.asignado_nombre || "Sin asignar"}</p>
-        <p>Creado por: {tarea.creado_por_nombre || "-"}</p>
-        <p>Fecha límite: {formatDate(tarea.fecha_limite)}</p>
+        <p>{t("tareas.detAsignadoA", { nombre: tarea.asignado_nombre || t("tareas.sinAsignar") })}</p>
+        <p>{t("tareas.detCreadoPor", { nombre: tarea.creado_por_nombre || "-" })}</p>
+        <p>{t("tareas.detFechaLimite", { fecha: formatDate(tarea.fecha_limite) })}</p>
         {tarea.descripcion ? <p className="text-cds-textPrimary">{tarea.descripcion}</p> : null}
       </div>
 
       <div className="mt-5 grid gap-3">
         <label className="block">
-          <Label className="mb-2" htmlFor={`estado_${tarea.id}`}>Estado</Label>
+          <Label className="mb-2" htmlFor={`estado_${tarea.id}`}>{t("tareas.fEstado")}</Label>
           <select id={`estado_${tarea.id}`} className="h-12 w-full border-b border-cds-borderStrong bg-cds-field px-4 text-sm" value={tarea.estado} onChange={(event) => estadoMutation.mutate(event.target.value as EstadoTarea)} disabled={estadoMutation.isPending}>
-            {estadosDisponibles.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+            {estadosDisponibles.map((item) => <option key={item.value} value={item.value}>{t(`tareas.estadoOpt.${item.value || "todos"}`)}</option>)}
           </select>
         </label>
         {puedeGestionar ? (
           <label className="block">
-            <Label className="mb-2" htmlFor={`asignado_${tarea.id}`}>Reasignar</Label>
+            <Label className="mb-2" htmlFor={`asignado_${tarea.id}`}>{t("tareas.fReasignar")}</Label>
             <select id={`asignado_${tarea.id}`} className="h-12 w-full border-b border-cds-borderStrong bg-cds-field px-4 text-sm" value={tarea.asignado_a ?? ""} onChange={(event) => reasignarMutation.mutate(event.target.value ? Number(event.target.value) : null)} disabled={reasignarMutation.isPending}>
-              <option value="">Sin asignar</option>
+              <option value="">{t("tareas.sinAsignar")}</option>
               {usuarios.map((item) => <option key={item.id} value={item.id}>{item.nombre}</option>)}
             </select>
           </label>
@@ -393,30 +389,30 @@ function TareaDetalle({ tarea, token, usuarios, puedeGestionar, onError, onUpdat
 
       {puedeGestionar ? (
         <form className="mt-6 border-t border-cds-borderSubtle pt-4" onSubmit={handleEdit}>
-          <h3 className="mb-4 text-sm font-medium">Editar tarea</h3>
+          <h3 className="mb-4 text-sm font-medium">{t("tareas.editarTarea")}</h3>
           <div className="grid gap-4">
-            <label className="block"><Label className="mb-2" htmlFor={`titulo_${tarea.id}`}>Título</Label><Input id={`titulo_${tarea.id}`} name="titulo" defaultValue={tarea.titulo} required maxLength={160} /></label>
-            <label className="block"><Label className="mb-2" htmlFor={`descripcion_${tarea.id}`}>Descripción</Label><textarea id={`descripcion_${tarea.id}`} name="descripcion" className="min-h-[96px] w-full border-b border-cds-borderStrong bg-cds-field px-4 py-3 text-sm" defaultValue={tarea.descripcion ?? ""} maxLength={1000} /></label>
+            <label className="block"><Label className="mb-2" htmlFor={`titulo_${tarea.id}`}>{t("tareas.fTitulo")}</Label><Input id={`titulo_${tarea.id}`} name="titulo" defaultValue={tarea.titulo} required maxLength={160} /></label>
+            <label className="block"><Label className="mb-2" htmlFor={`descripcion_${tarea.id}`}>{t("tareas.fDescripcion")}</Label><textarea id={`descripcion_${tarea.id}`} name="descripcion" className="min-h-[96px] w-full border-b border-cds-borderStrong bg-cds-field px-4 py-3 text-sm" defaultValue={tarea.descripcion ?? ""} maxLength={1000} /></label>
             <div className="grid gap-4 md:grid-cols-2">
-              <label className="block"><Label className="mb-2" htmlFor={`prioridad_${tarea.id}`}>Prioridad</Label><select id={`prioridad_${tarea.id}`} name="prioridad" className="h-12 w-full border-b border-cds-borderStrong bg-cds-field px-4 text-sm" defaultValue={tarea.prioridad}>{prioridades.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
-              <label className="block"><Label className="mb-2" htmlFor={`fecha_${tarea.id}`}>Fecha límite</Label><Input id={`fecha_${tarea.id}`} name="fecha_limite" type="date" defaultValue={tarea.fecha_limite ?? ""} /></label>
+              <label className="block"><Label className="mb-2" htmlFor={`prioridad_${tarea.id}`}>{t("tareas.fPrioridad")}</Label><select id={`prioridad_${tarea.id}`} name="prioridad" className="h-12 w-full border-b border-cds-borderStrong bg-cds-field px-4 text-sm" defaultValue={tarea.prioridad}>{prioridades.map((item) => <option key={item.value} value={item.value}>{t(`tareas.prioridadOpt.${item.value}`)}</option>)}</select></label>
+              <label className="block"><Label className="mb-2" htmlFor={`fecha_${tarea.id}`}>{t("tareas.fFechaLimite")}</Label><Input id={`fecha_${tarea.id}`} name="fecha_limite" type="date" defaultValue={tarea.fecha_limite ?? ""} /></label>
             </div>
-            <Button type="submit" disabled={editarMutation.isPending}><Save size={18} aria-hidden="true" />Guardar cambios</Button>
+            <Button type="submit" disabled={editarMutation.isPending}><Save size={18} aria-hidden="true" />{t("common.guardarCambios")}</Button>
           </div>
         </form>
       ) : null}
 
       <div className="mt-6 border-t border-cds-borderSubtle pt-4">
-        <h3 className="mb-3 text-sm font-medium">Historial</h3>
+        <h3 className="mb-3 text-sm font-medium">{t("tareas.historial")}</h3>
         <div className="space-y-3">
           {(eventosQuery.data ?? []).map((evento) => <EventoItem key={evento.id} evento={evento} />)}
-          {eventosQuery.isLoading ? <p className="text-sm text-cds-textSecondary">Cargando historial...</p> : null}
-          {!eventosQuery.isLoading && !(eventosQuery.data ?? []).length ? <p className="text-sm text-cds-textSecondary">Sin eventos registrados.</p> : null}
+          {eventosQuery.isLoading ? <p className="text-sm text-cds-textSecondary">{t("tareas.cargandoHistorial")}</p> : null}
+          {!eventosQuery.isLoading && !(eventosQuery.data ?? []).length ? <p className="text-sm text-cds-textSecondary">{t("tareas.sinEventos")}</p> : null}
         </div>
         <form className="mt-4" onSubmit={(event) => { event.preventDefault(); comentarioMutation.mutate() }}>
-          <Label className="mb-2" htmlFor={`comentario_${tarea.id}`}>Comentario</Label>
+          <Label className="mb-2" htmlFor={`comentario_${tarea.id}`}>{t("tareas.fComentario")}</Label>
           <textarea id={`comentario_${tarea.id}`} className="min-h-[80px] w-full border-b border-cds-borderStrong bg-cds-field px-4 py-3 text-sm" value={comentario} onChange={(event) => setComentario(event.target.value)} maxLength={1000} required />
-          <Button className="mt-3" type="submit" disabled={comentarioMutation.isPending || !comentario.trim()}><MessageSquarePlus size={18} aria-hidden="true" />Agregar comentario</Button>
+          <Button className="mt-3" type="submit" disabled={comentarioMutation.isPending || !comentario.trim()}><MessageSquarePlus size={18} aria-hidden="true" />{t("tareas.agregarComentario")}</Button>
         </form>
       </div>
     </aside>
@@ -424,22 +420,32 @@ function TareaDetalle({ tarea, token, usuarios, puedeGestionar, onError, onUpdat
 }
 
 function EventoItem({ evento }: { evento: TareaEvento }) {
+  const { t } = useTranslation()
   let texto = evento.comentario || evento.tipo
   if (evento.tipo === "estado") {
-    texto = `${evento.usuario_nombre} cambió estado de ${estadoLabel(evento.estado_anterior ?? "")} a ${estadoLabel(evento.estado_nuevo ?? "")}.`
+    texto = t("tareas.evEstado", {
+      usuario: evento.usuario_nombre,
+      anterior: t(`tareas.estadoOpt.${evento.estado_anterior || "todos"}`),
+      nuevo: t(`tareas.estadoOpt.${evento.estado_nuevo || "todos"}`),
+    })
   } else if (evento.tipo === "reasignacion") {
-    texto = `${evento.usuario_nombre} reasignó de ${evento.asignado_anterior_nombre || "Sin asignar"} a ${evento.asignado_nuevo_nombre || "Sin asignar"}.`
+    texto = t("tareas.evReasignacion", {
+      usuario: evento.usuario_nombre,
+      anterior: evento.asignado_anterior_nombre || t("tareas.sinAsignar"),
+      nuevo: evento.asignado_nuevo_nombre || t("tareas.sinAsignar"),
+    })
   } else if (evento.tipo === "creacion") {
-    texto = `${evento.usuario_nombre} creó la tarea.`
+    texto = t("tareas.evCreacion", { usuario: evento.usuario_nombre })
   } else if (evento.tipo === "edicion") {
-    texto = `${evento.usuario_nombre} editó la tarea: ${evento.comentario || ""}`
+    texto = t("tareas.evEdicion", { usuario: evento.usuario_nombre, comentario: evento.comentario || "" })
   } else if (evento.tipo === "comentario") {
-    texto = `${evento.usuario_nombre}: ${evento.comentario || ""}`
+    texto = t("tareas.evComentario", { usuario: evento.usuario_nombre, comentario: evento.comentario || "" })
   }
   return <p className="border-l-2 border-cds-borderSubtle pl-3 text-sm text-cds-textSecondary"><span className="text-cds-textPrimary">{formatDateTime(evento.fecha)}</span> · {texto}</p>
 }
 
 function NuevaTareaForm({ token, usuarios, onError, onSuccess }: { token: string; usuarios: Usuario[]; onError: (message: string | null) => void; onSuccess: (tarea: Tarea) => void | Promise<void> }) {
+  const { t } = useTranslation()
   const mutation = useMutation({
     mutationFn: (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
@@ -456,20 +462,20 @@ function NuevaTareaForm({ token, usuarios, onError, onSuccess }: { token: string
       onError(null)
       await onSuccess(tarea)
     },
-    onError: (error) => onError(mutationError(error, "No se pudo crear la tarea.")),
+    onError: (error) => onError(mutationError(error, t("tareas.errCrear"))),
   })
 
   return (
     <form className="bg-cds-layer01 p-4" onSubmit={(event) => mutation.mutate(event)}>
       <div className="grid gap-5">
-        <label className="block"><Label className="mb-2" htmlFor="nueva_tarea_titulo">Título</Label><Input id="nueva_tarea_titulo" name="titulo" required maxLength={160} /></label>
-        <label className="block"><Label className="mb-2" htmlFor="nueva_tarea_desc">Descripción</Label><textarea id="nueva_tarea_desc" name="descripcion" className="min-h-[120px] w-full border-b border-cds-borderStrong bg-cds-field px-4 py-3 text-sm" maxLength={1000} /></label>
+        <label className="block"><Label className="mb-2" htmlFor="nueva_tarea_titulo">{t("tareas.fTitulo")}</Label><Input id="nueva_tarea_titulo" name="titulo" required maxLength={160} /></label>
+        <label className="block"><Label className="mb-2" htmlFor="nueva_tarea_desc">{t("tareas.fDescripcion")}</Label><textarea id="nueva_tarea_desc" name="descripcion" className="min-h-[120px] w-full border-b border-cds-borderStrong bg-cds-field px-4 py-3 text-sm" maxLength={1000} /></label>
         <div className="grid gap-5 md:grid-cols-3">
-          <label className="block"><Label className="mb-2" htmlFor="nueva_tarea_prioridad">Prioridad</Label><select id="nueva_tarea_prioridad" name="prioridad" className="h-12 w-full border-b border-cds-borderStrong bg-cds-field px-4 text-sm" defaultValue="media">{prioridades.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
-          <label className="block"><Label className="mb-2" htmlFor="nueva_tarea_asignado">Asignado a</Label><select id="nueva_tarea_asignado" name="asignado_a" className="h-12 w-full border-b border-cds-borderStrong bg-cds-field px-4 text-sm"><option value="">Sin asignar</option>{usuarios.map((item) => <option key={item.id} value={item.id}>{item.nombre}</option>)}</select></label>
-          <label className="block"><Label className="mb-2" htmlFor="nueva_tarea_fecha">Fecha límite</Label><Input id="nueva_tarea_fecha" name="fecha_limite" type="date" /></label>
+          <label className="block"><Label className="mb-2" htmlFor="nueva_tarea_prioridad">{t("tareas.fPrioridad")}</Label><select id="nueva_tarea_prioridad" name="prioridad" className="h-12 w-full border-b border-cds-borderStrong bg-cds-field px-4 text-sm" defaultValue="media">{prioridades.map((item) => <option key={item.value} value={item.value}>{t(`tareas.prioridadOpt.${item.value}`)}</option>)}</select></label>
+          <label className="block"><Label className="mb-2" htmlFor="nueva_tarea_asignado">{t("tareas.fAsignadoA")}</Label><select id="nueva_tarea_asignado" name="asignado_a" className="h-12 w-full border-b border-cds-borderStrong bg-cds-field px-4 text-sm"><option value="">{t("tareas.sinAsignar")}</option>{usuarios.map((item) => <option key={item.id} value={item.id}>{item.nombre}</option>)}</select></label>
+          <label className="block"><Label className="mb-2" htmlFor="nueva_tarea_fecha">{t("tareas.fFechaLimite")}</Label><Input id="nueva_tarea_fecha" name="fecha_limite" type="date" /></label>
         </div>
-        <Button type="submit" disabled={mutation.isPending}><Plus size={18} aria-hidden="true" />Crear tarea</Button>
+        <Button type="submit" disabled={mutation.isPending}><Plus size={18} aria-hidden="true" />{t("tareas.crearTarea")}</Button>
       </div>
     </form>
   )

@@ -1,6 +1,7 @@
 import { FormEvent, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowLeft, Building2, Eye, EyeOff, Mail, Phone, Plus, RotateCcw, Search, Trash2 } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import { ModuleNav } from "../components/ModuleNav"
 import { PageHeader } from "../components/PageHeader"
@@ -32,6 +33,7 @@ function activoBool(value: number | boolean) {
 
 export function ProveedoresPage() {
   const { token, usuario } = useAuth()
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const puedeCrear = puede(usuario, "crear_proveedor")
   const puedeEditar = puede(usuario, "editar_proveedor")
@@ -84,9 +86,9 @@ export function ProveedoresPage() {
   return (
     <section>
       <PageHeader
-        title="Proveedores"
-        description="Catálogo de proveedores y contactos operativos del laboratorio."
-        count={proveedoresQuery.isLoading ? "Cargando proveedores..." : `${proveedoresFiltrados.length} proveedor(es)`}
+        title={t("proveedores.title")}
+        description={t("proveedores.desc")}
+        count={proveedoresQuery.isLoading ? t("proveedores.cargando") : t("proveedores.countN", { n: proveedoresFiltrados.length })}
         plain
       />
 
@@ -100,9 +102,9 @@ export function ProveedoresPage() {
       <ModuleNav
         actions={
           tab === "nuevo"
-            ? [{ label: "Volver al listado", onClick: () => setTab("listado"), icon: <ArrowLeft size={18} aria-hidden="true" />, variant: "secondary" }]
+            ? [{ label: t("common.volverAlListado"), onClick: () => setTab("listado"), icon: <ArrowLeft size={18} aria-hidden="true" />, variant: "secondary" }]
             : puedeCrear
-              ? [{ label: "Nuevo proveedor", onClick: () => setTab("nuevo"), icon: <Plus size={18} aria-hidden="true" /> }]
+              ? [{ label: t("proveedores.nuevoProveedor"), onClick: () => setTab("nuevo"), icon: <Plus size={18} aria-hidden="true" /> }]
               : []
         }
       />
@@ -111,7 +113,7 @@ export function ProveedoresPage() {
         <>
           <div className="mb-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
             <label className="block">
-              <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">Buscar</span>
+              <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">{t("common.buscar")}</span>
               <div className="relative">
                 <Search
                   className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-cds-textSecondary"
@@ -122,12 +124,12 @@ export function ProveedoresPage() {
                   className="pl-12"
                   value={busqueda}
                   onChange={(event) => setBusqueda(event.target.value)}
-                  placeholder="Nombre, web, notas"
+                  placeholder={t("proveedores.buscarPh")}
                 />
               </div>
             </label>
             <div className="block">
-              <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">Estado</span>
+              <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">{t("proveedores.estado")}</span>
               <Button
                 type="button"
                 variant={mostrarInactivos ? "primary" : "secondary"}
@@ -139,7 +141,7 @@ export function ProveedoresPage() {
                 }}
               >
                 {mostrarInactivos ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
-                {mostrarInactivos ? "Ocultar inactivos" : "Mostrar inactivos"}
+                {mostrarInactivos ? t("proveedores.ocultarInactivos") : t("proveedores.mostrarInactivos")}
               </Button>
             </div>
           </div>
@@ -172,7 +174,7 @@ export function ProveedoresPage() {
             setProveedorId(id)
             setMostrarInactivos(false)
             setTab("listado")
-            await refrescar(`Proveedor creado: ${nombre}.`)
+            await refrescar(t("proveedores.msgCreado", { nombre }))
           }}
         />
       ) : null}
@@ -191,12 +193,13 @@ function ProveedoresTable({
   selectedId: number | null
   onSelect: (id: number) => void
 }) {
+  const { t } = useTranslation()
   if (isLoading) {
-    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">Cargando tabla...</div>
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("common.cargandoTabla")}</div>
   }
 
   if (!proveedores.length) {
-    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">No hay proveedores para mostrar.</div>
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("proveedores.sinProveedores")}</div>
   }
 
   return (
@@ -204,10 +207,10 @@ function ProveedoresTable({
       <table className="w-full min-w-[760px] border-collapse text-left text-sm">
         <thead>
           <tr className="border-b border-cds-borderSubtle bg-cds-layer01 text-xs tracking-[0.32px] text-cds-textSecondary">
-            <th className="h-10 px-4 font-normal">Nombre</th>
-            <th className="h-10 px-4 font-normal">Sitio web</th>
-            <th className="h-10 px-4 font-normal">Estado</th>
-            <th className="h-10 px-4 font-normal">Descripción</th>
+            <th className="h-10 px-4 font-normal">{t("proveedores.thNombre")}</th>
+            <th className="h-10 px-4 font-normal">{t("proveedores.sitioWeb")}</th>
+            <th className="h-10 px-4 font-normal">{t("proveedores.estado")}</th>
+            <th className="h-10 px-4 font-normal">{t("proveedores.descripcion")}</th>
           </tr>
         </thead>
         <tbody>
@@ -252,6 +255,7 @@ function ProveedorDetallePanel({
   onError: (message: string | null) => void
   onUpdated: (message?: string) => void | Promise<void>
 }) {
+  const { t } = useTranslation()
   const detalleQuery = useQuery({
     queryKey: ["proveedor", proveedor.id],
     queryFn: () => api.proveedor(token, proveedor.id),
@@ -278,9 +282,9 @@ function ProveedorDetallePanel({
     onError(null)
     try {
       await cambiarEstadoMutation.mutateAsync()
-      await onUpdated(activo ? "Proveedor desactivado." : "Proveedor reactivado.")
+      await onUpdated(activo ? t("proveedores.msgDesactivado") : t("proveedores.msgReactivado"))
     } catch (error) {
-      onError(mutationError(error, "No se pudo cambiar el estado del proveedor"))
+      onError(mutationError(error, t("proveedores.errEstado")))
     }
   }
 
@@ -292,7 +296,7 @@ function ProveedorDetallePanel({
       const form = new FormData(formElement)
       const nombre = String(form.get("nombre") ?? "").trim()
       if (!nombre) {
-        throw new Error("El nombre del contacto es obligatorio.")
+        throw new Error(t("proveedores.errNombreContacto"))
       }
       await agregarContactoMutation.mutateAsync({
         nombre,
@@ -302,9 +306,9 @@ function ProveedorDetallePanel({
         notas: nullable(form.get("notas")),
       })
       formElement.reset()
-      await onUpdated("Contacto agregado.")
+      await onUpdated(t("proveedores.msgContactoAgregado"))
     } catch (error) {
-      onError(mutationError(error, "No se pudo agregar el contacto"))
+      onError(mutationError(error, t("proveedores.errAgregarContacto")))
     }
   }
 
@@ -312,9 +316,9 @@ function ProveedorDetallePanel({
     onError(null)
     try {
       await eliminarContactoMutation.mutateAsync(contactoId)
-      await onUpdated("Contacto eliminado.")
+      await onUpdated(t("proveedores.msgContactoEliminado"))
     } catch (error) {
-      onError(mutationError(error, "No se pudo eliminar el contacto"))
+      onError(mutationError(error, t("proveedores.errEliminarContacto")))
     }
   }
 
@@ -333,23 +337,23 @@ function ProveedorDetallePanel({
         {puedeEditar ? (
           <Button type="button" variant="ghost" size="compact" onClick={cambiarEstado} disabled={cambiarEstadoMutation.isPending}>
             <RotateCcw size={18} aria-hidden="true" />
-            {activo ? "Desactivar" : "Reactivar"}
+            {activo ? t("proveedores.desactivar") : t("proveedores.reactivar")}
           </Button>
         ) : null}
       </div>
 
       {detalleQuery.isLoading ? (
-        <div className="text-sm text-cds-textSecondary">Cargando detalle...</div>
+        <div className="text-sm text-cds-textSecondary">{t("proveedores.cargandoDetalle")}</div>
       ) : (
         <>
           <div className="space-y-4 border-t border-cds-borderSubtle pt-4 text-sm">
-            <Info label="Descripción" value={detalle?.descripcion || "-"} />
-            <Info label="Sitio web" value={detalle?.sitio_web || "-"} />
-            <Info label="Notas" value={detalle?.notas || "-"} />
+            <Info label={t("proveedores.descripcion")} value={detalle?.descripcion || "-"} />
+            <Info label={t("proveedores.sitioWeb")} value={detalle?.sitio_web || "-"} />
+            <Info label={t("proveedores.notas")} value={detalle?.notas || "-"} />
           </div>
 
           <div className="mt-6 border-t border-cds-borderSubtle pt-5">
-            <h3 className="mb-4">Contactos</h3>
+            <h3 className="mb-4">{t("proveedores.contactos")}</h3>
             {contactos.length ? (
               <div className="space-y-3">
                 {contactos.map((contacto) => (
@@ -357,7 +361,7 @@ function ProveedorDetallePanel({
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <div className="font-medium">{contacto.nombre}</div>
-                        <div className="mt-1 text-xs tracking-[0.32px] text-cds-textSecondary">{contacto.rol || "Sin rol"}</div>
+                        <div className="mt-1 text-xs tracking-[0.32px] text-cds-textSecondary">{contacto.rol || t("proveedores.sinRol")}</div>
                       </div>
                       {puedeEditar ? (
                         <Button
@@ -365,7 +369,7 @@ function ProveedorDetallePanel({
                           variant="ghost"
                           size="icon"
                           className="h-10 w-10"
-                          aria-label="Eliminar contacto"
+                          aria-label={t("proveedores.eliminarContacto")}
                           onClick={() => void eliminarContacto(contacto.id)}
                           disabled={eliminarContactoMutation.isPending}
                         >
@@ -390,23 +394,23 @@ function ProveedorDetallePanel({
                 ))}
               </div>
             ) : (
-              <div className="bg-cds-background p-3 text-sm text-cds-textSecondary">Este proveedor no tiene contactos cargados.</div>
+              <div className="bg-cds-background p-3 text-sm text-cds-textSecondary">{t("proveedores.sinContactos")}</div>
             )}
           </div>
 
           {puedeEditar ? (
             <form className="mt-6 border-t border-cds-borderSubtle pt-5" onSubmit={agregarContacto}>
-              <h3 className="mb-4">Agregar contacto</h3>
+              <h3 className="mb-4">{t("proveedores.agregarContacto")}</h3>
               <div className="grid gap-4">
-                <Field label="Nombre *" name="nombre" required />
-                <Field label="Rol" name="rol" placeholder="Ej: Ventas, soporte técnico" />
-                <Field label="Email" name="email" type="email" />
-                <Field label="Teléfono" name="telefono" />
-                <Field label="Notas" name="notas" />
+                <Field label={t("proveedores.fNombre")} name="nombre" required />
+                <Field label={t("proveedores.fRol")} name="rol" placeholder={t("proveedores.fRolPh")} />
+                <Field label={t("proveedores.fEmail")} name="email" type="email" />
+                <Field label={t("proveedores.fTelefono")} name="telefono" />
+                <Field label={t("proveedores.notas")} name="notas" />
               </div>
               <Button className="mt-5" type="submit" disabled={agregarContactoMutation.isPending}>
                 <Plus size={18} aria-hidden="true" />
-                {agregarContactoMutation.isPending ? "Agregando..." : "Agregar contacto"}
+                {agregarContactoMutation.isPending ? t("proveedores.agregando") : t("proveedores.agregarContacto")}
               </Button>
             </form>
           ) : null}
@@ -425,6 +429,7 @@ function NuevoProveedorForm({
   onError: (message: string | null) => void
   onSuccess: (id: number, nombre: string) => void | Promise<void>
 }) {
+  const { t } = useTranslation()
   const crearMutation = useMutation({
     mutationFn: (data: ProveedorCrear) => api.crearProveedor(token, data),
   })
@@ -437,7 +442,7 @@ function NuevoProveedorForm({
       const form = new FormData(formElement)
       const nombre = String(form.get("nombre") ?? "").trim()
       if (!nombre) {
-        throw new Error("El nombre es obligatorio.")
+        throw new Error(t("proveedores.errNombre"))
       }
       const payload: ProveedorCrear = {
         nombre,
@@ -449,27 +454,27 @@ function NuevoProveedorForm({
       formElement.reset()
       await onSuccess(resultado.id, nombre)
     } catch (error) {
-      onError(mutationError(error, "No se pudo crear el proveedor"))
+      onError(mutationError(error, t("proveedores.errCrear")))
     }
   }
 
   return (
     <form className="max-w-4xl bg-cds-layer01 p-4" onSubmit={handleSubmit}>
       <div className="mb-6">
-        <h2 className="text-[24px] leading-[1.33]">Nuevo proveedor</h2>
+        <h2 className="text-[24px] leading-[1.33]">{t("proveedores.nuevoProveedor")}</h2>
         <p className="mt-2 text-sm tracking-[0.16px] text-cds-textSecondary">
-          Cargá el proveedor general; los contactos se agregan desde el detalle.
+          {t("proveedores.formDesc")}
         </p>
       </div>
       <div className="grid gap-5 md:grid-cols-2">
-        <Field label="Nombre *" name="nombre" required />
-        <Field label="Sitio web" name="sitio_web" placeholder="https://..." />
-        <Field className="md:col-span-2" label="Descripción" name="descripcion" />
-        <Field className="md:col-span-2" label="Notas" name="notas" />
+        <Field label={t("proveedores.fNombre")} name="nombre" required />
+        <Field label={t("proveedores.sitioWeb")} name="sitio_web" placeholder="https://..." />
+        <Field className="md:col-span-2" label={t("proveedores.descripcion")} name="descripcion" />
+        <Field className="md:col-span-2" label={t("proveedores.notas")} name="notas" />
       </div>
       <Button className="mt-6" type="submit" disabled={crearMutation.isPending}>
         <Plus size={18} aria-hidden="true" />
-        {crearMutation.isPending ? "Creando..." : "Crear proveedor"}
+        {crearMutation.isPending ? t("common.creando") : t("proveedores.crearProveedor")}
       </Button>
     </form>
   )

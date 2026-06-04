@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Building2, Check, Plus, RefreshCw, Search, UserPlus } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import { ModuleNav } from "../components/ModuleNav"
 import { PageHeader } from "../components/PageHeader"
@@ -39,27 +40,6 @@ const dependenciasModulos: Record<string, string[]> = {
   asistente: ["reactivos", "lotes"],
 }
 
-const moduloLabels: Record<string, string> = {
-  dashboard: "Dashboard",
-  reactivos: "Reactivos",
-  lotes: "Lotes",
-  consumo: "Consumo",
-  movimientos: "Movimientos",
-  proveedores: "Proveedores",
-  usuarios: "Usuarios",
-  equipamiento: "Equipamiento",
-  asistente: "Asistente",
-  auditoria: "Auditoría",
-  protocolos: "Protocolos",
-  tareas: "Tareas",
-}
-
-const rolLabels: Record<Rol, string> = {
-  admin: "Admin",
-  jefe: "Jefe",
-  cientifico: "Científico",
-}
-
 function activoBool(value: number | boolean | undefined) {
   return value === undefined || value === true || value === 1
 }
@@ -94,6 +74,7 @@ function tieneDependientesActivos(modulo: string, modulos: string[]) {
 
 export function OwnerPage() {
   const { token } = useAuth()
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [tab, setTab] = useState<TabOwner>("organizaciones")
   const [busqueda, setBusqueda] = useState("")
@@ -140,9 +121,9 @@ export function OwnerPage() {
   return (
     <section>
       <PageHeader
-        title="Owner"
-        description="Administración interna de organizaciones, módulos y usuarios iniciales."
-        count={organizacionesQuery.isLoading ? "Cargando organizaciones..." : `${organizaciones.length} organización(es)`}
+        title={t("owner.title")}
+        description={t("owner.desc")}
+        count={organizacionesQuery.isLoading ? t("owner.cargando") : t("owner.countN", { n: organizaciones.length })}
       />
 
       {mensaje ? (
@@ -154,19 +135,19 @@ export function OwnerPage() {
 
       <ModuleNav
         actions={[
-          { label: "Organizaciones", onClick: () => setTab("organizaciones"), icon: <Building2 size={18} aria-hidden="true" />, variant: tab === "organizaciones" ? "primary" : "secondary" },
-          { label: "Nueva organización", onClick: () => setTab("nueva"), icon: <Plus size={18} aria-hidden="true" />, variant: tab === "nueva" ? "primary" : "secondary" },
-          { label: "Admin inicial", onClick: () => setTab("admin"), icon: <UserPlus size={18} aria-hidden="true" />, variant: tab === "admin" ? "primary" : "secondary" },
+          { label: t("owner.organizaciones"), onClick: () => setTab("organizaciones"), icon: <Building2 size={18} aria-hidden="true" />, variant: tab === "organizaciones" ? "primary" : "secondary" },
+          { label: t("owner.nuevaOrg"), onClick: () => setTab("nueva"), icon: <Plus size={18} aria-hidden="true" />, variant: tab === "nueva" ? "primary" : "secondary" },
+          { label: t("owner.adminInicial"), onClick: () => setTab("admin"), icon: <UserPlus size={18} aria-hidden="true" />, variant: tab === "admin" ? "primary" : "secondary" },
         ]}
       />
 
       {tab === "organizaciones" ? (
         <>
           <label className="mb-4 block">
-            <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">Buscar</span>
+            <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">{t("common.buscar")}</span>
             <div className="relative">
               <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-cds-textSecondary" size={18} aria-hidden="true" />
-              <Input className="pl-12" value={busqueda} onChange={(event) => setBusqueda(event.target.value)} placeholder="Nombre, slug o ID" />
+              <Input className="pl-12" value={busqueda} onChange={(event) => setBusqueda(event.target.value)} placeholder={t("owner.buscarPh")} />
             </div>
           </label>
 
@@ -196,7 +177,7 @@ export function OwnerPage() {
           onSuccess={async (id, nombre) => {
             setOrganizacionId(id)
             setTab("organizaciones")
-            await refrescar(`Organización creada: ${nombre}.`)
+            await refrescar(t("owner.msgOrgCreada", { nombre }))
           }}
         />
       ) : null}
@@ -210,7 +191,7 @@ export function OwnerPage() {
           onError={setErrorLocal}
           onSuccess={async (nombre) => {
             setTab("organizaciones")
-            await refrescar(`Usuario creado: ${nombre}.`)
+            await refrescar(t("owner.msgUsuarioCreado", { nombre }))
           }}
         />
       ) : null}
@@ -229,11 +210,12 @@ function OrganizacionesTable({
   selectedId: number | null
   onSelect: (id: number) => void
 }) {
+  const { t } = useTranslation()
   if (isLoading) {
-    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">Cargando tabla...</div>
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("common.cargandoTabla")}</div>
   }
   if (!organizaciones.length) {
-    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">No hay organizaciones para mostrar.</div>
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("owner.sinOrgs")}</div>
   }
 
   return (
@@ -242,10 +224,10 @@ function OrganizacionesTable({
         <thead>
           <tr className="border-b border-cds-borderSubtle bg-cds-layer01 text-xs tracking-[0.32px] text-cds-textSecondary">
             <th className="h-10 px-4 font-normal">ID</th>
-            <th className="h-10 px-4 font-normal">Nombre</th>
+            <th className="h-10 px-4 font-normal">{t("owner.thNombre")}</th>
             <th className="h-10 px-4 font-normal">Slug</th>
-            <th className="h-10 px-4 font-normal">Módulos</th>
-            <th className="h-10 px-4 font-normal">Estado</th>
+            <th className="h-10 px-4 font-normal">{t("owner.thModulos")}</th>
+            <th className="h-10 px-4 font-normal">{t("owner.thEstado")}</th>
           </tr>
         </thead>
         <tbody>
@@ -264,7 +246,7 @@ function OrganizacionesTable({
                 <td className="h-12 px-4 font-medium">{item.nombre}</td>
                 <td className="h-12 px-4 text-cds-textSecondary">{item.slug}</td>
                 <td className="h-12 px-4 text-cds-textSecondary">{activos}/{modulosDisponibles.length}</td>
-                <td className="h-12 px-4">{activoBool(item.activo) ? "Activa" : "Inactiva"}</td>
+                <td className="h-12 px-4">{activoBool(item.activo) ? t("owner.activa") : t("owner.inactiva")}</td>
               </tr>
             )
           })}
@@ -285,6 +267,7 @@ function OrganizacionDetalle({
   onError: (message: string | null) => void
   onUpdated: (message?: string) => void | Promise<void>
 }) {
+  const { t } = useTranslation()
   const [modulos, setModulos] = useState<string[]>(() =>
     organizacion.modulos?.filter((modulo) => modulo.habilitado).map((modulo) => modulo.modulo) ?? [],
   )
@@ -311,9 +294,9 @@ function OrganizacionDetalle({
     onError(null)
     try {
       await actualizarMutation.mutateAsync()
-      await onUpdated("Módulos actualizados.")
+      await onUpdated(t("owner.msgModulos"))
     } catch (error) {
-      onError(mutationError(error, "No se pudieron actualizar los módulos"))
+      onError(mutationError(error, t("owner.errModulos")))
     }
   }
 
@@ -332,7 +315,7 @@ function OrganizacionDetalle({
       </div>
 
       <div className="border-t border-cds-borderSubtle pt-4">
-        <div className="mb-3 text-xs tracking-[0.32px] text-cds-textSecondary">Módulos habilitados</div>
+        <div className="mb-3 text-xs tracking-[0.32px] text-cds-textSecondary">{t("owner.modulosHabilitados")}</div>
         <div className="grid gap-2">
           {modulosDisponibles.map((modulo) => (
             <label key={modulo} className="flex h-10 items-center gap-3 bg-cds-background px-3 text-sm">
@@ -343,13 +326,13 @@ function OrganizacionDetalle({
                 disabled={tieneDependientesActivos(modulo, modulos)}
                 onChange={() => toggleModulo(modulo)}
               />
-              <span>{moduloLabels[modulo] ?? modulo}</span>
+              <span>{t(`owner.modulo.${modulo}`)}</span>
             </label>
           ))}
         </div>
         <Button className="mt-4" type="button" onClick={guardarModulos} disabled={actualizarMutation.isPending}>
           <Check size={18} aria-hidden="true" />
-          {actualizarMutation.isPending ? "Guardando..." : "Guardar módulos"}
+          {actualizarMutation.isPending ? t("common.guardando") : t("owner.guardarModulos")}
         </Button>
       </div>
     </aside>
@@ -365,6 +348,7 @@ function NuevaOrganizacionForm({
   onError: (message: string | null) => void
   onSuccess: (id: number, nombre: string) => void | Promise<void>
 }) {
+  const { t } = useTranslation()
   const crearMutation = useMutation({
     mutationFn: (data: { nombre: string; slug?: string | null; modulos_habilitados: string[] }) => api.crearOrganizacion(token, data),
   })
@@ -377,7 +361,7 @@ function NuevaOrganizacionForm({
       const form = new FormData(formElement)
       const nombre = String(form.get("nombre") ?? "").trim()
       if (!nombre) {
-        throw new Error("El nombre es obligatorio.")
+        throw new Error(t("owner.errNombre"))
       }
       const modulos = form.getAll("modulos").map((value) => String(value))
       const resultado = await crearMutation.mutateAsync({
@@ -388,33 +372,33 @@ function NuevaOrganizacionForm({
       formElement.reset()
       await onSuccess(resultado.id, nombre)
     } catch (error) {
-      onError(mutationError(error, "No se pudo crear la organización"))
+      onError(mutationError(error, t("owner.errCrearOrg")))
     }
   }
 
   return (
     <form className="max-w-4xl bg-cds-layer01 p-4" onSubmit={handleSubmit}>
       <div className="mb-6">
-        <h2 className="text-[24px] leading-[1.33]">Nueva organización</h2>
+        <h2 className="text-[24px] leading-[1.33]">{t("owner.nuevaOrg")}</h2>
       </div>
       <div className="grid gap-5 md:grid-cols-2">
-        <Field label="Nombre *" name="nombre" required />
-        <Field label="Slug" name="slug" placeholder="Se genera desde el nombre si queda vacío" />
+        <Field label={t("owner.fNombre")} name="nombre" required />
+        <Field label={t("owner.fSlug")} name="slug" placeholder={t("owner.slugPh")} />
       </div>
       <div className="mt-6">
-        <div className="mb-3 text-xs tracking-[0.32px] text-cds-textSecondary">Módulos iniciales</div>
+        <div className="mb-3 text-xs tracking-[0.32px] text-cds-textSecondary">{t("owner.modulosIniciales")}</div>
         <div className="grid gap-2 md:grid-cols-2">
           {modulosDisponibles.map((modulo) => (
             <label key={modulo} className="flex h-10 items-center gap-3 bg-cds-background px-3 text-sm">
               <input type="checkbox" name="modulos" value={modulo} className="h-4 w-4 accent-cds-buttonPrimary" defaultChecked />
-              <span>{moduloLabels[modulo] ?? modulo}</span>
+              <span>{t(`owner.modulo.${modulo}`)}</span>
             </label>
           ))}
         </div>
       </div>
       <Button className="mt-6" type="submit" disabled={crearMutation.isPending}>
         <Plus size={18} aria-hidden="true" />
-        {crearMutation.isPending ? "Creando..." : "Crear organización"}
+        {crearMutation.isPending ? t("common.creando") : t("owner.crearOrg")}
       </Button>
     </form>
   )
@@ -435,6 +419,7 @@ function AdminInicialForm({
   onError: (message: string | null) => void
   onSuccess: (nombre: string) => void | Promise<void>
 }) {
+  const { t } = useTranslation()
   const crearMutation = useMutation({
     mutationFn: ({ organizacionId, data }: { organizacionId: number; data: UsuarioCrear }) =>
       api.crearUsuarioOrganizacion(token, organizacionId, data),
@@ -452,16 +437,16 @@ function AdminInicialForm({
       const passwordInicial = String(form.get("password_inicial") ?? "")
       const rol = String(form.get("rol") ?? "admin") as Rol
       if (!selectedOrgId) {
-        throw new Error("Elegí una organización.")
+        throw new Error(t("owner.errOrg"))
       }
       if (!nombre) {
-        throw new Error("El nombre es obligatorio.")
+        throw new Error(t("owner.errNombre"))
       }
       if (!email) {
-        throw new Error("El email es obligatorio.")
+        throw new Error(t("owner.errEmail"))
       }
       if (passwordInicial.length < 8) {
-        throw new Error("La password inicial debe tener al menos 8 caracteres.")
+        throw new Error(t("owner.errPassword"))
       }
       await crearMutation.mutateAsync({
         organizacionId: selectedOrgId,
@@ -476,17 +461,17 @@ function AdminInicialForm({
       formElement.reset()
       await onSuccess(nombre)
     } catch (error) {
-      onError(mutationError(error, "No se pudo crear el usuario"))
+      onError(mutationError(error, t("owner.errCrearUsuario")))
     }
   }
 
   return (
     <form className="max-w-4xl bg-cds-layer01 p-4" onSubmit={handleSubmit}>
       <div className="mb-6">
-        <h2 className="text-[24px] leading-[1.33]">Admin inicial</h2>
+        <h2 className="text-[24px] leading-[1.33]">{t("owner.adminInicial")}</h2>
       </div>
       <label className="mb-5 block">
-        <Label className="mb-2" htmlFor="organizacion_id">Organización *</Label>
+        <Label className="mb-2" htmlFor="organizacion_id">{t("owner.fOrganizacion")}</Label>
         <select
           id="organizacion_id"
           name="organizacion_id"
@@ -502,11 +487,11 @@ function AdminInicialForm({
         </select>
       </label>
       <div className="grid gap-5 md:grid-cols-2">
-        <Field label="Nombre *" name="nombre" required />
-        <Field label="Email *" name="email" type="email" required />
-        <Field label="Sector" name="sector" placeholder="Ej: IT, Dirección, Administración" />
+        <Field label={t("owner.fNombre")} name="nombre" required />
+        <Field label={t("owner.fEmail")} name="email" type="email" required />
+        <Field label={t("owner.fSector")} name="sector" placeholder={t("owner.fSectorPh")} />
         <label className="block">
-          <Label className="mb-2" htmlFor="rol">Rol *</Label>
+          <Label className="mb-2" htmlFor="rol">{t("owner.fRol")}</Label>
           <select
             id="rol"
             name="rol"
@@ -514,15 +499,15 @@ function AdminInicialForm({
             defaultValue="admin"
           >
             {(["admin", "jefe", "cientifico"] as Rol[]).map((rol) => (
-              <option key={rol} value={rol}>{rolLabels[rol]}</option>
+              <option key={rol} value={rol}>{t(`roles.${rol}`)}</option>
             ))}
           </select>
         </label>
-        <Field className="md:col-span-2" label="Password inicial *" name="password_inicial" type="password" minLength={8} required />
+        <Field className="md:col-span-2" label={t("owner.fPassword")} name="password_inicial" type="password" minLength={8} required />
       </div>
       <Button className="mt-6" type="submit" disabled={crearMutation.isPending || !organizaciones.length}>
         <UserPlus size={18} aria-hidden="true" />
-        {crearMutation.isPending ? "Creando..." : "Crear usuario"}
+        {crearMutation.isPending ? t("common.creando") : t("owner.crearUsuario")}
       </Button>
     </form>
   )

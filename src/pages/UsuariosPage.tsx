@@ -1,6 +1,7 @@
 import { FormEvent, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowLeft, Eye, EyeOff, Mail, Plus, RotateCcw, Search, Shield, UserRound, Users } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import { ModuleNav } from "../components/ModuleNav"
 import { PageHeader } from "../components/PageHeader"
@@ -17,11 +18,6 @@ type TabUsuarios = "listado" | "nuevo"
 type Rol = "admin" | "jefe" | "cientifico"
 
 const usuariosVacios: Usuario[] = []
-const rolLabels: Record<Rol, string> = {
-  admin: "Admin",
-  jefe: "Jefe",
-  cientifico: "Científico",
-}
 
 function activoBool(value: number | boolean | undefined) {
   return value === undefined || value === true || value === 1
@@ -42,6 +38,7 @@ function mutationError(error: unknown, fallback: string) {
 
 export function UsuariosPage() {
   const { token, usuario } = useAuth()
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const puedeCrear = puede(usuario, "crear_cientifico")
   const puedeDesactivar = puede(usuario, "desactivar_cientifico")
@@ -91,9 +88,9 @@ export function UsuariosPage() {
   return (
     <section>
       <PageHeader
-        title="Usuarios"
-        description="Alta y estado de cuentas del equipo."
-        count={usuariosQuery.isLoading ? "Cargando usuarios..." : `${usuariosFiltrados.length} usuario(s)`}
+        title={t("usuarios.title")}
+        description={t("usuarios.desc")}
+        count={usuariosQuery.isLoading ? t("usuarios.cargando") : t("usuarios.countN", { n: usuariosFiltrados.length })}
         plain
       />
 
@@ -107,9 +104,9 @@ export function UsuariosPage() {
       <ModuleNav
         actions={
           tab === "nuevo"
-            ? [{ label: "Volver al listado", onClick: () => setTab("listado"), icon: <ArrowLeft size={18} aria-hidden="true" />, variant: "secondary" }]
+            ? [{ label: t("common.volverAlListado"), onClick: () => setTab("listado"), icon: <ArrowLeft size={18} aria-hidden="true" />, variant: "secondary" }]
             : puedeCrear
-              ? [{ label: "Nuevo usuario", onClick: () => setTab("nuevo"), icon: <Plus size={18} aria-hidden="true" /> }]
+              ? [{ label: t("usuarios.nuevoUsuario"), onClick: () => setTab("nuevo"), icon: <Plus size={18} aria-hidden="true" /> }]
               : []
         }
       />
@@ -118,7 +115,7 @@ export function UsuariosPage() {
         <>
           <div className="mb-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
             <label className="block">
-              <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">Buscar</span>
+              <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">{t("common.buscar")}</span>
               <div className="relative">
                 <Search
                   className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-cds-textSecondary"
@@ -129,12 +126,12 @@ export function UsuariosPage() {
                   className="pl-12"
                   value={busqueda}
                   onChange={(event) => setBusqueda(event.target.value)}
-                  placeholder="Nombre, email, sector, rol"
+                  placeholder={t("usuarios.buscarPh")}
                 />
               </div>
             </label>
             <div className="block">
-              <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">Estado</span>
+              <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">{t("usuarios.fEstado")}</span>
               <Button
                 type="button"
                 variant={mostrarInactivos ? "primary" : "secondary"}
@@ -146,7 +143,7 @@ export function UsuariosPage() {
                 }}
               >
                 {mostrarInactivos ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
-                {mostrarInactivos ? "Ocultar inactivos" : "Mostrar inactivos"}
+                {mostrarInactivos ? t("usuarios.ocultarInactivos") : t("usuarios.mostrarInactivos")}
               </Button>
             </div>
           </div>
@@ -181,7 +178,7 @@ export function UsuariosPage() {
             setUsuarioId(id)
             setMostrarInactivos(false)
             setTab("listado")
-            await refrescar(`Usuario creado: ${nombre}.`)
+            await refrescar(t("usuarios.msgCreado", { nombre }))
           }}
         />
       ) : null}
@@ -200,11 +197,12 @@ function UsuariosTable({
   selectedId: number | null
   onSelect: (id: number) => void
 }) {
+  const { t } = useTranslation()
   if (isLoading) {
-    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">Cargando tabla...</div>
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("common.cargandoTabla")}</div>
   }
   if (!usuarios.length) {
-    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">No hay usuarios para mostrar.</div>
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("usuarios.sinUsuarios")}</div>
   }
 
   return (
@@ -212,11 +210,11 @@ function UsuariosTable({
       <table className="w-full min-w-[820px] border-collapse text-left text-sm">
         <thead>
           <tr className="border-b border-cds-borderSubtle bg-cds-layer01 text-xs tracking-[0.32px] text-cds-textSecondary">
-            <th className="h-10 px-4 font-normal">Nombre</th>
-            <th className="h-10 px-4 font-normal">Email</th>
-            <th className="h-10 px-4 font-normal">Rol</th>
-            <th className="h-10 px-4 font-normal">Sector</th>
-            <th className="h-10 px-4 font-normal">Estado</th>
+            <th className="h-10 px-4 font-normal">{t("usuarios.thNombre")}</th>
+            <th className="h-10 px-4 font-normal">{t("usuarios.thEmail")}</th>
+            <th className="h-10 px-4 font-normal">{t("usuarios.thRol")}</th>
+            <th className="h-10 px-4 font-normal">{t("usuarios.thSector")}</th>
+            <th className="h-10 px-4 font-normal">{t("usuarios.thEstado")}</th>
           </tr>
         </thead>
         <tbody>
@@ -233,7 +231,7 @@ function UsuariosTable({
               >
                 <td className="h-12 px-4 font-medium">{item.nombre}</td>
                 <td className="h-12 px-4 text-cds-textSecondary">{item.email}</td>
-                <td className="h-12 px-4">{rolLabels[item.rol]}</td>
+                <td className="h-12 px-4">{t(`roles.${item.rol}`)}</td>
                 <td className="h-12 px-4 text-cds-textSecondary">{item.sector || "-"}</td>
                 <td className="h-12 px-4">
                   <EstadoBadge activo={activo} />
@@ -262,6 +260,7 @@ function UsuarioDetalle({
   onError: (message: string | null) => void
   onUpdated: (message?: string) => void | Promise<void>
 }) {
+  const { t } = useTranslation()
   const cambiarEstadoMutation = useMutation({
     mutationFn: () =>
       activoBool(usuario.activo)
@@ -276,9 +275,9 @@ function UsuarioDetalle({
     onError(null)
     try {
       await cambiarEstadoMutation.mutateAsync()
-      await onUpdated(activo ? "Usuario desactivado." : "Usuario reactivado.")
+      await onUpdated(activo ? t("usuarios.msgDesactivado") : t("usuarios.msgReactivado"))
     } catch (error) {
-      onError(mutationError(error, "No se pudo cambiar el estado del usuario"))
+      onError(mutationError(error, t("usuarios.errEstado")))
     }
   }
 
@@ -297,16 +296,16 @@ function UsuarioDetalle({
         {puedeCambiarEstado ? (
           <Button type="button" variant="ghost" size="compact" onClick={cambiarEstado} disabled={cambiarEstadoMutation.isPending}>
             <RotateCcw size={18} aria-hidden="true" />
-            {activo ? "Desactivar" : "Reactivar"}
+            {activo ? t("usuarios.desactivar") : t("usuarios.reactivar")}
           </Button>
         ) : null}
       </div>
 
       <div className="space-y-4 border-t border-cds-borderSubtle pt-4 text-sm">
-        <Info icon={Mail} label="Email" value={usuario.email} />
-        <Info icon={Shield} label="Rol" value={rolLabels[usuario.rol]} />
-        <Info icon={Users} label="Sector" value={usuario.sector || "-"} />
-        <Info label="Password" value={mustChangeBool(usuario.must_change_password) ? "Debe cambiarla al ingresar" : "Activa"} />
+        <Info icon={Mail} label={t("usuarios.iEmail")} value={usuario.email} />
+        <Info icon={Shield} label={t("usuarios.iRol")} value={t(`roles.${usuario.rol}`)} />
+        <Info icon={Users} label={t("usuarios.iSector")} value={usuario.sector || "-"} />
+        <Info label={t("usuarios.iPassword")} value={mustChangeBool(usuario.must_change_password) ? t("usuarios.passDebe") : t("usuarios.passActiva")} />
       </div>
     </aside>
   )
@@ -323,6 +322,7 @@ function NuevoUsuarioForm({
   onError: (message: string | null) => void
   onSuccess: (id: number, nombre: string) => void | Promise<void>
 }) {
+  const { t } = useTranslation()
   const crearMutation = useMutation({
     mutationFn: (data: UsuarioCrear) => api.crearUsuario(token, data),
   })
@@ -339,13 +339,13 @@ function NuevoUsuarioForm({
       const passwordInicial = String(form.get("password_inicial") ?? "")
       const rol = String(form.get("rol") ?? "cientifico") as Rol
       if (!nombre) {
-        throw new Error("El nombre es obligatorio.")
+        throw new Error(t("usuarios.errNombre"))
       }
       if (!email) {
-        throw new Error("El email es obligatorio.")
+        throw new Error(t("usuarios.errEmail"))
       }
       if (passwordInicial.length < 8) {
-        throw new Error("La password inicial debe tener al menos 8 caracteres.")
+        throw new Error(t("usuarios.errPassword"))
       }
       const payload: UsuarioCrear = {
         nombre,
@@ -358,24 +358,24 @@ function NuevoUsuarioForm({
       formElement.reset()
       await onSuccess(resultado.id, nombre)
     } catch (error) {
-      onError(mutationError(error, "No se pudo crear el usuario"))
+      onError(mutationError(error, t("usuarios.errCrear")))
     }
   }
 
   return (
     <form className="max-w-4xl bg-cds-layer01 p-4" onSubmit={handleSubmit}>
       <div className="mb-6">
-        <h2 className="text-[24px] leading-[1.33]">Nuevo usuario</h2>
+        <h2 className="text-[24px] leading-[1.33]">{t("usuarios.nuevoUsuario")}</h2>
         <p className="mt-2 text-sm tracking-[0.16px] text-cds-textSecondary">
-          La password inicial es obligatoria y se pide cambio al primer login.
+          {t("usuarios.formDesc")}
         </p>
       </div>
       <div className="grid gap-5 md:grid-cols-2">
-        <Field label="Nombre *" name="nombre" required />
-        <Field label="Email *" name="email" type="email" required />
-        <Field label="Sector" name="sector" placeholder="Ej: Becario, IT, Pasante" />
+        <Field label={t("usuarios.fNombre")} name="nombre" required />
+        <Field label={t("usuarios.fEmail")} name="email" type="email" required />
+        <Field label={t("usuarios.fSector")} name="sector" placeholder={t("usuarios.fSectorPh")} />
         <label className="block">
-          <Label className="mb-2" htmlFor="rol">Rol *</Label>
+          <Label className="mb-2" htmlFor="rol">{t("usuarios.fRol")}</Label>
           <select
             id="rol"
             name="rol"
@@ -384,16 +384,16 @@ function NuevoUsuarioForm({
           >
             {rolesDisponibles.map((rol) => (
               <option key={rol} value={rol}>
-                {rolLabels[rol]}
+                {t(`roles.${rol}`)}
               </option>
             ))}
           </select>
         </label>
-        <Field className="md:col-span-2" label="Password inicial *" name="password_inicial" type="password" minLength={8} required />
+        <Field className="md:col-span-2" label={t("usuarios.fPassword")} name="password_inicial" type="password" minLength={8} required />
       </div>
       <Button className="mt-6" type="submit" disabled={crearMutation.isPending}>
         <Plus size={18} aria-hidden="true" />
-        {crearMutation.isPending ? "Creando..." : "Crear usuario"}
+        {crearMutation.isPending ? t("common.creando") : t("usuarios.crearUsuario")}
       </Button>
     </form>
   )

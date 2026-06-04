@@ -1,6 +1,8 @@
 import { FormEvent, useMemo, useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { Download, FileText, Search } from "lucide-react"
+import { useTranslation } from "react-i18next"
+import type { TFunction } from "i18next"
 
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
@@ -46,20 +48,20 @@ function formatDateTime(value: string | null | undefined) {
   return new Intl.DateTimeFormat("es-AR", { dateStyle: "short", timeStyle: "short" }).format(date)
 }
 
-function estadoVencimiento(estado: string, dias?: number | null) {
+function estadoVencimiento(estado: string, dias: number | null | undefined, t: TFunction) {
   if (estado === "vencido") {
-    return dias === null || dias === undefined ? "Vencido" : `Vencido hace ${Math.abs(dias)} día(s)`
+    return dias === null || dias === undefined ? t("audit.vencido") : t("audit.vencidoHace", { n: Math.abs(dias) })
   }
   if (estado === "por_vencer") {
-    return dias === null || dias === undefined ? "Por vencer" : `Vence en ${dias} día(s)`
+    return dias === null || dias === undefined ? t("audit.porVencer") : t("audit.venceEn", { n: dias })
   }
   if (estado === "vigente") {
-    return dias === null || dias === undefined ? "Vigente" : `Vigente (${dias} día(s))`
+    return dias === null || dias === undefined ? t("audit.vigente") : t("audit.vigenteDias", { n: dias })
   }
   if (estado === "agotado") {
-    return "Agotado"
+    return t("audit.agotado")
   }
-  return "Sin fecha"
+  return t("audit.sinFecha")
 }
 
 function estadoClass(estado: string) {
@@ -73,16 +75,6 @@ function estadoClass(estado: string) {
     return "text-cds-supportSuccess"
   }
   return "text-cds-textSecondary"
-}
-
-function tipoLabel(tipo: AuditoriaEvento["tipo"]) {
-  if (tipo === "entrada") {
-    return "Entrada"
-  }
-  if (tipo === "salida") {
-    return "Salida"
-  }
-  return "Ajuste"
 }
 
 function tipoClass(tipo: AuditoriaEvento["tipo"]) {
@@ -122,6 +114,7 @@ function downloadCsv(rows: Array<Record<string, unknown>>, filename: string) {
 
 export function AuditoriaPage() {
   const { token } = useAuth()
+  const { t } = useTranslation()
   const [modo, setModo] = useState<Modo>("lote")
   const [codigo, setCodigo] = useState("")
   const [codigoBuscado, setCodigoBuscado] = useState("")
@@ -164,7 +157,7 @@ export function AuditoriaPage() {
     setErrorLocal(null)
     const limpio = codigo.trim()
     if (!limpio) {
-      setErrorLocal("Ingresá un código interno.")
+      setErrorLocal(t("audit.errCodigo"))
       return
     }
     setCodigoBuscado(limpio)
@@ -175,7 +168,7 @@ export function AuditoriaPage() {
     setErrorLocal(null)
     const reactivo = reactivoSeleccionado
     if (!reactivo) {
-      setErrorLocal("Seleccioná un reactivo.")
+      setErrorLocal(t("audit.errReactivo"))
       return
     }
     setReactivoParams({ id: reactivo.id, desde, hasta })
@@ -184,9 +177,9 @@ export function AuditoriaPage() {
   return (
     <section>
       <div className="mb-8">
-        <h1>Auditoría</h1>
+        <h1>{t("audit.title")}</h1>
         <p className="mt-2 text-sm leading-[1.29] tracking-[0.16px] text-cds-textSecondary">
-          Trazabilidad determinística para chain of custody por frasco o por reactivo.
+          {t("audit.desc")}
         </p>
       </div>
 
@@ -196,29 +189,29 @@ export function AuditoriaPage() {
 
       <div className="mb-6 flex gap-px border-b border-cds-borderSubtle">
         <TabButton active={modo === "lote"} onClick={() => setModo("lote")}>
-          Por lote
+          {t("audit.tabLote")}
         </TabButton>
         <TabButton active={modo === "reactivo"} onClick={() => setModo("reactivo")}>
-          Por reactivo
+          {t("audit.tabReactivo")}
         </TabButton>
       </div>
 
       {modo === "lote" ? (
         <>
           <form className="mb-6 bg-cds-layer01 p-4" onSubmit={buscarLote}>
-            <Label className="mb-2" htmlFor="codigo_auditoria">Código interno</Label>
+            <Label className="mb-2" htmlFor="codigo_auditoria">{t("audit.fCodigo")}</Label>
             <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
               <Input id="codigo_auditoria" className="font-mono" value={codigo} onChange={(event) => setCodigo(event.target.value)} placeholder="LAB-2026-00042" />
               <Button type="submit" disabled={loteQuery.isFetching}>
                 <Search size={18} aria-hidden="true" />
-                {loteQuery.isFetching ? "Buscando..." : "Buscar"}
+                {loteQuery.isFetching ? t("audit.buscando") : t("common.buscar")}
               </Button>
             </div>
           </form>
 
           {loteQuery.isError ? (
             <div className="mb-4 border-l-4 border-cds-supportError bg-cds-layer01 px-4 py-3 text-sm">
-              {mutationError(loteQuery.error, "No se pudo cargar la auditoría del lote")}
+              {mutationError(loteQuery.error, t("audit.errLote"))}
             </div>
           ) : null}
           {loteQuery.data ? <AuditoriaLoteView token={token!} data={loteQuery.data} /> : null}
@@ -229,7 +222,7 @@ export function AuditoriaPage() {
         <>
           <form className="mb-6 grid gap-4 bg-cds-layer01 p-4 lg:grid-cols-[minmax(0,1fr)_180px_180px_auto]" onSubmit={buscarReactivo}>
             <label className="block">
-              <Label className="mb-2" htmlFor="reactivo_auditoria">Reactivo</Label>
+              <Label className="mb-2" htmlFor="reactivo_auditoria">{t("audit.fReactivo")}</Label>
               <select id="reactivo_auditoria" className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none" value={reactivoSeleccionado?.id ?? ""} onChange={(event) => setReactivoId(Number(event.target.value))}>
                 {reactivos.map((reactivo) => (
                   <option key={reactivo.id} value={reactivo.id}>
@@ -239,24 +232,24 @@ export function AuditoriaPage() {
               </select>
             </label>
             <label className="block">
-              <Label className="mb-2" htmlFor="aud_desde">Desde</Label>
+              <Label className="mb-2" htmlFor="aud_desde">{t("audit.fDesde")}</Label>
               <Input id="aud_desde" type="date" value={desde} onChange={(event) => setDesde(event.target.value)} />
             </label>
             <label className="block">
-              <Label className="mb-2" htmlFor="aud_hasta">Hasta</Label>
+              <Label className="mb-2" htmlFor="aud_hasta">{t("audit.fHasta")}</Label>
               <Input id="aud_hasta" type="date" value={hasta} onChange={(event) => setHasta(event.target.value)} />
             </label>
             <div className="flex items-end">
               <Button type="submit" disabled={reactivoQuery.isFetching || !reactivoSeleccionado}>
                 <Search size={18} aria-hidden="true" />
-                {reactivoQuery.isFetching ? "Buscando..." : "Buscar"}
+                {reactivoQuery.isFetching ? t("audit.buscando") : t("common.buscar")}
               </Button>
             </div>
           </form>
 
           {reactivoQuery.isError ? (
             <div className="mb-4 border-l-4 border-cds-supportError bg-cds-layer01 px-4 py-3 text-sm">
-              {mutationError(reactivoQuery.error, "No se pudo cargar la auditoría del reactivo")}
+              {mutationError(reactivoQuery.error, t("audit.errReactivoCarga"))}
             </div>
           ) : null}
           {reactivoQuery.data ? <AuditoriaReactivoView token={token!} data={reactivoQuery.data} desde={reactivoParams?.desde} hasta={reactivoParams?.hasta} /> : null}
@@ -282,6 +275,7 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
 }
 
 function AuditoriaLoteView({ token, data }: { token: string; data: AuditoriaLote }) {
+  const { t } = useTranslation()
   const pdfMutation = useMutation({
     mutationFn: () => api.auditoriaLotePdf(token, data.lote.codigo_interno),
   })
@@ -300,38 +294,38 @@ function AuditoriaLoteView({ token, data }: { token: string; data: AuditoriaLote
         <h2 className="text-[24px] leading-[1.33]">{lote.reactivo_nombre}</h2>
         <p className="mt-2 font-mono text-sm">{lote.codigo_interno}</p>
         <div className="mt-5 grid gap-px bg-cds-borderSubtle md:grid-cols-4">
-          <Metric label="Saldo actual" value={`${formatNumber(lote.cantidad_actual)} ${unidad}`} />
-          <Metric label="Inicial" value={`${formatNumber(lote.cantidad_inicial)} ${unidad}`} />
-          <Metric label="Consumido" value={`${formatNumber(resumen.porcentaje_consumido)}%`} />
-          <Metric label="Eventos" value={String(resumen.total_eventos)} />
+          <Metric label={t("audit.mSaldoActual")} value={`${formatNumber(lote.cantidad_actual)} ${unidad}`} />
+          <Metric label={t("audit.mInicial")} value={`${formatNumber(lote.cantidad_inicial)} ${unidad}`} />
+          <Metric label={t("audit.mConsumido")} value={`${formatNumber(resumen.porcentaje_consumido)}%`} />
+          <Metric label={t("audit.mEventos")} value={String(resumen.total_eventos)} />
         </div>
         <div className="mt-5 grid gap-3 text-sm md:grid-cols-2">
-          <Info label="Proveedor" value={lote.proveedor || "-"} />
-          <Info label="Vencimiento" value={`${formatDate(lote.fecha_vencimiento)} · ${estadoVencimiento(resumen.estado_vencimiento, lote.dias_hasta_vencimiento)}`} />
-          <Info label="Ubicación" value={lote.ubicacion || "-"} />
-          <Info label="Creado por" value={lote.creado_por} />
+          <Info label={t("audit.iProveedor")} value={lote.proveedor || "-"} />
+          <Info label={t("audit.iVencimiento")} value={`${formatDate(lote.fecha_vencimiento)} · ${estadoVencimiento(resumen.estado_vencimiento, lote.dias_hasta_vencimiento, t)}`} />
+          <Info label={t("audit.iUbicacion")} value={lote.ubicacion || "-"} />
+          <Info label={t("audit.iCreadoPor")} value={lote.creado_por} />
         </div>
       </section>
 
       <section className="bg-cds-layer01 p-4">
-        <h3 className="mb-4">Resumen</h3>
+        <h3 className="mb-4">{t("audit.resumen")}</h3>
         <div className="grid gap-px bg-cds-borderSubtle md:grid-cols-3">
-          <Metric label="Total consumido" value={`${formatNumber(resumen.total_consumido)} ${unidad}`} />
-          <Metric label="Entradas extra" value={`${formatNumber(resumen.total_entradas_extra)} ${unidad}`} />
-          <Metric label="Ajustes" value={String(resumen.cantidad_ajustes)} />
+          <Metric label={t("audit.mTotalConsumido")} value={`${formatNumber(resumen.total_consumido)} ${unidad}`} />
+          <Metric label={t("audit.mEntradasExtra")} value={`${formatNumber(resumen.total_entradas_extra)} ${unidad}`} />
+          <Metric label={t("audit.mAjustes")} value={String(resumen.cantidad_ajustes)} />
         </div>
         {resumen.consumos_por_usuario.length ? <ConsumosUsuario rows={resumen.consumos_por_usuario} unidad={unidad} /> : null}
       </section>
 
       <section>
         <div className="mb-4 flex flex-col gap-3 sm:flex-row">
-          <Button type="button" variant="secondary" onClick={() => downloadCsv(eventosCsv(data.eventos, unidad, true), `auditoria_${lote.codigo_interno}.csv`)}>
+          <Button type="button" variant="secondary" onClick={() => downloadCsv(eventosCsv(data.eventos, unidad, true, t), `auditoria_${lote.codigo_interno}.csv`)}>
             <Download size={18} aria-hidden="true" />
-            Descargar CSV
+            {t("audit.descargarCsv")}
           </Button>
           <Button type="button" onClick={descargarPdf} disabled={pdfMutation.isPending}>
             <FileText size={18} aria-hidden="true" />
-            {pdfMutation.isPending ? "Generando..." : "Descargar PDF"}
+            {pdfMutation.isPending ? t("audit.generando") : t("audit.descargarPdf")}
           </Button>
         </div>
         <EventosTable eventos={data.eventos} unidad={unidad} mostrarSaldo />
@@ -341,6 +335,7 @@ function AuditoriaLoteView({ token, data }: { token: string; data: AuditoriaLote
 }
 
 function AuditoriaReactivoView({ token, data, desde, hasta }: { token: string; data: AuditoriaReactivo; desde?: string; hasta?: string }) {
+  const { t } = useTranslation()
   const pdfMutation = useMutation({
     mutationFn: () => api.auditoriaReactivoPdf(token, data.reactivo.id, desde, hasta),
   })
@@ -355,28 +350,28 @@ function AuditoriaReactivoView({ token, data, desde, hasta }: { token: string; d
     <div className="space-y-6">
       <section className="bg-cds-layer01 p-4">
         <h2 className="text-[24px] leading-[1.33]">{data.reactivo.nombre}</h2>
-        <p className="mt-2 text-sm text-cds-textSecondary">Período: {desde ?? "inicio"} a {hasta ?? "hoy"}</p>
+        <p className="mt-2 text-sm text-cds-textSecondary">{t("audit.periodo", { desde: desde ?? t("audit.inicio"), hasta: hasta ?? t("audit.hoy") })}</p>
         <div className="mt-5 grid gap-px bg-cds-borderSubtle md:grid-cols-4">
-          <Metric label="Lotes" value={`${data.resumen.total_lotes} / ${data.resumen.lotes_activos}`} />
-          <Metric label="Saldo actual" value={`${formatNumber(data.resumen.saldo_total_actual)} ${unidad}`} />
-          <Metric label="Consumido" value={`${formatNumber(data.resumen.total_consumido_periodo)} ${unidad}`} />
-          <Metric label="Eventos" value={String(data.resumen.total_eventos_periodo)} />
+          <Metric label={t("audit.mLotes")} value={`${data.resumen.total_lotes} / ${data.resumen.lotes_activos}`} />
+          <Metric label={t("audit.mSaldoActual")} value={`${formatNumber(data.resumen.saldo_total_actual)} ${unidad}`} />
+          <Metric label={t("audit.mConsumido")} value={`${formatNumber(data.resumen.total_consumido_periodo)} ${unidad}`} />
+          <Metric label={t("audit.mEventos")} value={String(data.resumen.total_eventos_periodo)} />
         </div>
       </section>
 
       <section className="bg-cds-layer01 p-4">
-        <h3 className="mb-4">Lotes asociados</h3>
+        <h3 className="mb-4">{t("audit.lotesAsociados")}</h3>
         <LotesAuditoriaTable lotes={data.lotes} unidad={unidad} />
       </section>
 
       {(data.resumen.consumos_por_usuario.length || data.resumen.consumos_por_sector.length) ? (
         <section className="grid gap-6 lg:grid-cols-2">
           <div className="bg-cds-layer01 p-4">
-            <h3 className="mb-4">Consumos por usuario</h3>
+            <h3 className="mb-4">{t("audit.consumosUsuario")}</h3>
             <ConsumosUsuario rows={data.resumen.consumos_por_usuario} unidad={unidad} />
           </div>
           <div className="bg-cds-layer01 p-4">
-            <h3 className="mb-4">Consumos por sector</h3>
+            <h3 className="mb-4">{t("audit.consumosSector")}</h3>
             <ConsumosSector rows={data.resumen.consumos_por_sector} unidad={unidad} />
           </div>
         </section>
@@ -384,13 +379,13 @@ function AuditoriaReactivoView({ token, data, desde, hasta }: { token: string; d
 
       <section>
         <div className="mb-4 flex flex-col gap-3 sm:flex-row">
-          <Button type="button" variant="secondary" onClick={() => downloadCsv(eventosCsv(data.eventos, unidad, false), `auditoria_${data.reactivo.nombre}_${desde ?? "inicio"}_${hasta ?? "hoy"}.csv`)}>
+          <Button type="button" variant="secondary" onClick={() => downloadCsv(eventosCsv(data.eventos, unidad, false, t), `auditoria_${data.reactivo.nombre}_${desde ?? "inicio"}_${hasta ?? "hoy"}.csv`)}>
             <Download size={18} aria-hidden="true" />
-            Descargar CSV
+            {t("audit.descargarCsv")}
           </Button>
           <Button type="button" onClick={descargarPdf} disabled={pdfMutation.isPending}>
             <FileText size={18} aria-hidden="true" />
-            {pdfMutation.isPending ? "Generando..." : "Descargar PDF"}
+            {pdfMutation.isPending ? t("audit.generando") : t("audit.descargarPdf")}
           </Button>
         </div>
         <EventosTable eventos={data.eventos} unidad={unidad} mostrarLote />
@@ -399,42 +394,43 @@ function AuditoriaReactivoView({ token, data, desde, hasta }: { token: string; d
   )
 }
 
-function eventosCsv(eventos: AuditoriaEvento[], unidad: string, saldo: boolean) {
+function eventosCsv(eventos: AuditoriaEvento[], unidad: string, saldo: boolean, t: TFunction) {
   return eventos.map((evento) => ({
-    Fecha: formatDateTime(evento.fecha),
-    Tipo: tipoLabel(evento.tipo),
-    Lote: evento.lote_codigo_interno || "",
-    Cantidad: `${formatNumber(evento.cantidad)} ${unidad}`,
-    "Saldo después": saldo && evento.saldo_despues !== undefined ? `${formatNumber(evento.saldo_despues)} ${unidad}` : "",
-    Usuario: evento.usuario,
-    Sector: evento.usuario_sector || "",
-    Motivo: evento.motivo_auditoria || evento.motivo || "",
+    [t("audit.csvFecha")]: formatDateTime(evento.fecha),
+    [t("audit.csvTipo")]: t(`mov.${evento.tipo}`),
+    [t("audit.csvLote")]: evento.lote_codigo_interno || "",
+    [t("audit.csvCantidad")]: `${formatNumber(evento.cantidad)} ${unidad}`,
+    [t("audit.csvSaldoDespues")]: saldo && evento.saldo_despues !== undefined ? `${formatNumber(evento.saldo_despues)} ${unidad}` : "",
+    [t("audit.csvUsuario")]: evento.usuario,
+    [t("audit.csvSector")]: evento.usuario_sector || "",
+    [t("audit.csvMotivo")]: evento.motivo_auditoria || evento.motivo || "",
   }))
 }
 
 function EventosTable({ eventos, unidad, mostrarSaldo = false, mostrarLote = false }: { eventos: AuditoriaEvento[]; unidad: string; mostrarSaldo?: boolean; mostrarLote?: boolean }) {
+  const { t } = useTranslation()
   if (!eventos.length) {
-    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">Sin eventos para mostrar.</div>
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("audit.sinEventos")}</div>
   }
   return (
     <div className="overflow-x-auto border-t border-cds-borderSubtle">
       <table className="w-full min-w-[1060px] border-collapse text-left text-sm">
         <thead>
           <tr className="border-b border-cds-borderSubtle bg-cds-layer01 text-xs tracking-[0.32px] text-cds-textSecondary">
-            <th className="h-10 px-4 font-normal">Fecha</th>
-            <th className="h-10 px-4 font-normal">Tipo</th>
-            {mostrarLote ? <th className="h-10 px-4 font-normal">Lote</th> : null}
-            <th className="h-10 px-4 text-right font-normal">Cantidad</th>
-            {mostrarSaldo ? <th className="h-10 px-4 text-right font-normal">Saldo después</th> : null}
-            <th className="h-10 px-4 font-normal">Usuario</th>
-            <th className="h-10 px-4 font-normal">Motivo</th>
+            <th className="h-10 px-4 font-normal">{t("audit.thFecha")}</th>
+            <th className="h-10 px-4 font-normal">{t("audit.thTipo")}</th>
+            {mostrarLote ? <th className="h-10 px-4 font-normal">{t("audit.thLote")}</th> : null}
+            <th className="h-10 px-4 text-right font-normal">{t("audit.thCantidad")}</th>
+            {mostrarSaldo ? <th className="h-10 px-4 text-right font-normal">{t("audit.thSaldo")}</th> : null}
+            <th className="h-10 px-4 font-normal">{t("audit.thUsuario")}</th>
+            <th className="h-10 px-4 font-normal">{t("audit.thMotivo")}</th>
           </tr>
         </thead>
         <tbody>
           {eventos.map((evento) => (
             <tr key={evento.id} className="border-b border-cds-borderSubtle hover:bg-cds-layer01">
               <td className="h-12 px-4 text-cds-textSecondary">{formatDateTime(evento.fecha)}</td>
-              <td className={cn("h-12 px-4 font-medium", tipoClass(evento.tipo))}>{tipoLabel(evento.tipo)}</td>
+              <td className={cn("h-12 px-4 font-medium", tipoClass(evento.tipo))}>{t(`mov.${evento.tipo}`)}</td>
               {mostrarLote ? <td className="h-12 px-4 font-mono text-xs">{evento.lote_codigo_interno}</td> : null}
               <td className="h-12 px-4 text-right font-mono">{formatNumber(evento.cantidad)} {unidad}</td>
               {mostrarSaldo ? <td className="h-12 px-4 text-right font-mono">{formatNumber(evento.saldo_despues)} {unidad}</td> : null}
@@ -449,20 +445,21 @@ function EventosTable({ eventos, unidad, mostrarSaldo = false, mostrarLote = fal
 }
 
 function LotesAuditoriaTable({ lotes, unidad }: { lotes: AuditoriaReactivo["lotes"]; unidad: string }) {
+  const { t } = useTranslation()
   if (!lotes.length) {
-    return <div className="bg-cds-background p-3 text-sm text-cds-textSecondary">Este reactivo no tiene lotes.</div>
+    return <div className="bg-cds-background p-3 text-sm text-cds-textSecondary">{t("audit.sinLotes")}</div>
   }
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[900px] border-collapse text-left text-sm">
         <thead>
           <tr className="border-b border-cds-borderSubtle text-xs tracking-[0.32px] text-cds-textSecondary">
-            <th className="h-10 px-4 font-normal">Código</th>
-            <th className="h-10 px-4 font-normal">Proveedor</th>
-            <th className="h-10 px-4 text-right font-normal">Inicial</th>
-            <th className="h-10 px-4 text-right font-normal">Actual</th>
-            <th className="h-10 px-4 font-normal">Vence</th>
-            <th className="h-10 px-4 font-normal">Estado</th>
+            <th className="h-10 px-4 font-normal">{t("audit.thCodigo")}</th>
+            <th className="h-10 px-4 font-normal">{t("audit.thProveedor")}</th>
+            <th className="h-10 px-4 text-right font-normal">{t("audit.thInicial")}</th>
+            <th className="h-10 px-4 text-right font-normal">{t("audit.thActual")}</th>
+            <th className="h-10 px-4 font-normal">{t("audit.thVence")}</th>
+            <th className="h-10 px-4 font-normal">{t("audit.thEstado")}</th>
           </tr>
         </thead>
         <tbody>
@@ -474,7 +471,7 @@ function LotesAuditoriaTable({ lotes, unidad }: { lotes: AuditoriaReactivo["lote
               <td className="h-12 px-4 text-right font-mono">{formatNumber(lote.cantidad_actual)} {unidad}</td>
               <td className="h-12 px-4 text-cds-textSecondary">{formatDate(lote.fecha_vencimiento)}</td>
               <td className={cn("h-12 px-4 font-medium", estadoClass(lote.estado))}>
-                {estadoVencimiento(lote.estado, lote.dias_hasta_vencimiento)}
+                {estadoVencimiento(lote.estado, lote.dias_hasta_vencimiento, t)}
               </td>
             </tr>
           ))}
@@ -485,8 +482,9 @@ function LotesAuditoriaTable({ lotes, unidad }: { lotes: AuditoriaReactivo["lote
 }
 
 function ConsumosUsuario({ rows, unidad }: { rows: Array<{ usuario: string; sector?: string | null; veces: number; cantidad: number }>; unidad: string }) {
+  const { t } = useTranslation()
   if (!rows.length) {
-    return <div className="text-sm text-cds-textSecondary">Sin consumos.</div>
+    return <div className="text-sm text-cds-textSecondary">{t("audit.sinConsumos")}</div>
   }
   return (
     <div className="mt-4 overflow-x-auto">
@@ -507,8 +505,9 @@ function ConsumosUsuario({ rows, unidad }: { rows: Array<{ usuario: string; sect
 }
 
 function ConsumosSector({ rows, unidad }: { rows: Array<{ sector: string; veces: number; cantidad: number }>; unidad: string }) {
+  const { t } = useTranslation()
   if (!rows.length) {
-    return <div className="text-sm text-cds-textSecondary">Sin consumos.</div>
+    return <div className="text-sm text-cds-textSecondary">{t("audit.sinConsumos")}</div>
   }
   return (
     <div className="overflow-x-auto">
