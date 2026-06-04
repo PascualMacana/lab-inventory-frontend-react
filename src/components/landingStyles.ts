@@ -1554,7 +1554,11 @@ export const LANDING_CSS = String.raw`
 
   /* ─── responsive ─────────────────────────────────── */
   @media (max-width: 960px) {
-    .login-overlay-content { grid-template-columns: 1fr; }
+    .login-overlay-content {
+      grid-template-columns: 1fr;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
     .const-panel { display: none; }
   }
 

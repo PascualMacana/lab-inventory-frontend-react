@@ -72,11 +72,27 @@ export function LandingShell() {
   }, [loginOpen]);
 
   useEffect(() => {
-    if (!loginOpen) {
-      document.body.style.overflow = "";
-      return;
-    }
-    document.body.style.overflow = "hidden";
+    if (!loginOpen) return;
+    // iOS Safari ignora overflow:hidden en el body, así que el fondo seguía
+    // scrolleando detrás del overlay (se veían las dos páginas superpuestas).
+    // Lock robusto: fijamos el body en su posición de scroll y la restauramos al
+    // cerrar.
+    const scrollY = window.scrollY;
+    const { style } = document.body;
+    const prev = {
+      position: style.position,
+      top: style.top,
+      left: style.left,
+      right: style.right,
+      width: style.width,
+      overflow: style.overflow,
+    };
+    style.position = "fixed";
+    style.top = `-${scrollY}px`;
+    style.left = "0";
+    style.right = "0";
+    style.width = "100%";
+    style.overflow = "hidden";
     const focusTimer = window.setTimeout(() => emailInputRef.current?.focus(), 460);
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") requestClose();
@@ -85,7 +101,13 @@ export function LandingShell() {
     return () => {
       window.clearTimeout(focusTimer);
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
+      style.position = prev.position;
+      style.top = prev.top;
+      style.left = prev.left;
+      style.right = prev.right;
+      style.width = prev.width;
+      style.overflow = prev.overflow;
+      window.scrollTo(0, scrollY);
     };
   }, [loginOpen, requestClose]);
 
