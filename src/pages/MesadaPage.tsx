@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { BrowserQRCodeReader, type IScannerControls } from "@zxing/browser"
-import { Camera, ScanLine, Search, Square, Trash2 } from "lucide-react"
+import { ScanLine, Search, Square, Trash2 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { Button } from "../components/ui/button"
@@ -57,10 +57,6 @@ export function MesadaPage() {
       setErrorLocal(mutationError(error, t("mesada.errBuscar")))
     },
   })
-  const decodificarQrMutation = useMutation({
-    mutationFn: (file: File) => api.decodificarQrLote(token!, file),
-  })
-
   const unidadesQuery = useQuery({
     queryKey: ["unidades-compatibles", lote?.unidad],
     queryFn: () => api.unidadesCompatibles(token!, lote!.unidad),
@@ -90,23 +86,6 @@ export function MesadaPage() {
       return
     }
     await buscarMutation.mutateAsync(codigoLimpio)
-  }
-
-  async function handleQrFile(file: File | null) {
-    if (!file) {
-      return
-    }
-    setErrorLocal(null)
-    setMensaje(null)
-    try {
-      const resultado = await decodificarQrMutation.mutateAsync(file)
-      setCodigo(resultado.codigo_interno)
-      await buscarMutation.mutateAsync(resultado.codigo_interno)
-    } catch (error) {
-      setLote(null)
-      setMensaje(null)
-      setErrorLocal(mutationError(error, t("mesada.errQr")))
-    }
   }
 
   async function handleQrEnVivo(valor: string) {
@@ -195,7 +174,7 @@ export function MesadaPage() {
           }}
         />
         <Label className="mb-2" htmlFor="codigo_interno">{t("mesada.fCodigo")}</Label>
-        <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+        <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
           <div className="relative">
             <ScanLine
               className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-cds-textSecondary"
@@ -214,24 +193,6 @@ export function MesadaPage() {
             <Search size={18} aria-hidden="true" />
             {buscarMutation.isPending ? t("mesada.buscando") : t("common.buscar")}
           </Button>
-          <input
-            id="foto_qr_mesada"
-            className="sr-only"
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            capture="environment"
-            onChange={(event) => {
-              void handleQrFile(event.target.files?.[0] ?? null)
-              event.currentTarget.value = ""
-            }}
-          />
-          <label
-            htmlFor="foto_qr_mesada"
-            className="inline-flex h-12 cursor-pointer items-center justify-center gap-2 border border-cds-borderStrong bg-cds-layer02 px-4 text-sm tracking-[0.16px] text-cds-textPrimary transition-colors hover:bg-cds-borderSubtle"
-          >
-            <Camera size={18} aria-hidden="true" />
-            {decodificarQrMutation.isPending ? t("mesada.leyendo") : t("mesada.escanearQr")}
-          </label>
         </div>
       </form>
 
