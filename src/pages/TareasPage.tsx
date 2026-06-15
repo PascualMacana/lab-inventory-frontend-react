@@ -1,6 +1,8 @@
-import { FormEvent, useMemo, useState } from "react"
+import { FormEvent, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { CalendarClock, MessageSquarePlus, Plus, RotateCcw, Save, UserRound } from "lucide-react"
+import { Link } from "react-router-dom"
+import { useSearchParams } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 
 import { ModuleNav } from "../components/ModuleNav"
@@ -92,15 +94,17 @@ function prioridadClasses(prioridad: PrioridadTarea) {
 export function TareasPage() {
   const { token, usuario } = useAuth()
   const { t } = useTranslation()
+  const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
   const puedeGestionar = puede(usuario, "gestionar_tareas")
   const puedeCrear = puede(usuario, "crear_tarea")
-  const [tab, setTab] = useState<"mis" | "equipo" | "nueva">("mis")
+  const [tab, setTab] = useState<"mis" | "equipo" | "nueva">(() => (puede(usuario, "gestionar_tareas") ? "equipo" : "mis"))
   const [estado, setEstado] = useState("")
   const [asignadoA, setAsignadoA] = useState("")
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [mensaje, setMensaje] = useState<string | null>(null)
   const [errorLocal, setErrorLocal] = useState<string | null>(null)
+  const tareaIdQuery = Number(searchParams.get("tarea_id") ?? "")
 
   const usuariosQuery = useQuery({
     queryKey: ["usuarios", "tareas"],
@@ -159,9 +163,30 @@ export function TareasPage() {
     setEstado("")
     setAsignadoA("")
     setSelectedId(null)
+    setSearchParams({}, { replace: true })
     setMensaje(null)
     setErrorLocal(null)
   }
+
+  function seleccionarTarea(id: number) {
+    setSelectedId(id)
+    setSearchParams({ tarea_id: String(id) }, { replace: true })
+  }
+
+  useEffect(() => {
+    if (!tareaIdQuery) {
+      return
+    }
+    if (puedeGestionar && tab !== "equipo") {
+      setTab("equipo")
+      setEstado("")
+      setAsignadoA("")
+      return
+    }
+    if (tareas.some((tarea) => tarea.id === tareaIdQuery)) {
+      setSelectedId(tareaIdQuery)
+    }
+  }, [puedeGestionar, tab, tareaIdQuery, tareas])
 
   return (
     <section>
@@ -194,7 +219,7 @@ export function TareasPage() {
           onError={setErrorLocal}
           onSuccess={async (tarea) => {
             cambiarTab("equipo")
-            setSelectedId(tarea.id)
+            seleccionarTarea(tarea.id)
             await refrescar(t("tareas.msgCreada", { id: tarea.id }))
           }}
         />
@@ -233,7 +258,7 @@ export function TareasPage() {
           </div>
 
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
-            <TareasTable tareas={tareas} selectedId={selected?.id ?? null} isLoading={tareasQuery.isLoading} onSelect={setSelectedId} />
+            <TareasTable tareas={tareas} selectedId={selected?.id ?? null} isLoading={tareasQuery.isLoading} onSelect={seleccionarTarea} />
             {selected ? (
               <TareaDetalle
                 tarea={selected}
@@ -366,6 +391,11 @@ function TareaDetalle({ tarea, token, usuarios, puedeGestionar, onError, onUpdat
         <p>{t("tareas.detAsignadoA", { nombre: tarea.asignado_nombre || t("tareas.sinAsignar") })}</p>
         <p>{t("tareas.detCreadoPor", { nombre: tarea.creado_por_nombre || "-" })}</p>
         <p>{t("tareas.detFechaLimite", { fecha: formatDate(tarea.fecha_limite) })}</p>
+        {tarea.entidad_tipo === "reactivo" && tarea.entidad_id ? (
+          <Link className="inline-block text-cds-linkPrimary hover:underline" to={`/reactivos/lotes?reactivo_id=${tarea.entidad_id}`}>
+            {t("tareas.verLotesReactivoRelacionado")}
+          </Link>
+        ) : null}
         {tarea.descripcion ? <p className="text-cds-textPrimary">{tarea.descripcion}</p> : null}
       </div>
 

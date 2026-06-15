@@ -1,6 +1,7 @@
-import { FormEvent, useState } from "react"
+import { FormEvent, useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Camera, ScanLine, Search, Trash2 } from "lucide-react"
+import { BrowserQRCodeReader, type IScannerControls } from "@zxing/browser"
+import { Camera, ScanLine, Search, Square, Trash2 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { Button } from "../components/ui/button"
@@ -16,6 +17,12 @@ function formatNumber(value: number | null | undefined) {
 
 function mutationError(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
+}
+
+function extraerCodigoInterno(valor: string) {
+  const normalizado = valor.trim().toUpperCase()
+  const match = normalizado.match(/\b(?:CFP-\d{4}-\d{4}|LAB-\d{4}-\d{5})\b/)
+  return match?.[0] ?? null
 }
 
 export function MesadaPage() {
@@ -102,6 +109,18 @@ export function MesadaPage() {
     }
   }
 
+  async function handleQrEnVivo(valor: string) {
+    const codigoInterno = extraerCodigoInterno(valor)
+    if (!codigoInterno) {
+      setLote(null)
+      setMensaje(null)
+      setErrorLocal(t("mesada.errQrFormato"))
+      return
+    }
+    setCodigo(codigoInterno)
+    await buscarMutation.mutateAsync(codigoInterno)
+  }
+
   async function handleConsumir(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!lote || !usuario) {
@@ -160,6 +179,21 @@ export function MesadaPage() {
       </div>
 
       <form className="bg-cds-layer01 p-4" onSubmit={handleBuscar}>
+        <QrLiveScanner
+          onDetect={(valor) => {
+            void handleQrEnVivo(valor)
+          }}
+          labels={{
+            title: t("mesada.scannerTitle"),
+            idle: t("mesada.scannerIdle"),
+            active: t("mesada.scannerActive"),
+            start: t("mesada.scannerStart"),
+            stop: t("mesada.scannerStop"),
+            detected: t("mesada.scannerDetected"),
+            noCamera: t("mesada.scannerNoCamera"),
+            cameraError: t("mesada.scannerCameraError"),
+          }}
+        />
         <Label className="mb-2" htmlFor="codigo_interno">{t("mesada.fCodigo")}</Label>
         <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
           <div className="relative">
@@ -271,6 +305,119 @@ export function MesadaPage() {
         </div>
       ) : null}
     </section>
+  )
+}
+
+function QrLiveScanner({
+  onDetect,
+  labels,
+}: {
+  onDetect: (value: string) => void
+  labels: {
+    title: string
+    idle: string
+    active: string
+    start: string
+    stop: string
+    detected: string
+    noCamera: string
+    cameraError: string
+  }
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const controlsRef = useRef<IScannerControls | null>(null)
+  const readerRef = useRef<BrowserQRCodeReader | null>(null)
+  const lastValueRef = useRef<string | null>(null)
+  const [scanning, setScanning] = useState(false)
+  const [status, setStatus] = useState(labels.idle)
+  const [cameraError, setCameraError] = useState<string | null>(null)
+
+  useEffect(() => {
+    return () => {
+      controlsRef.current?.stop()
+      controlsRef.current = null
+      readerRef.current = null
+    }
+  }, [])
+
+  async function startScanner() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError(labels.noCamera)
+      return
+    }
+    if (!videoRef.current || scanning) {
+      return
+    }
+
+    setCameraError(null)
+    setStatus(labels.active)
+    setScanning(true)
+    lastValueRef.current = null
+
+    try {
+      const reader = new BrowserQRCodeReader(undefined, {
+        delayBetweenScanAttempts: 120,
+        delayBetweenScanSuccess: 250,
+      })
+      readerRef.current = reader
+      controlsRef.current = await reader.decodeFromVideoDevice(undefined, videoRef.current, (result, _error, controls) => {
+        if (!result) {
+          return
+        }
+        const value = result.getText().trim()
+        if (!value || value === lastValueRef.current) {
+          return
+        }
+        lastValueRef.current = value
+        setStatus(labels.detected)
+        if ("vibrate" in navigator) {
+          navigator.vibrate(80)
+        }
+        controls.stop()
+        controlsRef.current = null
+        setScanning(false)
+        onDetect(value)
+      })
+    } catch (error) {
+      controlsRef.current?.stop()
+      controlsRef.current = null
+      setScanning(false)
+      setStatus(labels.idle)
+      setCameraError(error instanceof Error ? error.message : labels.cameraError)
+    }
+  }
+
+  function stopScanner() {
+    controlsRef.current?.stop()
+    controlsRef.current = null
+    setScanning(false)
+    setStatus(labels.idle)
+  }
+
+  return (
+    <div className="mb-5 border border-cds-borderSubtle bg-cds-background p-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium text-cds-textPrimary">{labels.title}</div>
+          <div className="mt-1 text-xs leading-4 tracking-[0.32px] text-cds-textSecondary">{status}</div>
+        </div>
+        <Button type="button" variant={scanning ? "secondary" : "primary"} onClick={scanning ? stopScanner : startScanner}>
+          {scanning ? <Square size={18} aria-hidden="true" /> : <ScanLine size={18} aria-hidden="true" />}
+          {scanning ? labels.stop : labels.start}
+        </Button>
+      </div>
+      <div className="relative aspect-[4/3] overflow-hidden bg-black">
+        <video ref={videoRef} className="h-full w-full object-cover" muted playsInline />
+        <div className="pointer-events-none absolute inset-0 grid place-items-center">
+          <div className="h-36 w-36 border-2 border-white/90 shadow-[0_0_0_999px_rgba(0,0,0,0.28)]" />
+        </div>
+      </div>
+      {cameraError ? (
+        <div className="mt-3 border-l-4 border-cds-supportError bg-cds-layer01 px-3 py-2 text-xs leading-4">
+          {cameraError}
+        </div>
+      ) : null}
+    </div>
   )
 }
 

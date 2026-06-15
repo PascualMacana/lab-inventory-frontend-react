@@ -1,6 +1,7 @@
-import { FormEvent, useEffect, useMemo, useState } from "react"
+import { FormEvent, lazy, Suspense, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowLeft, Check, Plus, AlertTriangle, FlaskConical, PackageCheck, Search, Save } from "lucide-react"
+import { useSearchParams } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 
 import { ModuleNav } from "../components/ModuleNav"
@@ -13,6 +14,9 @@ import { useAuth } from "../lib/auth"
 import { parseFormNumber, requireFiniteNumber } from "../lib/forms"
 import { puede } from "../lib/permissions"
 import { cn } from "../lib/utils"
+
+// Plotly is heavy; only load it when a reagent detail is open (deliberate drill-down).
+const PlotlyGauge = lazy(() => import("../Graphs/PlotlyGauge").then((module) => ({ default: module.PlotlyGauge })))
 
 type FiltroEstado = "Todos" | "En tránsito" | "Sin stock" | "Con stock"
 type TabReactivos = "listado" | "detalle" | "nuevo"
@@ -50,6 +54,7 @@ function nullable(value: string) {
 export function ReactivosPage() {
   const { token, usuario } = useAuth()
   const { t } = useTranslation()
+  const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
   const puedeCrear = puede(usuario, "crear_reactivo")
   const puedeEditar = puede(usuario, "editar_reactivo")
@@ -66,6 +71,7 @@ export function ReactivosPage() {
   })
 
   const reactivos = reactivosQuery.data ?? reactivosVacios
+  const reactivoIdQuery = Number(searchParams.get("reactivo_id") ?? searchParams.get("id") ?? "")
   const reactivoDetalle = useMemo(() => {
     if (!reactivos.length) {
       return null
@@ -116,6 +122,7 @@ export function ReactivosPage() {
     setReactivoDetalleId(id)
     setTab("detalle")
     setMensaje(null)
+    setSearchParams({ reactivo_id: String(id) }, { replace: true })
   }
 
   useEffect(() => {
@@ -130,6 +137,17 @@ export function ReactivosPage() {
     window.addEventListener("lab:module-open", handleModuleOpen)
     return () => window.removeEventListener("lab:module-open", handleModuleOpen)
   }, [])
+
+  useEffect(() => {
+    if (!reactivoIdQuery || !reactivos.some((reactivo) => reactivo.id === reactivoIdQuery)) {
+      return
+    }
+    setReactivoDetalleId(reactivoIdQuery)
+    setTab("detalle")
+    setBusqueda("")
+    setFiltroEstado("Todos")
+    setMensaje(null)
+  }, [reactivoIdQuery, reactivos])
 
   return (
     <section>
@@ -582,6 +600,13 @@ function DetalleReactivo({
   }
 
   const bajoMinimo = (reactivo.stock_total ?? 0) < (reactivo.stock_minimo ?? 0)
+  const minimoReactivo = reactivo.stock_minimo ?? 0
+  const coberturaReactivo =
+    minimoReactivo > 0
+      ? Math.min(160, Math.round(((reactivo.stock_total ?? 0) / minimoReactivo) * 100))
+      : (reactivo.stock_total ?? 0) > 0
+        ? 160
+        : 0
   // Solo se puede fusionar entre reactivos con la MISMA unidad (el backend lo exige:
   // los lotes guardan la cantidad en la unidad del reactivo, no se convierte).
   const duplicadosPosibles = reactivos.filter((item) => item.id !== reactivo.id && item.unidad === reactivo.unidad)
@@ -617,6 +642,13 @@ function DetalleReactivo({
             <InfoRow label={t("reactivos.infoUbicacion")} value={reactivo.ubicacion || "-"} />
             <InfoRow label={t("reactivos.infoCategoria")} value={reactivo.categoria || "-"} />
           </dl>
+        </div>
+
+        <div className="mt-4 bg-cds-layer01 p-4">
+          <h3 className="text-sm font-semibold leading-[1.4]">{t("reactivos.coberturaStock")}</h3>
+          <Suspense fallback={<div className="mt-2 h-[280px] animate-pulse bg-cds-field" />}>
+            <PlotlyGauge value={coberturaReactivo} numberSize={36} />
+          </Suspense>
         </div>
       </aside>
 

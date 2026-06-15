@@ -30,6 +30,12 @@ const permisosJefe = new Set([
   "editar_reactivo",
   "crear_lote",
   "imprimir_hoja_avery",
+  "ver_pagina_cepario",
+  "crear_entidad_biologica",
+  "caracterizar_aislado",
+  "promover_cepa",
+  "gestionar_cepario_stock",
+  "descartar_stock",
 ])
 
 const permisosCientifico = new Set([
@@ -42,6 +48,11 @@ const permisosCientifico = new Set([
   "ver_pagina_usuarios",
   "ver_pagina_equipamiento",
   "ver_pagina_asistente",
+  // Cepario: opera el día a día, no promueve cepas ni descarta stock.
+  "ver_pagina_cepario",
+  "crear_entidad_biologica",
+  "caracterizar_aislado",
+  "gestionar_cepario_stock",
 ])
 
 const accionModulo: Record<string, string> = {
@@ -87,6 +98,12 @@ const accionModulo: Record<string, string> = {
   usar_asistente: "asistente",
   ver_pagina_auditoria: "auditoria",
   consultar_auditoria: "auditoria",
+  ver_pagina_cepario: "cepario",
+  crear_entidad_biologica: "cepario",
+  caracterizar_aislado: "cepario",
+  promover_cepa: "cepario",
+  gestionar_cepario_stock: "cepario",
+  descartar_stock: "cepario",
 }
 
 function moduloHabilitado(usuario: Usuario, accion: string) {

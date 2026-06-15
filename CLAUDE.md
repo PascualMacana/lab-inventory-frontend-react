@@ -112,6 +112,39 @@ Patrón:
 - Para estados especiales en filas (ej. stock bajo en Reactivos):
   usar `bg-<tint>/60` + `shadow-[inset_2px_0_0_var(--<color>)]`.
 
+### KPI cards (tarjetas de métrica)
+Lenguaje compartido de tarjetas KPI (Movimientos y Dashboard; extender a
+otros módulos). Recrea un handoff (`docs/gráficos en labinventory.zip`)
+pero con NUESTROS tokens, no los hex/fuente del handoff.
+- **Card**: `border border-cds-borderSubtle bg-cds-layer01 p-[18px_20px]`
+  en grid `gap-3.5` (no el truco `gap-px`), con acento izquierdo de 3px
+  vía `shadow-[inset_3px_0_0_var(--token)]` del color de su categoría
+  (Total/normal `--lab-blue`, ok `--cds-support-success`, crit
+  `--cds-support-error`, warn `--lab-warm`).
+- **Micro-label**: `font-mono text-[10.5px] uppercase tracking-[0.09em]
+  text-cds-textSecondary` (+ dot opcional `h-[9px] w-[9px] rounded-full`
+  del color). El mismo micro-label mono se usa en los labels del filtro
+  de Movimientos y en el título del desglose.
+- **Número**: `font-mono text-[34px]` en **peso regular** (NO
+  `font-semibold` — el bold desentona; la página es toda peso regular).
+  El color por `style` con `var(--...)`, no hex, para que theme en oscuro.
+- **Micro-barra de proporción** (opcional): track `bg-cds-borderSubtle`
+  `h-1` + fill del color al `width: pct%`.
+- **Dashboard (opción B)**: mismas cards PERO conservan sus extras —
+  `Sparkline`, delta `+N` y clickeables (`KpiTile to=...`). Las de alerta
+  (stock bajo, por vencer) además mantienen el fondo tintado suave
+  (`bg-lab-critTint` / `bg-lab-warmTint`) encima del acento, para que el
+  problema siga saltando.
+
+### Gráficos (ApexCharts)
+`src/Graphs/StackedBarChart.tsx` (hoy solo Movimientos) es el patrón para
+charts ApexCharts. ApexCharts pinta barras/labels como atributos SVG que
+NO resuelven `var(--...)`, así que el componente recibe los colores como
+token (`"var(--cds-support-success)"`) y los resuelve a hex con
+`getComputedStyle`, releyendo en cada cambio de tema (consume `useTheme`).
+Toolbar solo-descarga (PNG/SVG/CSV) y total arriba de las barras apiladas
+(`plotOptions.bar.dataLabels.total`). Lazy-importado para no pesar la página.
+
 ### Sparklines del Dashboard
 `DashboardPage` define un `Sparkline` SVG inline (sin libs). Tres
 decisiones cargan el feel actual y conviene no revertirlas sin

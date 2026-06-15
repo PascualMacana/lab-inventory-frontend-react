@@ -165,10 +165,6 @@ function mutationError(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
 }
 
-function ubicacionResumen(vial: CeparioVial) {
-  return [vial.ubicacion_freezer, vial.ubicacion_caja, vial.ubicacion_posicion].filter(Boolean).join(" / ")
-}
-
 function descargarPdf(blob: Blob, nombre: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")

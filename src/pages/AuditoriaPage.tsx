@@ -1,24 +1,31 @@
-import { FormEvent, useMemo, useState } from "react"
+import { FormEvent, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
-import { Download, FileText, Search } from "lucide-react"
+import { Download, FileText, RotateCcw, Search } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import type { TFunction } from "i18next"
+import { useSearchParams } from "react-router-dom"
 
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
 import { Label } from "../components/ui/label"
-import { api, type AuditoriaEvento, type AuditoriaLote, type AuditoriaReactivo, type Reactivo } from "../lib/api"
+import { api, type AuditoriaEvento, type AuditoriaLote, type AuditoriaReactivo, type Movimiento, type Reactivo } from "../lib/api"
 import { useAuth } from "../lib/auth"
 import { cn } from "../lib/utils"
 
-type Modo = "lote" | "reactivo"
+type Modo = "lote" | "reactivo" | "global"
 
 const reactivosVacios: Reactivo[] = []
+const movimientosVacios: Movimiento[] = []
+const tiposMovimiento = ["entrada", "salida", "ajuste"] as const
 
 function isoDatePlusDays(days: number) {
   const date = new Date()
   date.setDate(date.getDate() + days)
   return date.toISOString().slice(0, 10)
+}
+
+function isIsoDate(value: string | null) {
+  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value))
 }
 
 function formatNumber(value: number | null | undefined) {
@@ -115,13 +122,29 @@ function downloadCsv(rows: Array<Record<string, unknown>>, filename: string) {
 export function AuditoriaPage() {
   const { token } = useAuth()
   const { t } = useTranslation()
+  const [searchParams] = useSearchParams()
   const [modo, setModo] = useState<Modo>("lote")
   const [codigo, setCodigo] = useState("")
   const [codigoBuscado, setCodigoBuscado] = useState("")
   const [reactivoId, setReactivoId] = useState<number | null>(null)
+  const [categoriaReactivo, setCategoriaReactivo] = useState("")
   const [desde, setDesde] = useState(isoDatePlusDays(-90))
   const [hasta, setHasta] = useState(isoDatePlusDays(0))
   const [reactivoParams, setReactivoParams] = useState<{ id: number; desde: string; hasta: string } | null>(null)
+  const [globalDesde, setGlobalDesde] = useState(isoDatePlusDays(-90))
+  const [globalHasta, setGlobalHasta] = useState(isoDatePlusDays(0))
+  const [globalTipo, setGlobalTipo] = useState("")
+  const [globalCategoria, setGlobalCategoria] = useState("")
+  const [globalReactivoId, setGlobalReactivoId] = useState("")
+  const [globalLimite, setGlobalLimite] = useState("1000")
+  const [globalFiltros, setGlobalFiltros] = useState({
+    desde: isoDatePlusDays(-90),
+    hasta: isoDatePlusDays(0),
+    tipo: "",
+    categoria: "",
+    reactivoId: "",
+    limite: 1000,
+  })
   const [errorLocal, setErrorLocal] = useState<string | null>(null)
 
   const reactivosQuery = useQuery({
@@ -130,15 +153,30 @@ export function AuditoriaPage() {
     enabled: Boolean(token),
   })
   const reactivos = reactivosQuery.data ?? reactivosVacios
+  const categoriasReactivos = useMemo(() => {
+    return Array.from(new Set(reactivos.map((reactivo) => reactivo.categoria?.trim()).filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b))
+  }, [reactivos])
+  const reactivosFiltrados = useMemo(() => {
+    if (!categoriaReactivo) {
+      return reactivos
+    }
+    return reactivos.filter((reactivo) => reactivo.categoria === categoriaReactivo)
+  }, [categoriaReactivo, reactivos])
+  const reactivosGlobalesFiltrados = useMemo(() => {
+    if (!globalCategoria) {
+      return reactivos
+    }
+    return reactivos.filter((reactivo) => reactivo.categoria === globalCategoria)
+  }, [globalCategoria, reactivos])
   const reactivoSeleccionado = useMemo(() => {
-    if (!reactivos.length) {
+    if (!reactivosFiltrados.length) {
       return null
     }
     if (!reactivoId) {
-      return reactivos[0]
+      return reactivosFiltrados[0]
     }
-    return reactivos.find((item) => item.id === reactivoId) ?? reactivos[0]
-  }, [reactivoId, reactivos])
+    return reactivosFiltrados.find((item) => item.id === reactivoId) ?? reactivosFiltrados[0]
+  }, [reactivoId, reactivosFiltrados])
 
   const loteQuery = useQuery({
     queryKey: ["auditoria-lote", codigoBuscado],
@@ -151,6 +189,46 @@ export function AuditoriaPage() {
     queryFn: () => api.auditoriaReactivo(token!, reactivoParams!.id, reactivoParams!.desde, reactivoParams!.hasta),
     enabled: Boolean(token && reactivoParams && modo === "reactivo"),
   })
+
+  const globalQuery = useQuery({
+    queryKey: ["auditoria-movimientos", globalFiltros],
+    queryFn: () =>
+      api.auditoriaMovimientos(token!, {
+        desde: globalFiltros.desde || undefined,
+        hasta: globalFiltros.hasta || undefined,
+        tipo: globalFiltros.tipo || undefined,
+        categoria: globalFiltros.categoria || undefined,
+        reactivo_id: globalFiltros.reactivoId ? Number(globalFiltros.reactivoId) : undefined,
+        limite: globalFiltros.limite,
+      }),
+    enabled: Boolean(token && modo === "global"),
+  })
+
+  useEffect(() => {
+    const codigoParam = searchParams.get("codigo")?.trim()
+    const reactivoParam = Number(searchParams.get("reactivo_id"))
+    const desdeParam = searchParams.get("desde")
+    const hastaParam = searchParams.get("hasta")
+
+    if (codigoParam) {
+      setModo("lote")
+      setCodigo(codigoParam)
+      setCodigoBuscado(codigoParam)
+      setErrorLocal(null)
+      return
+    }
+
+    if (Number.isInteger(reactivoParam) && reactivoParam > 0) {
+      const desdeValido = isIsoDate(desdeParam) ? desdeParam! : isoDatePlusDays(-90)
+      const hastaValido = isIsoDate(hastaParam) ? hastaParam! : isoDatePlusDays(0)
+      setModo("reactivo")
+      setReactivoId(reactivoParam)
+      setDesde(desdeValido)
+      setHasta(hastaValido)
+      setReactivoParams({ id: reactivoParam, desde: desdeValido, hasta: hastaValido })
+      setErrorLocal(null)
+    }
+  }, [searchParams])
 
   function buscarLote(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -174,6 +252,38 @@ export function AuditoriaPage() {
     setReactivoParams({ id: reactivo.id, desde, hasta })
   }
 
+  function buscarGlobal(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setErrorLocal(null)
+    const limite = Number(globalLimite)
+    setGlobalFiltros({
+      desde: globalDesde,
+      hasta: globalHasta,
+      tipo: globalTipo,
+      categoria: globalCategoria,
+      reactivoId: globalReactivoId,
+      limite: Number.isFinite(limite) && limite > 0 ? Math.min(Math.floor(limite), 5000) : 1000,
+    })
+  }
+
+  function limpiarGlobal() {
+    const filtros = {
+      desde: isoDatePlusDays(-90),
+      hasta: isoDatePlusDays(0),
+      tipo: "",
+      categoria: "",
+      reactivoId: "",
+      limite: 1000,
+    }
+    setGlobalDesde(filtros.desde)
+    setGlobalHasta(filtros.hasta)
+    setGlobalTipo("")
+    setGlobalCategoria("")
+    setGlobalReactivoId("")
+    setGlobalLimite(String(filtros.limite))
+    setGlobalFiltros(filtros)
+  }
+
   return (
     <section>
       <div className="mb-8">
@@ -193,6 +303,9 @@ export function AuditoriaPage() {
         </TabButton>
         <TabButton active={modo === "reactivo"} onClick={() => setModo("reactivo")}>
           {t("audit.tabReactivo")}
+        </TabButton>
+        <TabButton active={modo === "global"} onClick={() => setModo("global")}>
+          {t("audit.tabGlobal")}
         </TabButton>
       </div>
 
@@ -220,11 +333,30 @@ export function AuditoriaPage() {
 
       {modo === "reactivo" ? (
         <>
-          <form className="mb-6 grid gap-4 bg-cds-layer01 p-4 lg:grid-cols-[minmax(0,1fr)_180px_180px_auto]" onSubmit={buscarReactivo}>
+          <form className="mb-6 grid gap-4 bg-cds-layer01 p-4 lg:grid-cols-[220px_minmax(0,1fr)_180px_180px_auto]" onSubmit={buscarReactivo}>
+            <label className="block">
+              <Label className="mb-2" htmlFor="categoria_auditoria_reactivo">{t("audit.fCategoria")}</Label>
+              <select
+                id="categoria_auditoria_reactivo"
+                className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
+                value={categoriaReactivo}
+                onChange={(event) => {
+                  setCategoriaReactivo(event.target.value)
+                  setReactivoId(null)
+                }}
+              >
+                <option value="">{t("audit.todasCategorias")}</option>
+                {categoriasReactivos.map((categoria) => (
+                  <option key={categoria} value={categoria}>
+                    {categoria}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label className="block">
               <Label className="mb-2" htmlFor="reactivo_auditoria">{t("audit.fReactivo")}</Label>
               <select id="reactivo_auditoria" className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none" value={reactivoSeleccionado?.id ?? ""} onChange={(event) => setReactivoId(Number(event.target.value))}>
-                {reactivos.map((reactivo) => (
+                {reactivosFiltrados.map((reactivo) => (
                   <option key={reactivo.id} value={reactivo.id}>
                     {reactivo.nombre}
                   </option>
@@ -253,6 +385,85 @@ export function AuditoriaPage() {
             </div>
           ) : null}
           {reactivoQuery.data ? <AuditoriaReactivoView token={token!} data={reactivoQuery.data} desde={reactivoParams?.desde} hasta={reactivoParams?.hasta} /> : null}
+        </>
+      ) : null}
+
+      {modo === "global" ? (
+        <>
+          <form className="mb-6 bg-cds-layer01 p-4" onSubmit={buscarGlobal}>
+            <div className="grid gap-4 lg:grid-cols-[160px_160px_160px_220px_minmax(0,1fr)_120px]">
+              <label className="block">
+                <Label className="mb-2" htmlFor="audit_global_desde">{t("audit.fDesde")}</Label>
+                <Input id="audit_global_desde" type="date" value={globalDesde} onChange={(event) => setGlobalDesde(event.target.value)} />
+              </label>
+              <label className="block">
+                <Label className="mb-2" htmlFor="audit_global_hasta">{t("audit.fHasta")}</Label>
+                <Input id="audit_global_hasta" type="date" value={globalHasta} onChange={(event) => setGlobalHasta(event.target.value)} />
+              </label>
+              <label className="block">
+                <Label className="mb-2" htmlFor="audit_global_tipo">{t("audit.fTipo")}</Label>
+                <select id="audit_global_tipo" className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none" value={globalTipo} onChange={(event) => setGlobalTipo(event.target.value)}>
+                  <option value="">{t("audit.todosTipos")}</option>
+                  {tiposMovimiento.map((tipo) => (
+                    <option key={tipo} value={tipo}>
+                      {t(`mov.${tipo}`)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <Label className="mb-2" htmlFor="audit_global_categoria">{t("audit.fCategoria")}</Label>
+                <select
+                  id="audit_global_categoria"
+                  className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
+                  value={globalCategoria}
+                  onChange={(event) => {
+                    setGlobalCategoria(event.target.value)
+                    setGlobalReactivoId("")
+                  }}
+                >
+                  <option value="">{t("audit.todasCategorias")}</option>
+                  {categoriasReactivos.map((categoria) => (
+                    <option key={categoria} value={categoria}>
+                      {categoria}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <Label className="mb-2" htmlFor="audit_global_reactivo">{t("audit.fReactivo")}</Label>
+                <select id="audit_global_reactivo" className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none" value={globalReactivoId} onChange={(event) => setGlobalReactivoId(event.target.value)}>
+                  <option value="">{t("audit.todosReactivos")}</option>
+                  {reactivosGlobalesFiltrados.map((reactivo) => (
+                    <option key={reactivo.id} value={reactivo.id}>
+                      {reactivo.nombre}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <Label className="mb-2" htmlFor="audit_global_limite">{t("audit.fLimite")}</Label>
+                <Input id="audit_global_limite" value={globalLimite} onChange={(event) => setGlobalLimite(event.target.value)} inputMode="numeric" />
+              </label>
+            </div>
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+              <Button type="submit" disabled={globalQuery.isFetching}>
+                <Search size={18} aria-hidden="true" />
+                {globalQuery.isFetching ? t("audit.buscando") : t("common.buscar")}
+              </Button>
+              <Button type="button" variant="ghost" onClick={limpiarGlobal}>
+                <RotateCcw size={18} aria-hidden="true" />
+                {t("common.limpiar")}
+              </Button>
+            </div>
+          </form>
+
+          {globalQuery.isError ? (
+            <div className="mb-4 border-l-4 border-cds-supportError bg-cds-layer01 px-4 py-3 text-sm">
+              {mutationError(globalQuery.error, t("audit.errGlobalCarga"))}
+            </div>
+          ) : null}
+          <AuditoriaGlobalView movimientos={globalQuery.data ?? movimientosVacios} isLoading={globalQuery.isLoading} filtros={globalFiltros} />
         </>
       ) : null}
     </section>
@@ -394,6 +605,59 @@ function AuditoriaReactivoView({ token, data, desde, hasta }: { token: string; d
   )
 }
 
+function AuditoriaGlobalView({
+  movimientos,
+  isLoading,
+  filtros,
+}: {
+  movimientos: Movimiento[]
+  isLoading: boolean
+  filtros: { desde: string; hasta: string; tipo: string; categoria: string; reactivoId: string; limite: number }
+}) {
+  const { t } = useTranslation()
+  const filename = `auditoria_movimientos_${filtros.desde || "inicio"}_${filtros.hasta || "hoy"}.csv`
+  const resumen = useMemo(() => {
+    return movimientos.reduce(
+      (acc, movimiento) => {
+        acc.total += 1
+        acc[movimiento.tipo] += 1
+        return acc
+      },
+      { total: 0, entrada: 0, salida: 0, ajuste: 0 },
+    )
+  }, [movimientos])
+
+  return (
+    <div className="space-y-6">
+      <section className="bg-cds-layer01 p-4">
+        <h2 className="text-[24px] leading-[1.33]">{t("audit.globalTitle")}</h2>
+        <p className="mt-2 text-sm text-cds-textSecondary">{t("audit.periodo", { desde: filtros.desde || t("audit.inicio"), hasta: filtros.hasta || t("audit.hoy") })}</p>
+        <div className="mt-5 grid gap-px bg-cds-borderSubtle md:grid-cols-4">
+          <Metric label={t("audit.mEventos")} value={String(resumen.total)} />
+          <Metric label={t("mov.entrada")} value={String(resumen.entrada)} />
+          <Metric label={t("mov.salida")} value={String(resumen.salida)} />
+          <Metric label={t("mov.ajuste")} value={String(resumen.ajuste)} />
+        </div>
+        {movimientos.length >= filtros.limite ? (
+          <div className="mt-4 border-l-4 border-cds-supportWarning bg-cds-background px-4 py-3 text-sm">
+            {t("audit.limiteAviso", { n: filtros.limite })}
+          </div>
+        ) : null}
+      </section>
+
+      <section>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row">
+          <Button type="button" variant="secondary" onClick={() => downloadCsv(movimientosCsv(movimientos, t), filename)} disabled={!movimientos.length}>
+            <Download size={18} aria-hidden="true" />
+            {t("audit.descargarCsv")}
+          </Button>
+        </div>
+        <MovimientosAuditoriaTable movimientos={movimientos} isLoading={isLoading} />
+      </section>
+    </div>
+  )
+}
+
 function eventosCsv(eventos: AuditoriaEvento[], unidad: string, saldo: boolean, t: TFunction) {
   return eventos.map((evento) => ({
     [t("audit.csvFecha")]: formatDateTime(evento.fecha),
@@ -405,6 +669,63 @@ function eventosCsv(eventos: AuditoriaEvento[], unidad: string, saldo: boolean, 
     [t("audit.csvSector")]: evento.usuario_sector || "",
     [t("audit.csvMotivo")]: evento.motivo_auditoria || evento.motivo || "",
   }))
+}
+
+function movimientosCsv(movimientos: Movimiento[], t: TFunction) {
+  return movimientos.map((movimiento) => ({
+    [t("audit.csvFecha")]: formatDateTime(movimiento.fecha),
+    [t("audit.csvTipo")]: t(`mov.${movimiento.tipo}`),
+    [t("audit.csvReactivo")]: movimiento.reactivo_nombre,
+    [t("audit.csvCategoria")]: movimiento.reactivo_categoria || "",
+    [t("audit.csvLote")]: movimiento.codigo_interno || "",
+    [t("audit.csvLoteFabricante")]: movimiento.numero_lote || "",
+    [t("audit.csvCantidad")]: `${formatNumber(movimiento.cantidad)} ${movimiento.unidad}`,
+    [t("audit.csvUsuario")]: movimiento.usuario_nombre,
+    [t("audit.csvSector")]: movimiento.usuario_sector || "",
+    [t("audit.csvMotivo")]: movimiento.motivo || "",
+  }))
+}
+
+function MovimientosAuditoriaTable({ movimientos, isLoading }: { movimientos: Movimiento[]; isLoading: boolean }) {
+  const { t } = useTranslation()
+  if (isLoading) {
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("audit.buscando")}</div>
+  }
+  if (!movimientos.length) {
+    return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("audit.sinEventos")}</div>
+  }
+  return (
+    <div className="overflow-x-auto border-t border-cds-borderSubtle">
+      <table className="w-full min-w-[1180px] border-collapse text-left text-sm">
+        <thead>
+          <tr className="border-b border-cds-borderSubtle bg-cds-layer01 text-xs tracking-[0.32px] text-cds-textSecondary">
+            <th className="h-10 px-4 font-normal">{t("audit.thFecha")}</th>
+            <th className="h-10 px-4 font-normal">{t("audit.thTipo")}</th>
+            <th className="h-10 px-4 font-normal">{t("audit.thReactivo")}</th>
+            <th className="h-10 px-4 font-normal">{t("audit.thCategoria")}</th>
+            <th className="h-10 px-4 font-normal">{t("audit.thLote")}</th>
+            <th className="h-10 px-4 text-right font-normal">{t("audit.thCantidad")}</th>
+            <th className="h-10 px-4 font-normal">{t("audit.thUsuario")}</th>
+            <th className="h-10 px-4 font-normal">{t("audit.thMotivo")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {movimientos.map((movimiento) => (
+            <tr key={movimiento.id} className="border-b border-cds-borderSubtle hover:bg-cds-layer01">
+              <td className="h-12 px-4 text-cds-textSecondary">{formatDateTime(movimiento.fecha)}</td>
+              <td className={cn("h-12 px-4 font-medium", tipoClass(movimiento.tipo))}>{t(`mov.${movimiento.tipo}`)}</td>
+              <td className="h-12 px-4">{movimiento.reactivo_nombre}</td>
+              <td className="h-12 px-4 text-cds-textSecondary">{movimiento.reactivo_categoria || "-"}</td>
+              <td className="h-12 px-4 font-mono text-xs">{movimiento.codigo_interno}</td>
+              <td className="h-12 px-4 text-right font-mono">{formatNumber(movimiento.cantidad)} {movimiento.unidad}</td>
+              <td className="h-12 px-4 text-cds-textSecondary">{movimiento.usuario_nombre}</td>
+              <td className="h-12 max-w-[360px] px-4 text-cds-textSecondary"><span className="line-clamp-2">{movimiento.motivo || "-"}</span></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
 }
 
 function EventosTable({ eventos, unidad, mostrarSaldo = false, mostrarLote = false }: { eventos: AuditoriaEvento[]; unidad: string; mostrarSaldo?: boolean; mostrarLote?: boolean }) {

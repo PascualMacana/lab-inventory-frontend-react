@@ -6,6 +6,7 @@ import {
   Building2,
   ChartNoAxesCombined,
   ClipboardCheck,
+  Dna,
   FlaskRound,
   FlaskConical,
   Gauge,
@@ -48,6 +49,7 @@ const navItems = [
   { to: "/movimientos", labelKey: "nav.movimientos", icon: History, action: "ver_pagina_movimientos" },
   { to: "/proveedores", labelKey: "nav.proveedores", icon: Truck, action: "ver_pagina_proveedores" },
   { to: "/equipamiento", labelKey: "nav.equipamiento", icon: Microscope, action: "ver_pagina_equipamiento" },
+  { to: "/cepario", labelKey: "nav.cepario", icon: Dna, action: "ver_pagina_cepario" },
   { to: "/usuarios", labelKey: "nav.usuarios", icon: Users, action: "ver_pagina_usuarios" },
   { to: "/asistente", labelKey: "nav.asistente", icon: Bot, action: "ver_pagina_asistente" },
   { to: "/auditoria", labelKey: "nav.auditoria", icon: BarChart3, action: "ver_pagina_auditoria" },
@@ -142,6 +144,22 @@ export function AppShell() {
         <nav className="flex-1 overflow-y-auto py-2">
           {desktopItems.map((item) => {
             const Icon = item.icon
+            if (item.to === "/cepario") {
+              // Cepario abre en pestaña nueva con su propio shell (dominio aparte del almacén).
+              return (
+                <a
+                  key={item.to}
+                  href={item.to}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={sidebarColapsado ? t(item.labelKey) : undefined}
+                  className="grid h-12 grid-cols-[calc(4rem-2px)_1fr] items-center border-l-2 border-transparent text-sm tracking-[0.16px] transition-colors hover:bg-[color-mix(in_srgb,var(--lab-cepario)_50%,var(--lab-sidebar-hover))] hover:text-white"
+                >
+                  <Icon className="mx-auto shrink-0" size={18} aria-hidden="true" />
+                  <span className="overflow-hidden whitespace-nowrap pr-3">{t(item.labelKey)}</span>
+                </a>
+              )
+            }
             return (
               <NavLink
                 key={item.to}
@@ -283,6 +301,21 @@ export function AppShell() {
               <nav className="flex-1 overflow-y-auto py-2">
                 {mobileItems.map((item) => {
                   const Icon = item.icon
+                  if (item.to === "/cepario") {
+                    return (
+                      <a
+                        key={item.to}
+                        href={item.to}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => setMenuAbierto(false)}
+                        className="flex h-12 items-center gap-3 border-l-2 border-transparent px-4 text-sm tracking-[0.16px] transition-colors hover:bg-[color-mix(in_srgb,var(--lab-cepario)_50%,var(--lab-sidebar-hover))] hover:text-white"
+                      >
+                        <Icon size={18} aria-hidden="true" />
+                        {t(item.labelKey)}
+                      </a>
+                    )
+                  }
                   return (
                     <NavLink
                       key={item.to}

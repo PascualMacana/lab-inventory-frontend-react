@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Serif:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Serif:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -54,6 +54,28 @@
   --lab-blue:        #2f6f88;        /* alias for clarity */
   --lab-blue-40:     #5a96ad;        /* lighter petroleum, for dark theme */
   --lab-blue-tint:   #e6eef1;        /* petroleum tint surface */
+
+  /* cepario — section accent (muted indigo-violet, distinct from the
+     petroleum/sage/amber semantics). Reversible: if it doesn't read well,
+     swap these to --lab-blue. */
+  --lab-cepario:      #6a5a93;        /* section accent */
+  --lab-cepario-40:   #9a8ac2;        /* lighter, for dark theme */
+  --lab-cepario-tint: #ece9f3;        /* section tint surface */
+  /* operative-group chip hues (H/U/P/M) — categorical, deliberately avoid the
+     sage/amber/red trio so they never clash with the viability semaphore. */
+  --lab-grupo-h:     #3a8fa0;        /* teal */
+  --lab-grupo-u:     #5b6cae;        /* indigo */
+  --lab-grupo-p:     #9a6a9b;        /* mauve */
+  --lab-grupo-m:     #7d6f5a;        /* taupe */
+  /* genetic-part category hues — 6 distinguishable accents for the parts view.
+     Reversible. They share no surface with the micro groups (separate type tab),
+     so overlap with the grupo hues is harmless. */
+  --lab-parte-vector:     #2f6e9e;   /* blue */
+  --lab-parte-promotor:   #3f8a5b;   /* green */
+  --lab-parte-rbs:        #8455b4;   /* purple */
+  --lab-parte-gen:        #b3762f;   /* amber */
+  --lab-parte-terminador: #b1556f;   /* raspberry */
+  --lab-parte-tag:        #1f8f93;   /* teal */
 
   /* sidebar — shifted from pure black to graphite for warmth */
   --lab-sidebar-bg:          #1f2933;
@@ -149,6 +171,22 @@
   --lab-blue-tint:  #213239;
   --lab-sage:       #97c191;
   --lab-sage-bg:    #232a26;
+
+  /* cepario — lighter accent + dark tint so chips/labels stay legible on graphite */
+  --lab-cepario:      #9a8ac2;
+  --lab-cepario-40:   #b8acd8;
+  --lab-cepario-tint: #262232;
+  --lab-grupo-h:     #5ab0c0;
+  --lab-grupo-u:     #8593d0;
+  --lab-grupo-p:     #bd8cbe;
+  --lab-grupo-m:     #b0a488;
+  /* genetic-part hues — lightened for legibility on graphite (mirror grupo-*) */
+  --lab-parte-vector:     #62a0cf;
+  --lab-parte-promotor:   #6fb37f;
+  --lab-parte-rbs:        #ac8ad9;
+  --lab-parte-gen:        #d3a463;
+  --lab-parte-terminador: #d48aa1;
+  --lab-parte-tag:        #4fb6ba;
 
   --lab-sidebar-bg:          #141a20;
   --lab-sidebar-bg-2:        #1f2933;

@@ -1,6 +1,6 @@
 import { FormEvent, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Camera, RotateCcw, Search } from "lucide-react"
+import { RotateCcw, Search } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { Button } from "../components/ui/button"
@@ -77,9 +77,6 @@ export function ConsumoPage() {
   const buscarLoteMutation = useMutation({
     mutationFn: (codigo: string) => api.lotePorCodigo(token!, codigo),
   })
-  const decodificarQrMutation = useMutation({
-    mutationFn: (file: File) => api.decodificarQrLote(token!, file),
-  })
 
   const consumirMutation = useMutation({
     mutationFn: (payload: {
@@ -145,22 +142,6 @@ export function ConsumoPage() {
   async function handleBuscarLote(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     await buscarCodigoLote(codigoManual)
-  }
-
-  async function handleQrFile(file: File | null) {
-    if (!file) {
-      return
-    }
-    setErrorLocal(null)
-    setMensaje(null)
-    try {
-      const resultado = await decodificarQrMutation.mutateAsync(file)
-      setCodigoManual(resultado.codigo_interno)
-      await buscarCodigoLote(resultado.codigo_interno)
-    } catch (error) {
-      setLoteElegido(null)
-      setErrorLocal(mutationError(error, t("consumo.errQr")))
-    }
   }
 
   async function handleConsumir(event: FormEvent<HTMLFormElement>) {
@@ -325,24 +306,6 @@ export function ConsumoPage() {
                   <Search size={18} aria-hidden="true" />
                   {buscarLoteMutation.isPending ? t("consumo.buscando") : t("consumo.buscarLote")}
                 </Button>
-                <input
-                  id="foto_qr_consumo"
-                  className="sr-only"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  capture="environment"
-                  onChange={(event) => {
-                    void handleQrFile(event.target.files?.[0] ?? null)
-                    event.currentTarget.value = ""
-                  }}
-                />
-                <label
-                  htmlFor="foto_qr_consumo"
-                  className="inline-flex h-12 cursor-pointer items-center justify-center gap-2 border border-cds-borderStrong bg-cds-layer02 px-4 text-sm tracking-[0.16px] text-cds-textPrimary transition-colors hover:bg-cds-borderSubtle"
-                >
-                  <Camera size={18} aria-hidden="true" />
-                  {decodificarQrMutation.isPending ? t("consumo.leyendo") : t("consumo.escanearQr")}
-                </label>
               </div>
             </form>
 

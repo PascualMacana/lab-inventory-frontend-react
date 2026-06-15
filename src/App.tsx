@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react"
 import { Navigate, Route, Routes, useLocation } from "react-router-dom"
 
 import { AppShell } from "./components/AppShell"
+import { CeparioShell } from "./components/CeparioShell"
 import { LandingShell } from "./components/LandingShell"
 import { ChangePasswordPage } from "./components/LoginPage"
 import { LandingPage } from "./pages/LandingPage"
@@ -10,6 +11,7 @@ import { useAuth } from "./lib/auth"
 import { puede } from "./lib/permissions"
 import { AsistentePage } from "./pages/AsistentePage"
 import { AuditoriaPage } from "./pages/AuditoriaPage"
+import { CeparioPage } from "./pages/CeparioPage"
 import { ConsumoPage } from "./pages/ConsumoPage"
 import { DashboardPage } from "./pages/DashboardPage"
 import { EquipamientoPage } from "./pages/EquipamientoPage"
@@ -91,6 +93,14 @@ export function App() {
 
   return (
     <Routes>
+      {/* Cepario: marco propio (CeparioShell), fuera del AppShell del inventario. */}
+      <Route
+        path="cepario"
+        element={puede(usuario, "ver_pagina_cepario") ? <CeparioShell /> : fallbackElement}
+      >
+        <Route index element={<CeparioPage />} />
+      </Route>
+
       <Route element={<AppShell />}>
         <Route
           path="reactivos"

@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from "react"
+import { FormEvent, lazy, Suspense, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ArrowDownCircle, ArrowUpCircle, ListFilter, RotateCcw, SlidersHorizontal } from "lucide-react"
 import { Link } from "react-router-dom"
@@ -11,6 +11,11 @@ import { Label } from "../components/ui/label"
 import { api, type Movimiento, type Reactivo } from "../lib/api"
 import { useAuth } from "../lib/auth"
 import { cn } from "../lib/utils"
+
+// ApexCharts is lazy so it doesn't weigh on the movements page until rendered.
+const StackedBarChart = lazy(() => import("../Graphs/StackedBarChart").then((module) => ({ default: module.StackedBarChart })))
+// Type-only import is elided at build, so it doesn't pull the chart eagerly.
+import type { StackedSeries } from "../Graphs/StackedBarChart"
 
 const reactivosVacios: Reactivo[] = []
 const movimientosVacios: Movimiento[] = []
@@ -46,6 +51,32 @@ function formatDateTime(value: string | null | undefined) {
 
 function formatNumber(value: number | null | undefined) {
   return new Intl.NumberFormat("es-AR", { maximumFractionDigits: 2 }).format(value ?? 0)
+}
+
+function mesKey(value: string | null | undefined) {
+  if (!value) {
+    return null
+  }
+  const date = new Date(value.includes("T") ? value : value.replace(" ", "T"))
+  if (Number.isNaN(date.getTime())) {
+    return null
+  }
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+}
+
+function mesLabel(key: string) {
+  const [year, month] = key.split("-").map(Number)
+  return new Intl.DateTimeFormat("es-AR", { month: "short", year: "2-digit" }).format(new Date(year, month - 1, 1))
+}
+
+function formatRangoCorto(desde: string, hasta: string) {
+  const fmt = new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "short" })
+  const inicio = new Date(`${desde}T00:00:00`)
+  const fin = new Date(`${hasta}T00:00:00`)
+  if (Number.isNaN(inicio.getTime()) || Number.isNaN(fin.getTime())) {
+    return ""
+  }
+  return `${fmt.format(inicio)} – ${fmt.format(fin)}`
 }
 
 function tipoBadgeClasses(tipo: Movimiento["tipo"]) {
@@ -116,6 +147,58 @@ export function MovimientosPage() {
     )
   }, [movimientos])
 
+  // Monthly movement counts split by tipo (counts, not quantity — units differ across reactivos).
+  const porMes = useMemo(() => {
+    const buckets = new Map<string, { entrada: number; salida: number; ajuste: number }>()
+    for (const movimiento of movimientos) {
+      const key = mesKey(movimiento.fecha)
+      if (!key) {
+        continue
+      }
+      const bucket = buckets.get(key) ?? { entrada: 0, salida: 0, ajuste: 0 }
+      bucket[movimiento.tipo] += 1
+      buckets.set(key, bucket)
+    }
+    const keys = [...buckets.keys()].sort()
+    return {
+      categorias: keys.map(mesLabel),
+      entradas: keys.map((key) => buckets.get(key)!.entrada),
+      salidas: keys.map((key) => buckets.get(key)!.salida),
+      ajustes: keys.map((key) => buckets.get(key)!.ajuste),
+    }
+  }, [movimientos])
+
+  // Soft tokens instead of the loud Carbon brights — these match the KPI cards and
+  // theme in dark mode. Chart resolves the var() to a concrete hex at render time.
+  const resumenSeries = [
+    { name: t("mov.tEntradas"), data: porMes.entradas, color: "var(--cds-support-success)" },
+    { name: t("mov.tSalidas"), data: porMes.salidas, color: "var(--cds-support-error)" },
+    { name: t("mov.tAjustes"), data: porMes.ajustes, color: "var(--lab-warm)" },
+  ]
+
+  // Period-derived figures for the KPI cards and the breakdown panel. These count
+  // movements (events), not stock units — quantities can't be summed across reagents
+  // with different units, so "neto" is a net of movement events, not a stock balance.
+  const neto = resumen.entrada - resumen.salida
+  const dias = useMemo(() => {
+    const inicio = new Date(`${filtrosAplicados.desde}T00:00:00`)
+    const fin = new Date(`${filtrosAplicados.hasta}T00:00:00`)
+    if (Number.isNaN(inicio.getTime()) || Number.isNaN(fin.getTime())) {
+      return 0
+    }
+    return Math.max(1, Math.round((fin.getTime() - inicio.getTime()) / 86_400_000) + 1)
+  }, [filtrosAplicados.desde, filtrosAplicados.hasta])
+  const rangoCorto = formatRangoCorto(filtrosAplicados.desde, filtrosAplicados.hasta)
+  const pctDe = (valor: number) => (resumen.total ? Math.round((valor / resumen.total) * 100) : 0)
+  const kpis = [
+    { key: "total", label: t("mov.total"), value: resumen.total, accent: "var(--lab-blue)", valueClass: "", dot: null as string | null, sub: rangoCorto as string | null, pct: null as number | null },
+    { key: "entrada", label: t("mov.tEntradas"), value: resumen.entrada, accent: "var(--cds-support-success)", valueClass: "text-cds-supportSuccess", dot: "var(--cds-support-success)" as string | null, sub: null as string | null, pct: pctDe(resumen.entrada) as number | null },
+    { key: "salida", label: t("mov.tSalidas"), value: resumen.salida, accent: "var(--cds-support-error)", valueClass: "text-cds-supportError", dot: "var(--cds-support-error)" as string | null, sub: null as string | null, pct: pctDe(resumen.salida) as number | null },
+    { key: "ajuste", label: t("mov.tAjustes"), value: resumen.ajuste, accent: "var(--lab-warm)", valueClass: "text-lab-warmFg", dot: "var(--lab-warm)" as string | null, sub: null as string | null, pct: pctDe(resumen.ajuste) as number | null },
+  ]
+  // Mono micro-label shared by the filter fields, matching the KPI cards' look.
+  const microLabel = "mb-1.5 font-mono text-[10px] uppercase tracking-[0.07em]"
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const limiteNumero = Number(limite)
@@ -154,29 +237,44 @@ export function MovimientosPage() {
         plain
       />
 
-      <div className="mb-4 grid gap-px bg-cds-borderSubtle md:grid-cols-4">
-        <Metric label={t("mov.total")} value={String(resumen.total)} />
-        <Metric label={t("mov.tEntradas")} value={String(resumen.entrada)} tone="success" />
-        <Metric label={t("mov.tSalidas")} value={String(resumen.salida)} tone="error" />
-        <Metric label={t("mov.tAjustes")} value={String(resumen.ajuste)} tone="warning" />
+      <div className="mb-4 grid grid-cols-1 gap-3.5 sm:grid-cols-2 md:grid-cols-4">
+        {kpis.map((kpi) => (
+          <article
+            key={kpi.key}
+            className="border border-cds-borderSubtle bg-cds-layer01 p-[18px_20px]"
+            style={{ boxShadow: `inset 3px 0 0 ${kpi.accent}` }}
+          >
+            <div className="flex items-center gap-2">
+              {kpi.dot ? <span className="h-[9px] w-[9px] shrink-0 rounded-full" style={{ background: kpi.dot }} /> : null}
+              <span className="font-mono text-[10.5px] uppercase tracking-[0.09em] text-cds-textSecondary">{kpi.label}</span>
+            </div>
+            <div className={cn("mt-2.5 font-mono text-[34px] leading-none", kpi.valueClass)}>{kpi.value}</div>
+            {kpi.sub ? <div className="mt-2 text-xs text-cds-textSecondary">{kpi.sub}</div> : null}
+            {kpi.pct != null ? (
+              <div className="mt-[11px] h-1 overflow-hidden rounded-[3px] bg-cds-borderSubtle">
+                <div className="h-full rounded-[3px]" style={{ width: `${kpi.pct}%`, background: kpi.accent }} />
+              </div>
+            ) : null}
+          </article>
+        ))}
       </div>
 
-      <form className="mb-6 bg-cds-layer01 p-4" onSubmit={handleSubmit}>
-        <div className="mb-5 flex items-center gap-3">
-          <ListFilter size={20} aria-hidden="true" />
-          <h2 className="text-[24px] leading-[1.33]">{t("mov.filtros")}</h2>
+      <form className="mb-6 border border-cds-borderSubtle bg-cds-layer01 p-4" onSubmit={handleSubmit}>
+        <div className="mb-4 flex items-center gap-2">
+          <ListFilter size={16} aria-hidden="true" className="text-cds-textSecondary" />
+          <h2 className="text-sm font-semibold leading-tight">{t("mov.filtros")}</h2>
         </div>
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-5">
-          <label className="block">
-            <Label className="mb-2" htmlFor="mov_desde">{t("mov.fDesde")}</Label>
+        <div className="flex flex-wrap items-end gap-3.5">
+          <label className="block w-[150px]">
+            <Label className={microLabel} htmlFor="mov_desde">{t("mov.fDesde")}</Label>
             <Input id="mov_desde" type="date" value={desde} onChange={(event) => setDesde(event.target.value)} />
           </label>
-          <label className="block">
-            <Label className="mb-2" htmlFor="mov_hasta">{t("mov.fHasta")}</Label>
+          <label className="block w-[150px]">
+            <Label className={microLabel} htmlFor="mov_hasta">{t("mov.fHasta")}</Label>
             <Input id="mov_hasta" type="date" value={hasta} onChange={(event) => setHasta(event.target.value)} />
           </label>
-          <label className="block">
-            <Label className="mb-2" htmlFor="mov_tipo">{t("mov.fTipo")}</Label>
+          <label className="block w-[150px]">
+            <Label className={microLabel} htmlFor="mov_tipo">{t("mov.fTipo")}</Label>
             <select
               id="mov_tipo"
               className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
@@ -190,8 +288,8 @@ export function MovimientosPage() {
               ))}
             </select>
           </label>
-          <label className="block">
-            <Label className="mb-2" htmlFor="mov_reactivo">{t("mov.fReactivo")}</Label>
+          <label className="block w-[180px]">
+            <Label className={microLabel} htmlFor="mov_reactivo">{t("mov.fReactivo")}</Label>
             <select
               id="mov_reactivo"
               className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
@@ -206,8 +304,8 @@ export function MovimientosPage() {
               ))}
             </select>
           </label>
-          <label className="block">
-            <Label className="mb-2" htmlFor="mov_limite">{t("mov.fLimite")}</Label>
+          <label className="block w-[96px]">
+            <Label className={microLabel} htmlFor="mov_limite">{t("mov.fLimite")}</Label>
             <Input
               id="mov_limite"
               value={limite}
@@ -215,15 +313,15 @@ export function MovimientosPage() {
               inputMode="numeric"
             />
           </label>
-        </div>
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-          <Button type="submit" disabled={movimientosQuery.isFetching}>
-            {movimientosQuery.isFetching ? t("mov.aplicando") : t("mov.aplicarFiltros")}
-          </Button>
-          <Button type="button" variant="ghost" onClick={limpiarFiltros}>
-            <RotateCcw size={18} aria-hidden="true" />
-            {t("mov.limpiar")}
-          </Button>
+          <div className="flex w-full items-center gap-2 pt-1 sm:ml-auto sm:w-auto sm:pt-0">
+            <Button type="submit" size="compact" className="px-5" disabled={movimientosQuery.isFetching}>
+              {movimientosQuery.isFetching ? t("mov.aplicando") : t("mov.aplicarFiltros")}
+            </Button>
+            <Button type="button" variant="ghost" size="compact" onClick={limpiarFiltros}>
+              <RotateCcw size={16} aria-hidden="true" />
+              {t("mov.limpiar")}
+            </Button>
+          </div>
         </div>
       </form>
 
@@ -233,26 +331,73 @@ export function MovimientosPage() {
         </div>
       ) : null}
 
+      {!movimientosQuery.isLoading && movimientos.length ? (
+        <ResumenPanel categorias={porMes.categorias} series={resumenSeries} resumen={resumen} neto={neto} dias={dias} />
+      ) : null}
+
       <MovimientosTable movimientos={movimientos} isLoading={movimientosQuery.isLoading} />
     </section>
   )
 }
 
-function Metric({ label, value, tone }: { label: string; value: string; tone?: "success" | "error" | "warning" }) {
+function ResumenPanel({
+  categorias,
+  series,
+  resumen,
+  neto,
+  dias,
+}: {
+  categorias: string[]
+  series: StackedSeries[]
+  resumen: { total: number; entrada: number; salida: number; ajuste: number }
+  neto: number
+  dias: number
+}) {
+  const { t } = useTranslation()
+  const total = resumen.total
+  const pct = (valor: number) => (total ? Math.round((valor / total) * 100) : 0)
+  const filas = [
+    { key: "entrada", label: t("mov.tEntradas"), value: resumen.entrada, color: "var(--cds-support-success)" },
+    { key: "salida", label: t("mov.tSalidas"), value: resumen.salida, color: "var(--cds-support-error)" },
+    { key: "ajuste", label: t("mov.tAjustes"), value: resumen.ajuste, color: "var(--lab-warm)" },
+  ]
+  const netoLabel = neto > 0 ? `+${neto}` : String(neto)
+  const netoClass = neto > 0 ? "text-cds-supportSuccess" : neto < 0 ? "text-cds-supportError" : "text-cds-textSecondary"
+
   return (
-    <article className="bg-cds-layer01 p-4">
-      <div className="text-xs tracking-[0.32px] text-cds-textSecondary">{label}</div>
-      <div
-        className={cn(
-          "mt-3 text-[24px] leading-[1.33]",
-          tone === "success" && "text-cds-supportSuccess",
-          tone === "error" && "text-cds-supportError",
-          tone === "warning" && "text-lab-warmFg",
-        )}
-      >
-        {value}
+    <div className="mb-4 grid grid-cols-1 overflow-hidden border border-cds-borderSubtle bg-cds-layer01 lg:grid-cols-[1.75fr_1fr]">
+      <div className="p-6">
+        <div className="text-[15px] font-bold leading-tight tracking-[-0.01em]">{t("mov.resumenTitulo")}</div>
+        <div className="mt-1 text-xs text-cds-textSecondary">{t("mov.resumenSubtitulo")}</div>
+        <Suspense fallback={<div className="mt-2 h-[320px] animate-pulse bg-cds-field" />}>
+          <StackedBarChart categorias={categorias} series={series} height={320} totalLabels exportFilename="movimientos-por-mes" />
+        </Suspense>
       </div>
-    </article>
+      <div className="border-t border-cds-borderSubtle p-6 lg:border-l lg:border-t-0">
+        <div className="mb-5 font-mono text-[10.5px] uppercase tracking-[0.09em] text-cds-textSecondary">{t("mov.desglose")}</div>
+        {filas.map((fila) => (
+          <div key={fila.key} className="mb-[18px]">
+            <div className="mb-2 flex items-baseline justify-between">
+              <span className="flex items-center gap-2 text-sm">
+                <span className="h-[9px] w-[9px] shrink-0 rounded-full" style={{ background: fila.color }} />
+                {fila.label}
+              </span>
+              <span className="font-mono text-sm">{fila.value}</span>
+            </div>
+            <div className="h-[5px] overflow-hidden rounded-[3px] bg-cds-borderSubtle">
+              <div className="h-full rounded-[3px]" style={{ width: `${pct(fila.value)}%`, background: fila.color }} />
+            </div>
+          </div>
+        ))}
+        <div className="border-t border-cds-borderSubtle pt-[18px]">
+          <div className="flex items-baseline justify-between">
+            <span className="text-[13px] text-cds-textSecondary">{t("mov.neto")}</span>
+            <span className={cn("font-mono text-lg", netoClass)}>{netoLabel}</span>
+          </div>
+          <div className="mt-2 text-xs text-cds-textSecondary">{t("mov.netoAyuda", { n: total, d: dias })}</div>
+        </div>
+      </div>
+    </div>
   )
 }
 

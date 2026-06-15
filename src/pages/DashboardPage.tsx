@@ -1,12 +1,13 @@
 import { useMemo } from "react"
 import type { ReactNode } from "react"
-import { useQuery } from "@tanstack/react-query"
-import { AlertTriangle, ArrowDownCircle, ArrowUpCircle, FileSignature, SlidersHorizontal } from "lucide-react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { AlertTriangle, ArrowDownCircle, ArrowUpCircle, BrainCircuit, ClipboardPlus, FileSignature, ShoppingCart, SlidersHorizontal } from "lucide-react"
 import { Link } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 
-import { api, type DashboardSeriePunto } from "../lib/api"
+import { api, type DashboardSeriePunto, type ReposicionRecomendacion } from "../lib/api"
 import { useAuth } from "../lib/auth"
+import { Button } from "../components/ui/button"
 import { puede } from "../lib/permissions"
 import { cn } from "../lib/utils"
 
@@ -36,6 +37,23 @@ function formatValue(value: unknown) {
     return "0"
   }
   return String(value)
+}
+
+function formatDateTime(value: unknown) {
+  if (typeof value !== "string" || !value) {
+    return "—"
+  }
+  const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(value)
+  const normalized = value.includes("T") ? value : value.replace(" ", "T")
+  const isoValue = hasTimezone ? normalized : `${normalized}Z`
+  const date = new Date(isoValue)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return new Intl.DateTimeFormat("es-AR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(date)
 }
 
 function numberFrom(value: unknown) {
@@ -168,6 +186,23 @@ function tipoBadgeClasses(tipo: "entrada" | "salida" | "ajuste" | null) {
   return "bg-lab-warmTint text-lab-warmFg ring-1 ring-lab-warm/40"
 }
 
+function reposicionToneClasses(nivel: string) {
+  if (nivel === "urgente") {
+    return "bg-lab-critTint text-cds-supportError ring-1 ring-cds-supportError/40"
+  }
+  if (nivel === "atencion") {
+    return "bg-lab-warmTint text-lab-warmFg ring-1 ring-lab-warm/40"
+  }
+  return "bg-lab-sageBg text-cds-supportSuccess ring-1 ring-cds-supportSuccess/40"
+}
+
+function diasStockLabel(value: number | null | undefined, t: ReturnType<typeof useTranslation>["t"]) {
+  if (value === null || value === undefined) {
+    return t("dashboard.reposicionSinConsumo")
+  }
+  return t("dashboard.reposicionDiasStock", { dias: formatValue(value) })
+}
+
 function TipoIcon({ tipo }: { tipo: "entrada" | "salida" | "ajuste" | null }) {
   if (tipo === "entrada") {
     return <ArrowUpCircle size={14} aria-hidden="true" />
@@ -207,6 +242,7 @@ function KpiTile({
 export function DashboardPage() {
   const { token, usuario } = useAuth()
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
   const dashboardQuery = useQuery({
     queryKey: ["dashboard"],
     queryFn: () => api.dashboard(token!),
@@ -217,6 +253,17 @@ export function DashboardPage() {
     queryFn: () => api.dashboardSeries(token!, 30),
     enabled: Boolean(token),
   })
+  const reposicionQuery = useQuery({
+    queryKey: ["dashboard-reposicion", 30, 10],
+    queryFn: () => api.dashboardReposicion(token!, 30, 10),
+    enabled: Boolean(token),
+  })
+  const crearTareaReposicionMutation = useMutation({
+    mutationFn: (reactivoId: number) => api.crearTareaReposicion(token!, reactivoId, 30),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["tareas"] })
+    },
+  })
 
   const data = dashboardQuery.data ?? {}
   const series = dashboardSeriesQuery.data?.puntos ?? emptySeries
@@ -226,7 +273,9 @@ export function DashboardPage() {
   const porVencer30 = data.por_vencer_30_dias ?? emptyRows
   const movimientosRaw = data.ultimos_movimientos ?? data.movimientos_recientes
   const movimientos = Array.isArray(movimientosRaw) ? movimientosRaw : emptyRows
+  const reposicion = reposicionQuery.data?.recomendaciones ?? []
   const puedeVerValor = puede(usuario, "ver_valor_inventario")
+  const puedeCrearTarea = puede(usuario, "crear_tarea")
   const loading = dashboardQuery.isLoading
 
   const proximosAVencer = contadores.alertas_por_vencer_30d ?? porVencer30.length
@@ -314,6 +363,27 @@ export function DashboardPage() {
     return out
   }, [porVencer30, stockBajo, vencidos, t])
 
+  // "Días hasta quiebre": reposición rows ranked by runway (soonest first), colored by nivel.
+  const quiebreData = useMemo(() => {
+    const horizonte = reposicionQuery.data?.parametros.dias ?? 30
+    const conDias = reposicion.filter((row) => row.dias_stock_estimado != null)
+    const maxDias = Math.max(horizonte, ...conDias.map((row) => row.dias_stock_estimado ?? 0), 1)
+    return [...conDias]
+      .sort((a, b) => (a.dias_stock_estimado ?? 0) - (b.dias_stock_estimado ?? 0))
+      .slice(0, 8)
+      .map((row) => {
+        const dias = row.dias_stock_estimado ?? 0
+        const color = row.nivel === "urgente" ? palette.crit : row.nivel === "atencion" ? palette.warmFg : palette.sage
+        return {
+          id: row.reactivo_id,
+          nombre: row.reactivo_nombre,
+          pct: Math.max(4, Math.min(100, (dias / maxDias) * 100)),
+          label: t("dashboard.diasCorto", { dias: formatValue(dias) }),
+          color,
+        }
+      })
+  }, [reposicion, reposicionQuery.data, t])
+
   const today = new Intl.DateTimeFormat("es-AR", { day: "2-digit", month: "short", year: "2-digit" }).format(new Date())
 
   return (
@@ -370,46 +440,165 @@ export function DashboardPage() {
         </div>
 
         {/* KPIs */}
-        <div className="grid grid-cols-2 gap-px bg-cds-layer02 xl:grid-cols-4">
-          {kpis.map((k) => (
-            <KpiTile
-              key={k.id}
-              to={k.to}
-              className={
-                k.tone === "alert"
-                  ? "bg-lab-warmTint p-4"
-                  : k.tone === "crit"
-                  ? "bg-lab-critTint p-4"
-                  : "bg-cds-background p-4"
-              }
-            >
-              <div className="font-mono text-[10px] uppercase tracking-[0.32px] text-cds-textSecondary">{k.label}</div>
-              <div className="mt-2 flex items-baseline gap-2 font-mono leading-none">
-                <span
-                  className="text-[40px]"
-                  style={{
-                    color: k.tone === "alert" ? palette.warmFg : k.tone === "crit" ? palette.crit : palette.text,
-                  }}
-                >
-                  {loading ? "…" : formatValue(k.value)}
-                </span>
-                {!loading && k.delta !== null ? (
+        <div className="grid grid-cols-2 gap-3.5 xl:grid-cols-4">
+          {kpis.map((k) => {
+            // Left accent encodes the KPI's theme color (matches its sparkline); alert
+            // KPIs also keep a soft tint so problems still pop on the cockpit (option B).
+            const cardClass =
+              k.tone === "crit"
+                ? "border border-cds-borderSubtle bg-lab-critTint p-[18px_20px] shadow-[inset_3px_0_0_var(--cds-support-error)]"
+                : k.tone === "alert"
+                ? "border border-cds-borderSubtle bg-lab-warmTint p-[18px_20px] shadow-[inset_3px_0_0_var(--lab-warm)]"
+                : "border border-cds-borderSubtle bg-cds-layer01 p-[18px_20px] shadow-[inset_3px_0_0_var(--lab-blue)]"
+            return (
+              <KpiTile key={k.id} to={k.to} className={cardClass}>
+                <div className="font-mono text-[10.5px] uppercase tracking-[0.09em] text-cds-textSecondary">{k.label}</div>
+                <div className="mt-2.5 flex items-baseline gap-2 font-mono leading-none">
                   <span
-                    className="text-xs"
+                    className="text-[34px]"
                     style={{
-                      color: k.delta > 0 ? palette.sage : k.delta < 0 ? palette.crit : palette.text2,
+                      color: k.tone === "alert" ? palette.warmFg : k.tone === "crit" ? palette.crit : palette.text,
                     }}
                   >
-                    {k.delta > 0 ? "+" : ""}
-                    {formatValue(k.delta)}
+                    {loading ? "…" : formatValue(k.value)}
                   </span>
-                ) : null}
-              </div>
-              <Sparkline points={k.spark} color={k.sparkColor} />
-              <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.32px] text-cds-textSecondary">{k.status}</div>
-            </KpiTile>
-          ))}
+                  {!loading && k.delta !== null ? (
+                    <span
+                      className="text-xs"
+                      style={{
+                        color: k.delta > 0 ? palette.sage : k.delta < 0 ? palette.crit : palette.text2,
+                      }}
+                    >
+                      {k.delta > 0 ? "+" : ""}
+                      {formatValue(k.delta)}
+                    </span>
+                  ) : null}
+                </div>
+                <Sparkline points={k.spark} color={k.sparkColor} />
+                <div className="mt-1 font-mono text-[10.5px] uppercase tracking-[0.09em] text-cds-textSecondary">{k.status}</div>
+              </KpiTile>
+            )
+          })}
         </div>
+
+        {/* Reposition suggestions */}
+        <section className="bg-cds-background p-4">
+          <header className="mb-3 flex flex-wrap items-center justify-between gap-3 font-mono text-[11px] uppercase tracking-[0.32px] text-cds-textSecondary">
+            <span className="inline-flex items-center gap-2">
+              <BrainCircuit size={15} aria-hidden="true" />
+              {t("dashboard.reposicionTitulo")}
+            </span>
+            <span>{t("dashboard.reposicionVentana", { dias: reposicionQuery.data?.parametros.dias ?? 30 })}</span>
+          </header>
+          {reposicionQuery.isError ? (
+            <div className="border-l-2 border-cds-supportError bg-lab-critTint px-4 py-3 text-sm">
+              {t("dashboard.reposicionError")}
+            </div>
+          ) : reposicion.length ? (
+            <>
+              {crearTareaReposicionMutation.isSuccess ? (
+                <div className="mb-3 border-l-2 border-cds-supportSuccess bg-lab-sageBg px-4 py-3 text-sm">
+                  <span>
+                    {crearTareaReposicionMutation.data?.creada === false
+                      ? t("dashboard.reposicionTareaExistente")
+                      : t("dashboard.reposicionTareaCreada")}
+                  </span>
+                  {crearTareaReposicionMutation.data?.tarea.id ? (
+                    <Link
+                      className="ml-2 text-cds-linkPrimary hover:underline"
+                      to={`/tareas?tarea_id=${crearTareaReposicionMutation.data.tarea.id}`}
+                    >
+                      {t("dashboard.reposicionVerTarea")}
+                    </Link>
+                  ) : null}
+                </div>
+              ) : null}
+              {crearTareaReposicionMutation.isError ? (
+                <div className="mb-3 border-l-2 border-cds-supportError bg-lab-critTint px-4 py-3 text-sm">
+                  {t("dashboard.reposicionTareaError")}
+                </div>
+              ) : null}
+              {quiebreData.length ? (
+                <div className="mb-4 border border-cds-borderSubtle bg-cds-layer01 p-4">
+                  <div className="mb-3 font-mono text-[11px] uppercase tracking-[0.32px] text-cds-textSecondary">
+                    {t("dashboard.quiebreTitulo")}
+                  </div>
+                  <ul className="space-y-2">
+                    {quiebreData.map((row) => (
+                      <li key={row.id} className="flex items-center gap-3">
+                        <span className="w-36 shrink-0 truncate text-sm text-cds-textPrimary sm:w-44">{row.nombre}</span>
+                        <span className="relative h-5 flex-1 bg-cds-field">
+                          <span className="absolute inset-y-0 left-0 block" style={{ width: `${row.pct}%`, backgroundColor: row.color }} />
+                        </span>
+                        <span className="w-10 shrink-0 text-right font-mono text-xs" style={{ color: row.color }}>{row.label}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              <div className="grid gap-2 lg:grid-cols-2 xl:grid-cols-3">
+                {reposicion.slice(0, 6).map((item: ReposicionRecomendacion) => (
+                  <article
+                    key={item.reactivo_id}
+                    className="border border-cds-borderSubtle bg-cds-layer01 p-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <Link
+                          to={`/reactivos?reactivo_id=${item.reactivo_id}`}
+                          className="block truncate text-sm font-medium text-cds-textPrimary hover:text-cds-linkPrimary hover:underline"
+                        >
+                          {item.reactivo_nombre}
+                        </Link>
+                        <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.32px] text-cds-textSecondary">
+                          {diasStockLabel(item.dias_stock_estimado, t)}
+                        </div>
+                      </div>
+                      <span className={cn("shrink-0 rounded-full px-2.5 py-1 text-xs font-medium tracking-[0.16px]", reposicionToneClasses(item.nivel))}>
+                        {t(`dashboard.reposicionNivel.${item.nivel}`, { defaultValue: item.nivel })}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-3 gap-2 font-mono text-[11px]">
+                      <div>
+                        <div className="text-cds-textSecondary">{t("dashboard.reposicionStock")}</div>
+                        <div className="mt-1 text-cds-textPrimary">{formatValue(item.stock_actual)} {item.unidad}</div>
+                      </div>
+                      <div>
+                        <div className="text-cds-textSecondary">{t("dashboard.reposicionConsumo")}</div>
+                        <div className="mt-1 text-cds-textPrimary">{formatValue(item.consumo_promedio_diario)} {item.unidad}/d</div>
+                      </div>
+                      <div>
+                        <div className="text-cds-textSecondary">{t("dashboard.reposicionSugerido")}</div>
+                        <div className="mt-1 text-cds-textPrimary">{formatValue(item.cantidad_sugerida)} {item.unidad}</div>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex items-center gap-2 text-xs text-cds-textSecondary">
+                      <ShoppingCart size={13} aria-hidden="true" />
+                      <span className="truncate">{item.proveedor_reciente || t("dashboard.reposicionSinProveedor")}</span>
+                    </div>
+                    {puedeCrearTarea ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="compact"
+                        className="mt-3 h-8 w-full justify-center gap-2"
+                        disabled={crearTareaReposicionMutation.isPending}
+                        onClick={() => crearTareaReposicionMutation.mutate(item.reactivo_id)}
+                      >
+                        <ClipboardPlus size={14} aria-hidden="true" />
+                        {crearTareaReposicionMutation.isPending ? t("dashboard.reposicionCreandoTarea") : t("dashboard.reposicionCrearTarea")}
+                      </Button>
+                    ) : null}
+                  </article>
+                ))}
+              </div>
+            </>
+          ) : reposicionQuery.isLoading ? (
+            <EmptyChart text={t("dashboard.reposicionCargando")} />
+          ) : (
+            <EmptyChart text={t("dashboard.reposicionVacia")} />
+          )}
+        </section>
 
         {/* panels */}
         <div className="grid gap-px bg-cds-layer02 xl:grid-cols-[1.4fr_1fr]">
@@ -437,7 +626,7 @@ export function DashboardPage() {
                     const tipo = tipoMovimiento(m.tipo ?? m.movimiento)
                     return (
                       <tr key={i} className="border-b border-cds-layer01 last:border-b-0">
-                        <td className="py-2 text-cds-textSecondary">{String(m.fecha ?? m.creado_en ?? "—").slice(0, 16)}</td>
+                        <td className="py-2 text-cds-textSecondary">{formatDateTime(m.fecha ?? m.creado_en)}</td>
                         <td className="py-2">
                           <span
                             className={cn(

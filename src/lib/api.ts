@@ -123,6 +123,70 @@ export type OrganizacionCrear = {
   modulos_habilitados?: string[]
 }
 
+export type AuthEvento = {
+  id: number
+  fecha: string
+  evento: "login_success" | "login_failed" | "logout"
+  usuario_id?: number | null
+  organizacion_id?: number | null
+  organizacion_nombre?: string | null
+  usuario_nombre?: string | null
+  email?: string | null
+  exito: number | boolean
+  motivo?: string | null
+  ip?: string | null
+  user_agent?: string | null
+}
+
+export type AuthEventosResponse = {
+  eventos: AuthEvento[]
+}
+
+export type AsistenteEventoOwner = {
+  id: number
+  fecha: string
+  origen?: string
+  usuario_id?: number | null
+  usuario_nombre?: string | null
+  organizacion_id: number
+  organizacion_nombre?: string | null
+  modelo?: string | null
+  operacion?: string | null
+  entrada_resumen?: string | null
+  pregunta?: string | null
+  modo_respuesta: string
+  detalle?: string | null
+  tools_count: number
+  tools_nombres?: string | null
+  tokens_input: number
+  tokens_output: number
+  tokens_cache_read: number
+  costo_estimado_usd: number
+  duracion_ms: number
+  exito: number | boolean
+  error?: string | null
+}
+
+export type AsistenteEventosResponse = {
+  eventos: AsistenteEventoOwner[]
+}
+
+export type AsistenteResumenOwner = {
+  total: {
+    total: number
+    exitosos: number
+    errores: number
+    tokens_input: number
+    tokens_output: number
+    tokens_cache_read: number
+    costo_estimado_usd: number
+    duracion_ms_promedio: number
+  }
+  por_origen?: Array<{ origen: string; total: number; costo_estimado_usd: number }>
+  por_modo: Array<{ modo_respuesta: string; total: number }>
+  por_dia: Array<{ dia: string; total: number; costo_estimado_usd: number }>
+}
+
 export type DashboardResumen = {
   contadores?: {
     total_reactivos?: number
@@ -154,6 +218,46 @@ export type DashboardSeriePunto = {
 export type DashboardSeries = {
   dias: number
   puntos: DashboardSeriePunto[]
+}
+
+export type ReposicionRecomendacion = {
+  reactivo_id: number
+  reactivo_nombre: string
+  unidad: string
+  ubicacion?: string | null
+  categoria?: string | null
+  nivel: "urgente" | "atencion" | "planificar" | string
+  motivos: string[]
+  stock_actual: number
+  stock_minimo: number
+  consumo_total_periodo: number
+  consumo_promedio_diario: number
+  dias_stock_estimado?: number | null
+  movimientos_salida: number
+  stock_vence_30d: number
+  proximo_vencimiento?: string | null
+  cantidad_sugerida: number
+  proveedor_reciente?: string | null
+  costo_reciente?: number | null
+  fecha_proveedor_reciente?: string | null
+}
+
+export type DashboardReposicion = {
+  parametros: {
+    dias: number
+    umbral_urgente: number
+    limite: number
+    desde: string
+    hasta: string
+  }
+  recomendaciones: ReposicionRecomendacion[]
+  total: number
+}
+
+export type ReposicionTareaResponse = {
+  tarea: Tarea
+  recomendacion: ReposicionRecomendacion
+  creada: boolean
 }
 
 export type Reactivo = {
@@ -266,8 +370,10 @@ export type Movimiento = {
   motivo?: string | null
   usuario_id: number
   usuario_nombre: string
+  usuario_sector?: string | null
   reactivo_id: number
   reactivo_nombre: string
+  reactivo_categoria?: string | null
   unidad: string
   lote_id: number
   codigo_interno: string
@@ -280,6 +386,7 @@ export type MovimientosFiltros = {
   hasta?: string
   tipo?: string
   reactivo_id?: number
+  categoria?: string
 }
 
 export type ConsumoCrear = {
@@ -439,6 +546,25 @@ export type ContactoCrear = {
 export type AsistenteTurnoHistorial = {
   role: "user" | "assistant"
   content: string
+  contexto?: AsistenteContexto | null
+}
+
+export type AsistenteContexto = {
+  tipo: string
+  reactivo_id?: number
+  reactivo_nombre?: string
+  codigo_interno?: string
+  desde?: string | null
+  hasta?: string | null
+  periodo_label?: string | null
+  dias?: number
+  [key: string]: unknown
+}
+
+export type AsistenteModoRespuesta = {
+  tipo: "fast_path" | "llm_tools" | "llm_general" | "error" | string
+  detalle?: string | null
+  tools?: number
 }
 
 export type AsistenteToolUsada = {
@@ -454,6 +580,8 @@ export type AsistenteToolUsada = {
 export type AsistenteRespuesta = {
   respuesta: string
   tools_usadas: AsistenteToolUsada[]
+  contexto?: AsistenteContexto | null
+  modo_respuesta?: AsistenteModoRespuesta | null
 }
 
 export type Equipamiento = {
@@ -673,6 +801,197 @@ export type ProtocoloPlantillaCrear = {
   usuario_id: number
 }
 
+// ── Cepario (registro biológico) ──
+export type CeparioTipo = "microorganismo" | "parte_genetica"
+export type CeparioEstado = "aislado" | "cepa" | "archivado" | "activa"
+export type CeparioViabilidad = "viable" | "requiere_repique" | "agotado_critico"
+export type GrupoOperativo = "H" | "U" | "P" | "M" | "?"
+
+export type EntidadBiologica = {
+  id: number
+  tipo: CeparioTipo
+  codigo: string | null
+  codigo_temporal: string | null
+  nombre: string | null
+  estado: CeparioEstado
+  nivel_bioseguridad?: string | null
+  grupo_operativo?: GrupoOperativo | null
+  taxon_presuntivo?: string | null
+  categoria?: string | null
+  resistencia?: string | null
+  concentracion_ng_ul?: number | null
+  nro_viales_total: number
+  viabilidad_resumen: CeparioViabilidad | null
+  fecha_creacion?: string
+}
+
+export type CeparioVial = {
+  id: number
+  organizacion_id: number
+  entidad_id: number
+  codigo_interno: string
+  nro_viales_inicial: number
+  nro_viales_actual: number
+  ubicacion_freezer: string | null
+  ubicacion_caja: string | null
+  ubicacion_posicion: string | null
+  temperatura: string | null
+  crioprotectante: string | null
+  viabilidad: CeparioViabilidad | null
+  medio_repique: string | null
+  ultimo_control: string | null
+  fecha_creacion?: string
+  activo: number | boolean
+  // Presentes al resolver por QR (JOIN con la entidad dueña).
+  entidad_codigo?: string | null
+  entidad_codigo_temporal?: string | null
+  entidad_nombre?: string | null
+  entidad_tipo?: CeparioTipo
+  entidad_estado?: CeparioEstado
+}
+
+export type CeparioEvento = {
+  id: number
+  entidad_id: number
+  tipo_evento: string
+  detalle: string | null
+  usuario_id: number | null
+  usuario_nombre?: string | null
+  fecha: string
+}
+
+export type EntidadCaracterizacion = {
+  id: number
+  entidad_id: number
+  score_calculado?: number | null
+  score_confirmado?: number | null
+  decision?: string | null
+  firmado_por?: number | null
+  firmado_en?: string | null
+  enmienda_de_id?: number | null
+  usuario_id?: number | null
+  fecha_creacion?: string | null
+  // Los ~20 ensayos de la Ficha son columnas TEXT; se acceden por nombre.
+  [key: string]: unknown
+}
+
+export type EntidadDetalle = EntidadBiologica & {
+  organizacion_id: number
+  notas?: string | null
+  procedencia?: string | null
+  propietario_origen?: string | null
+  rama_aislamiento?: string | null
+  origen_muestra?: string | null
+  fecha_aislamiento?: string | null
+  medio_aislamiento?: string | null
+  backbone_chasis?: string | null
+  resistencia?: string | null
+  concentracion_ng_ul?: number | null
+  funcion_uso?: string | null
+  stock: CeparioVial[]
+  caracterizaciones: EntidadCaracterizacion[]
+  eventos: CeparioEvento[]
+  linaje: { origen: unknown[]; derivados: unknown[] }
+}
+
+// Score determinístico (Perfil ideal) — asistencia para prellenar, el científico confirma.
+export type CepScoreGate1 = { pasa: boolean; checks: Record<string, boolean> }
+export type CepScoreGate2 = { pasa: boolean; criterio: string }
+export type CepScoreAporte = { criterio: string; puntos: number }
+export type CepScoreGate3 = { puntos: number; max: number; aportes: CepScoreAporte[] }
+export type CepScoreResultado = {
+  score_calculado: number
+  detalle_gates: { gate1: CepScoreGate1; gate2: CepScoreGate2; gate3: CepScoreGate3 }
+}
+
+export type CepPreviewScorePayload = {
+  grupo_operativo: string
+  ensayos: Record<string, string>
+  medio_aislamiento?: string | null
+  origen_muestra?: string | null
+  nivel_bioseguridad?: string | null
+}
+
+export type CepCaracterizacionCrear = {
+  ensayos: Record<string, string>
+  score_calculado?: number | null
+  score_confirmado?: number | null
+  decision?: string | null
+}
+
+export type CepCaracterizacionEditar = {
+  ensayos: Record<string, string>
+  score_confirmado?: number | null
+  decision?: string | null
+}
+
+export type CeparioVocabularios = Record<string, string[]>
+
+export type CeparioEntidadFiltros = {
+  q?: string
+  tipo?: CeparioTipo
+  grupo?: string
+  categoria?: string
+  estado?: string
+}
+
+export type CepEntidadCrear = {
+  tipo: CeparioTipo
+  nombre?: string | null
+  estado?: CeparioEstado | null
+  nivel_bioseguridad?: string | null
+  propietario_origen?: string | null
+  procedencia?: string | null
+  notas?: string | null
+  grupo_operativo?: GrupoOperativo | null
+  rama_aislamiento?: string | null
+  taxon_presuntivo?: string | null
+  origen_muestra?: string | null
+  fecha_aislamiento?: string | null
+  medio_aislamiento?: string | null
+  categoria?: string | null
+  backbone_chasis?: string | null
+  resistencia?: string | null
+  concentracion_ng_ul?: number | null
+  funcion_uso?: string | null
+}
+
+export type CepStockCrear = {
+  nro_viales: number
+  ubicacion_freezer?: string | null
+  ubicacion_caja?: string | null
+  ubicacion_posicion?: string | null
+  temperatura?: string | null
+  crioprotectante?: string | null
+  viabilidad?: CeparioViabilidad
+  medio_repique?: string | null
+  ultimo_control?: string | null
+}
+
+export type CepMovimientoTipo = "descongelar" | "repique" | "descarte" | "ajuste"
+
+export type CepConsumoInventario = {
+  reactivo_id: number
+  cantidad: number
+  lote_id?: number | null
+  motivo?: string | null
+}
+
+export type CepMovimientoCrear = {
+  tipo: CepMovimientoTipo
+  cantidad: number
+  motivo?: string | null
+  consumo_inventario?: CepConsumoInventario | null
+}
+
+export type CepMovimientoResultado = {
+  movimiento_id: number
+  stock_id: number
+  tipo: string
+  cantidad: number
+  nro_viales_actual: number
+}
+
 type ApiOptions = RequestInit & {
   token?: string | null
 }
@@ -823,6 +1142,69 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  authEventos: async (
+    token: string,
+    filtros: {
+      desde?: string
+      hasta?: string
+      evento?: string
+      email?: string
+      ip?: string
+      organizacion_id?: number | null
+      limite?: number
+    } = {},
+  ) => {
+    const params = new URLSearchParams()
+    Object.entries(filtros).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && String(value).trim() !== "") {
+        params.set(key, String(value))
+      }
+    })
+    const query = params.toString()
+    return request<AuthEventosResponse>(`/owner/auth-eventos${query ? `?${query}` : ""}`, { token })
+  },
+
+  asistenteEventos: async (
+    token: string,
+    filtros: {
+      desde?: string
+      hasta?: string
+      modo_respuesta?: string
+      origen?: string
+      organizacion_id?: number | null
+      usuario_id?: number | null
+      limite?: number
+    } = {},
+  ) => {
+    const params = new URLSearchParams()
+    Object.entries(filtros).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && String(value).trim() !== "") {
+        params.set(key, String(value))
+      }
+    })
+    const query = params.toString()
+    return request<AsistenteEventosResponse>(`/owner/asistente-eventos${query ? `?${query}` : ""}`, { token })
+  },
+
+  asistenteResumen: async (
+    token: string,
+    filtros: {
+      desde?: string
+      hasta?: string
+      origen?: string
+      organizacion_id?: number | null
+    } = {},
+  ) => {
+    const params = new URLSearchParams()
+    Object.entries(filtros).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && String(value).trim() !== "") {
+        params.set(key, String(value))
+      }
+    })
+    const query = params.toString()
+    return request<AsistenteResumenOwner>(`/owner/asistente-resumen${query ? `?${query}` : ""}`, { token })
+  },
+
   tareas: async (token: string, filtros: { estado?: string; asignado_a?: number | null } = {}) => {
     const params = new URLSearchParams()
     if (filtros.estado) {
@@ -902,6 +1284,16 @@ export const api = {
 
   dashboardSeries: async (token: string, dias = 30) =>
     request<DashboardSeries>(`/dashboard/series?dias=${dias}`, { token }),
+
+  dashboardReposicion: async (token: string, dias = 30, limite = 10) =>
+    request<DashboardReposicion>(`/dashboard/reposicion?dias=${dias}&limite=${limite}`, { token }),
+
+  crearTareaReposicion: async (token: string, reactivoId: number, dias = 30, asignadoA?: number | null) =>
+    request<ReposicionTareaResponse>("/dashboard/reposicion/tarea", {
+      method: "POST",
+      token,
+      body: JSON.stringify({ reactivo_id: reactivoId, dias, asignado_a: asignadoA ?? null }),
+    }),
 
   reactivos: async (token: string) => request<Reactivo[]>("/reactivos", { token }),
 
@@ -1015,6 +1407,9 @@ export const api = {
     }
     if (filtros.reactivo_id) {
       params.set("reactivo_id", String(filtros.reactivo_id))
+    }
+    if (filtros.categoria) {
+      params.set("categoria", filtros.categoria)
     }
     const query = params.toString()
     return request<Movimiento[]>(`/movimientos${query ? `?${query}` : ""}`, { token })
@@ -1157,6 +1552,30 @@ export const api = {
     return request<AuditoriaReactivo>(`/auditoria/reactivo/${reactivoId}${query ? `?${query}` : ""}`, { token })
   },
 
+  auditoriaMovimientos: async (token: string, filtros: MovimientosFiltros = {}) => {
+    const params = new URLSearchParams()
+    if (filtros.limite) {
+      params.set("limite", String(filtros.limite))
+    }
+    if (filtros.desde) {
+      params.set("desde", filtros.desde)
+    }
+    if (filtros.hasta) {
+      params.set("hasta", filtros.hasta)
+    }
+    if (filtros.tipo) {
+      params.set("tipo", filtros.tipo)
+    }
+    if (filtros.reactivo_id) {
+      params.set("reactivo_id", String(filtros.reactivo_id))
+    }
+    if (filtros.categoria) {
+      params.set("categoria", filtros.categoria)
+    }
+    const query = params.toString()
+    return request<Movimiento[]>(`/auditoria/movimientos${query ? `?${query}` : ""}`, { token })
+  },
+
   auditoriaLotePdf: async (token: string, codigoInterno: string) =>
     requestBlob(`/auditoria/lote/${encodeURIComponent(codigoInterno)}/pdf`, { token }),
 
@@ -1218,6 +1637,112 @@ export const api = {
   desactivarProtocoloPlantilla: async (token: string, plantillaId: number) =>
     request<{ id: number; activo: boolean }>(`/protocolos/plantillas/${plantillaId}/desactivar`, {
       method: "PATCH",
+      token,
+    }),
+
+  // ── Cepario ──
+  ceparioVocabularios: async (token: string) =>
+    request<CeparioVocabularios>("/cepario/vocabularios", { token }),
+
+  ceparioEntidades: async (token: string, filtros: CeparioEntidadFiltros = {}) => {
+    const params = new URLSearchParams()
+    if (filtros.q) params.set("q", filtros.q)
+    if (filtros.tipo) params.set("tipo", filtros.tipo)
+    if (filtros.grupo) params.set("grupo", filtros.grupo)
+    if (filtros.categoria) params.set("categoria", filtros.categoria)
+    if (filtros.estado) params.set("estado", filtros.estado)
+    const query = params.toString()
+    return request<EntidadBiologica[]>(`/cepario/entidades${query ? `?${query}` : ""}`, { token })
+  },
+
+  ceparioEntidad: async (token: string, entidadId: number) =>
+    request<EntidadDetalle>(`/cepario/entidades/${entidadId}`, { token }),
+
+  crearEntidadCepario: async (token: string, data: CepEntidadCrear) =>
+    request<{ id: number; codigo: string | null; codigo_temporal: string | null; tipo: string; estado: string }>(
+      "/cepario/entidades",
+      { method: "POST", token, body: JSON.stringify(data) },
+    ),
+
+  ceparioStock: async (token: string, entidadId: number) =>
+    request<CeparioVial[]>(`/cepario/entidades/${entidadId}/stock`, { token }),
+
+  crearStockCepario: async (token: string, entidadId: number, data: CepStockCrear) =>
+    request<{ stock_id: number; codigo_interno: string }>(`/cepario/entidades/${entidadId}/stock`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(data),
+    }),
+
+  ceparioRegistrarMovimiento: async (token: string, stockId: number, data: CepMovimientoCrear) =>
+    request<CepMovimientoResultado>(`/cepario/stock/${stockId}/movimientos`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(data),
+    }),
+
+  ceparioStockPorCodigo: async (token: string, codigoInterno: string) =>
+    request<CeparioVial>(`/cepario/stock/codigo/${encodeURIComponent(codigoInterno)}`, { token }),
+
+  ceparioEtiquetasPdf: async (token: string, stockIds: number[], formato = "avery_l7160", posicionInicio = 1) =>
+    requestBlob("/cepario/stock/etiquetas-pdf", {
+      method: "POST",
+      token,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stock_ids: stockIds, formato, posicion_inicio: posicionInicio }),
+    }),
+
+  // ── Cepario US2: screening (caracterización, score, promoción, ciclo de vida) ──
+  ceparioPreviewScore: async (token: string, payload: CepPreviewScorePayload) =>
+    request<CepScoreResultado>("/cepario/caracterizaciones/preview-score", {
+      method: "POST",
+      token,
+      body: JSON.stringify(payload),
+    }),
+
+  ceparioCrearCaracterizacion: async (token: string, entidadId: number, payload: CepCaracterizacionCrear) =>
+    request<{ id: number }>(`/cepario/entidades/${entidadId}/caracterizaciones`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(payload),
+    }),
+
+  ceparioEditarCaracterizacion: async (token: string, caracId: number, payload: CepCaracterizacionEditar) =>
+    request<{ id: number; actualizado: number }>(`/cepario/caracterizaciones/${caracId}`, {
+      method: "PATCH",
+      token,
+      body: JSON.stringify(payload),
+    }),
+
+  ceparioFirmarCaracterizacion: async (token: string, caracId: number) =>
+    request<{ id: number; firmada: boolean }>(`/cepario/caracterizaciones/${caracId}/firmar`, {
+      method: "POST",
+      token,
+    }),
+
+  ceparioEnmendarCaracterizacion: async (token: string, caracId: number, payload: CepCaracterizacionEditar) =>
+    request<{ id: number; enmienda_de_id: number }>(`/cepario/caracterizaciones/${caracId}/enmienda`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(payload),
+    }),
+
+  ceparioPromover: async (token: string, entidadId: number) =>
+    request<{ id: number; codigo: string }>(`/cepario/entidades/${entidadId}/promover`, {
+      method: "POST",
+      token,
+    }),
+
+  ceparioArchivar: async (token: string, entidadId: number, motivo?: string | null) =>
+    request<{ id: number; estado: string }>(`/cepario/entidades/${entidadId}/archivar`, {
+      method: "POST",
+      token,
+      body: JSON.stringify({ motivo: motivo ?? null }),
+    }),
+
+  ceparioReactivar: async (token: string, entidadId: number) =>
+    request<{ id: number; estado: string }>(`/cepario/entidades/${entidadId}/reactivar`, {
+      method: "POST",
       token,
     }),
 }

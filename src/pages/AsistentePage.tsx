@@ -1,11 +1,12 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react"
+import { FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react"
 import { useMutation } from "@tanstack/react-query"
-import { Bot, Download, Send, Trash2, User } from "lucide-react"
+import { Bot, Download, FileText, PackageSearch, Send, Trash2, User } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import type { TFunction } from "i18next"
+import { Link } from "react-router-dom"
 
 import { Button } from "../components/ui/button"
-import { api, type AsistenteToolUsada, type AsistenteTurnoHistorial } from "../lib/api"
+import { api, type AsistenteContexto, type AsistenteModoRespuesta, type AsistenteToolUsada, type AsistenteTurnoHistorial } from "../lib/api"
 import { useAuth } from "../lib/auth"
 import { cn } from "../lib/utils"
 
@@ -13,6 +14,8 @@ type ChatTurn = {
   role: "user" | "assistant"
   text: string
   tools?: AsistenteToolUsada[]
+  contexto?: AsistenteContexto | null
+  modoRespuesta?: AsistenteModoRespuesta | null
   pdfRequested?: boolean
   pdfText?: string
 }
@@ -205,9 +208,73 @@ function storageKey(usuarioId: number | undefined) {
   return `asistente_chat_${usuarioId ?? "anon"}`
 }
 
-function toolTotal(tool: AsistenteToolUsada) {
-  const total = tool.resultado?.total
-  return typeof total === "number" ? total : 0
+function renderInlineLinks(text: string, keyPrefix: string) {
+  const nodes: ReactNode[] = []
+  const markdownLink = /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+
+  const pushBareLinks = (value: string, prefix: string) => {
+    const urlRegex = /(https?:\/\/[^\s)]+)([.,;:]?)/g
+    let segmentLastIndex = 0
+    let urlMatch: RegExpExecArray | null
+    while ((urlMatch = urlRegex.exec(value)) !== null) {
+      if (urlMatch.index > segmentLastIndex) {
+        nodes.push(value.slice(segmentLastIndex, urlMatch.index))
+      }
+      const url = urlMatch[1]
+      nodes.push(
+        <a
+          key={`${prefix}-url-${urlMatch.index}`}
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="text-cds-linkPrimary underline underline-offset-2 hover:text-cds-linkPrimaryHover"
+        >
+          {url}
+        </a>,
+      )
+      if (urlMatch[2]) {
+        nodes.push(urlMatch[2])
+      }
+      segmentLastIndex = urlMatch.index + urlMatch[0].length
+    }
+    if (segmentLastIndex < value.length) {
+      nodes.push(value.slice(segmentLastIndex))
+    }
+  }
+
+  while ((match = markdownLink.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      pushBareLinks(text.slice(lastIndex, match.index), `${keyPrefix}-${lastIndex}`)
+    }
+    nodes.push(
+      <a
+        key={`${keyPrefix}-md-${match.index}`}
+        href={match[2]}
+        target="_blank"
+        rel="noreferrer"
+        className="text-cds-linkPrimary underline underline-offset-2 hover:text-cds-linkPrimaryHover"
+      >
+        {match[1]}
+      </a>,
+    )
+    lastIndex = match.index + match[0].length
+  }
+  if (lastIndex < text.length) {
+    pushBareLinks(text.slice(lastIndex), `${keyPrefix}-${lastIndex}`)
+  }
+  return nodes
+}
+
+function renderTextWithLinks(text: string, keyPrefix: string) {
+  return text.split("\n").flatMap((line, index) => {
+    const lineNodes = renderInlineLinks(line, `${keyPrefix}-line-${index}`)
+    if (index === 0) {
+      return lineNodes
+    }
+    return [<br key={`${keyPrefix}-br-${index}`} />, ...lineNodes]
+  })
 }
 
 function renderAssistantText(text: string, t: TFunction) {
@@ -230,7 +297,7 @@ function renderAssistantText(text: string, t: TFunction) {
             <ul key={index} className="space-y-2 pl-5 text-base leading-6 tracking-[0.16px]">
               {lines.map((line, lineIndex) => (
                 <li key={lineIndex} className="list-disc">
-                  {line.replace(/^([-*•]|\d+[.)])\s+/, "")}
+                  {renderTextWithLinks(line.replace(/^([-*•]|\d+[.)])\s+/, ""), `block-${index}-line-${lineIndex}`)}
                 </li>
               ))}
             </ul>
@@ -238,7 +305,7 @@ function renderAssistantText(text: string, t: TFunction) {
         }
         return (
           <p key={index} className="whitespace-pre-wrap text-base leading-6 tracking-[0.16px]">
-            {block}
+            {renderTextWithLinks(block, `block-${index}`)}
           </p>
         )
       })}
@@ -307,6 +374,7 @@ export function AsistentePage() {
     const historial = turnos.slice(-MAX_TURNOS_HISTORIAL).map((turno) => ({
       role: turno.role,
       content: turno.text,
+      contexto: turno.contexto ?? null,
     }))
     setTurnos((actual) => [...actual, { role: "user", text: limpia }])
     try {
@@ -318,6 +386,8 @@ export function AsistentePage() {
           role: "assistant",
           text: respuesta.respuesta || t("asistente.sinRespuesta"),
           tools: respuesta.tools_usadas ?? [],
+          contexto: respuesta.contexto ?? null,
+          modoRespuesta: respuesta.modo_respuesta ?? null,
           pdfRequested,
         },
       ])
@@ -422,7 +492,6 @@ export function AsistentePage() {
 function ChatBubble({ turno }: { turno: ChatTurn }) {
   const { t } = useTranslation()
   const isUser = turno.role === "user"
-  const tools = turno.tools ?? []
 
   return (
     <div className={cn("flex gap-3", isUser && "justify-end")}>
@@ -437,16 +506,105 @@ function ChatBubble({ turno }: { turno: ChatTurn }) {
         ) : (
           <>
             {renderAssistantText(turno.text, t)}
+            {turno.modoRespuesta ? <AssistantModeBadge modo={turno.modoRespuesta} /> : null}
             {turno.pdfRequested ? <AssistantPdfCard text={turno.pdfText ?? turno.text} /> : null}
+            {turno.contexto ? <AssistantContextActions contexto={turno.contexto} /> : null}
           </>
         )}
-        {tools.length ? <ToolsPanel tools={tools} /> : null}
       </article>
       {isUser ? (
         <div className="flex h-10 w-10 shrink-0 items-center justify-center bg-cds-layer01 text-cds-textSecondary">
           <User size={20} aria-hidden="true" />
         </div>
       ) : null}
+    </div>
+  )
+}
+
+function AssistantModeBadge({ modo }: { modo: AsistenteModoRespuesta }) {
+  const { t } = useTranslation()
+  const labelKey =
+    modo.tipo === "fast_path"
+      ? "asistente.modoFastPath"
+      : modo.tipo === "llm_tools"
+        ? "asistente.modoLlmTools"
+        : modo.tipo === "llm_general"
+          ? "asistente.modoLlmGeneral"
+          : "asistente.modoOtro"
+  const detalle = typeof modo.detalle === "string" && modo.detalle.trim() ? modo.detalle.trim() : null
+  const detalleLabel = detalle ? t(`asistente.detalle.${detalle}`, { defaultValue: detalle }) : null
+
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-cds-borderSubtle pt-3 text-xs leading-4 tracking-[0.32px] text-cds-textSecondary">
+      <span className="inline-flex min-h-6 items-center bg-cds-background px-2 font-mono">
+        {t(labelKey)}
+      </span>
+      {detalleLabel ? <span>{detalleLabel}</span> : null}
+    </div>
+  )
+}
+
+function AssistantContextActions({ contexto }: { contexto: AsistenteContexto }) {
+  const { t } = useTranslation()
+  const codigoInterno = typeof contexto.codigo_interno === "string" ? contexto.codigo_interno.trim() : ""
+  const reactivoId = typeof contexto.reactivo_id === "number" ? contexto.reactivo_id : null
+  const desde = typeof contexto.desde === "string" ? contexto.desde.trim() : ""
+  const hasta = typeof contexto.hasta === "string" ? contexto.hasta.trim() : ""
+  const actions: Array<{ key: string; to: string; label: string; icon: "lotes" | "auditoria" }> = []
+
+  if (codigoInterno) {
+    actions.push({
+      key: "lote",
+      to: `/reactivos/lotes?codigo=${encodeURIComponent(codigoInterno)}`,
+      label: t("asistente.verLote"),
+      icon: "lotes",
+    })
+    actions.push({
+      key: "auditoria-lote",
+      to: `/auditoria?codigo=${encodeURIComponent(codigoInterno)}`,
+      label: t("asistente.verAuditoriaLote"),
+      icon: "auditoria",
+    })
+  }
+
+  if (reactivoId !== null) {
+    const auditParams = new URLSearchParams({ reactivo_id: String(reactivoId) })
+    if (desde) {
+      auditParams.set("desde", desde)
+    }
+    if (hasta) {
+      auditParams.set("hasta", hasta)
+    }
+    actions.push({
+      key: "lotes-reactivo",
+      to: `/reactivos/lotes?reactivo_id=${reactivoId}`,
+      label: t("asistente.verLotesReactivo"),
+      icon: "lotes",
+    })
+    actions.push({
+      key: "auditoria-reactivo",
+      to: `/auditoria?${auditParams.toString()}`,
+      label: t("asistente.verAuditoriaReactivo"),
+      icon: "auditoria",
+    })
+  }
+
+  if (!actions.length) {
+    return null
+  }
+
+  return (
+    <div className="mt-4 flex flex-wrap gap-2 border-t border-cds-borderSubtle pt-3">
+      {actions.map((action) => (
+        <Link
+          key={action.key}
+          to={action.to}
+          className="inline-flex min-h-8 items-center gap-2 bg-cds-buttonSecondary px-3 py-1.5 text-sm leading-5 tracking-[0.16px] text-cds-textOnColor transition-colors hover:bg-cds-buttonSecondaryHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-cds-focus"
+        >
+          {action.icon === "auditoria" ? <FileText size={16} aria-hidden="true" /> : <PackageSearch size={16} aria-hidden="true" />}
+          {action.label}
+        </Link>
+      ))}
     </div>
   )
 }
@@ -468,33 +626,5 @@ function AssistantPdfCard({ text }: { text: string }) {
         </Button>
       </div>
     </div>
-  )
-}
-
-function ToolsPanel({ tools }: { tools: AsistenteToolUsada[] }) {
-  const { t } = useTranslation()
-  return (
-    <details className="mt-4 border-t border-cds-borderSubtle pt-3 text-sm">
-      <summary className="cursor-pointer text-cds-linkPrimary">{t("asistente.toolsUsadas", { n: tools.length })}</summary>
-      <div className="mt-3 space-y-3">
-        {tools.map((tool, index) => (
-          <div key={`${tool.nombre}-${index}`} className="bg-cds-background p-3">
-            <div className="font-mono text-xs tracking-[0.16px] text-cds-textPrimary">{tool.nombre}</div>
-            {tool.args && Object.keys(tool.args).length ? (
-              <pre className="mt-2 overflow-x-auto bg-cds-layer01 p-2 text-xs text-cds-textPrimary">
-                {JSON.stringify(tool.args, null, 2)}
-              </pre>
-            ) : (
-              <div className="mt-2 text-xs text-cds-textSecondary">{t("asistente.sinArgumentos")}</div>
-            )}
-            {tool.resultado?.error ? (
-              <div className="mt-2 text-xs text-cds-supportError">{tool.resultado.error}</div>
-            ) : (
-              <div className="mt-2 text-xs text-cds-textSecondary">{t("asistente.resultados", { n: toolTotal(tool) })}</div>
-            )}
-          </div>
-        ))}
-      </div>
-    </details>
   )
 }

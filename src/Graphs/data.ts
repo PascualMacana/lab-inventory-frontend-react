@@ -340,3 +340,34 @@ export function forecastRows(scope: ChartScope) {
   }))
   return [...base, { mes: "Ago", real: stockActual, forecast: stockActual }, ...projected]
 }
+
+// --- Operativo: stock actual vs mínimo ---------------------------------------
+
+export type StockVsMinimo = {
+  label: string
+  stock: number
+  minimo: number
+  bajo: boolean
+  unidad: string
+}
+
+export function stockVsMinimoRows(scope: ChartScope): StockVsMinimo[] {
+  const source = scope === "total" ? reactivosAnalytics : ([getScope(scope)].filter(Boolean) as ReagentAnalytics[])
+  return source.map((reactivo) => ({
+    label: reactivo.nombre,
+    stock: reactivo.stockActual,
+    minimo: reactivo.stockMinimo,
+    bajo: reactivo.stockActual < reactivo.stockMinimo,
+    unidad: reactivo.unidad,
+  }))
+}
+
+// --- Avanzado: monthly consumption distribution (boxplot) --------------------
+
+export function consumoDistribution(scope: ChartScope) {
+  const source = scope === "total" ? reactivosAnalytics : ([getScope(scope)].filter(Boolean) as ReagentAnalytics[])
+  return source.map((reactivo) => ({
+    nombre: reactivo.nombre,
+    valores: reactivo.meses.map((mes) => mes.consumos),
+  }))
+}

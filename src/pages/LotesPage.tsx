@@ -98,6 +98,7 @@ export function LotesPage() {
   })
 
   const lotes = lotesQuery.data ?? lotesVacios
+  const reactivoIdUrl = Number(searchParams.get("reactivo_id") ?? "")
   const lotesFiltrados = useMemo(() => {
     const texto = busqueda.trim().toLocaleLowerCase("es")
     if (!texto) {
@@ -113,6 +114,17 @@ export function LotesPage() {
   const stockTotal = lotes.reduce((total, lote) => total + (lote.cantidad_actual ?? 0), 0)
   const proximoVencimiento = lotes[0]?.fecha_vencimiento
   const codigoUrl = searchParams.get("codigo")
+
+  useEffect(() => {
+    if (!reactivoIdUrl || !reactivos.some((reactivo) => reactivo.id === reactivoIdUrl)) {
+      return
+    }
+    setReactivoId(reactivoIdUrl)
+    setLoteSeleccionadoId(null)
+    setBusqueda("")
+    setMensaje(null)
+    setErrorLocal(null)
+  }, [reactivoIdUrl, reactivos])
 
   useEffect(() => {
     if (!token || !codigoUrl) {
