@@ -364,25 +364,61 @@ export function DashboardPage() {
     return out
   }, [porVencer30, stockBajo, vencidos, t])
 
-  // "Días hasta quiebre": reposición rows ranked by runway (soonest first), colored by nivel.
+  // Stock bajo: rows with positive stock and a replenishment signal. If there is
+  // no recent use, the bar falls back to current stock vs configured minimum.
   const quiebreData = useMemo(() => {
     const horizonte = reposicionQuery.data?.parametros.dias ?? 30
-    const conDias = horizonteStock.filter((row) => {
-      const quedaPoco = row.motivos.includes("stock_alcanza_pocos_dias") || row.motivos.includes("bajo_stock_minimo")
-      return row.stock_actual > 0 && row.dias_stock_estimado != null && quedaPoco
+    const conSenal = horizonteStock.filter((row) => {
+      const stockAlcanzaPoco = row.motivos.includes("stock_alcanza_pocos_dias")
+      const bajoMinimo = row.motivos.includes("bajo_stock_minimo")
+      return row.stock_actual > 0 && (stockAlcanzaPoco || bajoMinimo)
     })
-    const maxDias = Math.max(horizonte, ...conDias.map((row) => row.dias_stock_estimado ?? 0), 1)
-    return [...conDias]
-      .sort((a, b) => (a.dias_stock_estimado ?? 0) - (b.dias_stock_estimado ?? 0))
+    const maxDias = Math.max(
+      horizonte,
+      ...conSenal.map((row) => row.dias_stock_estimado ?? 0),
+      1,
+    )
+    return [...conSenal]
+      .sort((a, b) => {
+        const diasA = a.dias_stock_estimado
+        const diasB = b.dias_stock_estimado
+        if (diasA != null && diasB != null) {
+          return diasA - diasB
+        }
+        if (diasA != null) {
+          return -1
+        }
+        if (diasB != null) {
+          return 1
+        }
+        const ratioA = a.stock_minimo > 0 ? a.stock_actual / a.stock_minimo : 1
+        const ratioB = b.stock_minimo > 0 ? b.stock_actual / b.stock_minimo : 1
+        return ratioA - ratioB
+      })
       .slice(0, 8)
       .map((row) => {
-        const dias = row.dias_stock_estimado ?? 0
+        const dias = row.dias_stock_estimado
+        const stockRatio = row.stock_minimo > 0 ? row.stock_actual / row.stock_minimo : 0.04
         const color = row.nivel === "urgente" ? palette.crit : row.nivel === "atencion" ? palette.warmFg : palette.sage
         return {
           id: row.reactivo_id,
           nombre: row.reactivo_nombre,
-          pct: Math.max(4, Math.min(100, (dias / maxDias) * 100)),
-          label: t("dashboard.diasCorto", { dias: formatValue(dias) }),
+          pct:
+            dias == null
+              ? Math.max(4, Math.min(100, stockRatio * 100))
+              : Math.max(4, Math.min(100, (dias / maxDias) * 100)),
+          label:
+            dias == null
+              ? t("dashboard.stockBajoSinConsumoCorto")
+              : t("dashboard.diasCorto", { dias: formatValue(dias) }),
+          title:
+            dias == null
+              ? t("dashboard.stockBajoSinConsumoDetalle", {
+                  stock: formatValue(row.stock_actual),
+                  min: formatValue(row.stock_minimo),
+                  unidad: row.unidad,
+                })
+              : t("dashboard.reposicionDiasStock", { dias: formatValue(dias) }),
           color,
         }
       })
@@ -529,12 +565,12 @@ export function DashboardPage() {
                   </div>
                   <ul className="space-y-2">
                     {quiebreData.map((row) => (
-                      <li key={row.id} className="flex items-center gap-3">
+                      <li key={row.id} className="flex items-center gap-3" title={row.title}>
                         <span className="w-36 shrink-0 truncate text-sm text-cds-textPrimary sm:w-44">{row.nombre}</span>
                         <span className="relative h-5 flex-1 bg-cds-field">
                           <span className="absolute inset-y-0 left-0 block" style={{ width: `${row.pct}%`, backgroundColor: row.color }} />
                         </span>
-                        <span className="w-10 shrink-0 text-right font-mono text-xs" style={{ color: row.color }}>{row.label}</span>
+                        <span className="w-24 shrink-0 whitespace-nowrap text-right font-mono text-xs" style={{ color: row.color }}>{row.label}</span>
                       </li>
                     ))}
                   </ul>
