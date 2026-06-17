@@ -1156,6 +1156,14 @@ export const LANDING_CSS = String.raw`
     width: 100%;
     height: 100%;
   }
+  /* Canvas de la red neuronal 3D (reemplaza el campo de estrellas SVG). */
+  .nn-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
   .const-svg .edge {
     stroke: #5a96ad;
     fill: none;
