@@ -21,6 +21,7 @@ pnpm-debug.log*
 
 # Editor and OS files
 .DS_Store
+CLAUDE.md
 .idea/
 .vscode/
 
