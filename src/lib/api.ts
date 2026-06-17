@@ -271,6 +271,11 @@ export type Reactivo = {
   numero_catalogo?: string | null
   enlace_compra?: string | null
   stock_total: number
+  // Lotes activos (cantidad_actual > 0) del reactivo y el vencimiento más
+  // próximo entre ellos. Los agrega el listado de /reactivos para que el
+  // Catálogo muestre la relación reactivo↔lotes sin abrir cada fila.
+  lotes_count?: number
+  proximo_vencimiento?: string | null
 }
 
 export type ReactivoCrear = {
@@ -512,6 +517,11 @@ export type Proveedor = {
   sitio_web?: string | null
   notas?: string | null
   activo: number | boolean
+  // Conteos de relación que agrega el listado /proveedores: lotes activos
+  // provistos, reactivos distintos abastecidos y contactos cargados.
+  lotes_count?: number
+  reactivos_count?: number
+  contactos_count?: number
 }
 
 export type ProveedorContacto = {

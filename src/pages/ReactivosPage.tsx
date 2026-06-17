@@ -51,6 +51,34 @@ function nullable(value: string) {
   return trimmed ? trimmed : null
 }
 
+// Salud de stock de un reactivo. Maneja el color de la cobertura, el peso/color
+// del número de stock y el acento de la fila. none = sin stock; low = tiene algo
+// pero por debajo del mínimo; ok = en o sobre el mínimo.
+type StockHealth = "ok" | "low" | "none"
+const healthColor: Record<StockHealth, string> = {
+  ok: "var(--cds-support-success)",
+  low: "var(--cds-support-warning)",
+  none: "var(--cds-support-error)",
+}
+
+function stockHealth(stock: number, min: number): StockHealth {
+  if (stock <= 0) return "none"
+  if (min > 0 && stock < min) return "low"
+  return "ok"
+}
+
+function daysUntil(dateStr: string) {
+  const target = new Date(`${dateStr}T00:00:00`)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return Math.ceil((target.getTime() - today.getTime()) / 86_400_000)
+}
+
+// El chip de vencimiento del Catálogo solo necesita mes/año ("AAAA-MM").
+function formatMonth(dateStr: string) {
+  return dateStr.slice(0, 7)
+}
+
 export function ReactivosPage() {
   const { token, usuario } = useAuth()
   const { t } = useTranslation()
@@ -114,7 +142,11 @@ export function ReactivosPage() {
       total: reactivos.length,
       conStock: reactivos.filter((reactivo) => (reactivo.stock_total ?? 0) > 0).length,
       sinStock: reactivos.filter((reactivo) => (reactivo.stock_total ?? 0) <= 0).length,
-      stockBajo: reactivos.filter((reactivo) => (reactivo.stock_total ?? 0) < (reactivo.stock_minimo ?? 0)).length,
+      // Bajo mínimo = con algo de stock pero por debajo del mínimo. "Sin stock"
+      // (≤0) se cuenta aparte para que cada tile represente un estado distinto.
+      stockBajo: reactivos.filter(
+        (reactivo) => (reactivo.stock_total ?? 0) > 0 && (reactivo.stock_total ?? 0) < (reactivo.stock_minimo ?? 0),
+      ).length,
     }
   }, [reactivos])
 
@@ -257,8 +289,8 @@ function ListadoReactivos({
       <div className="mb-4 grid gap-px bg-cds-borderSubtle md:grid-cols-4">
         <MetricTile label={t("reactivos.metricTotal")} value={resumen.total} icon={FlaskConical} />
         <MetricTile label={t("reactivos.metricConStock")} value={resumen.conStock} icon={PackageCheck} />
-        <MetricTile label={t("reactivos.metricSinStock")} value={resumen.sinStock} icon={AlertTriangle} danger />
-        <MetricTile label={t("reactivos.metricStockBajo")} value={resumen.stockBajo} icon={AlertTriangle} danger />
+        <MetricTile label={t("reactivos.metricSinStock")} value={resumen.sinStock} icon={AlertTriangle} tone="error" />
+        <MetricTile label={t("reactivos.metricStockBajo")} value={resumen.stockBajo} icon={AlertTriangle} tone="warning" />
       </div>
 
       <div className="mb-4 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
@@ -304,24 +336,49 @@ function ListadoReactivos({
   )
 }
 
+// Tono semántico del tile: neutral (Total/Con stock), error/coral (Sin stock) y
+// warning/ámbar (Stock bajo). Antes "Sin stock" y "Stock bajo" compartían el
+// rojo; ahora cada uno usa el color de su severidad real.
+type MetricTone = "neutral" | "error" | "warning"
+
 function MetricTile({
   label,
   value,
   icon: Icon,
-  danger = false,
+  tone = "neutral",
 }: {
   label: string
   value: number
   icon: typeof FlaskConical
-  danger?: boolean
+  tone?: MetricTone
 }) {
   return (
-    <article className={cn("bg-cds-layer01 p-4", danger && "bg-lab-critTint shadow-[inset_2px_0_0_var(--cds-support-error)]")}>
-      <div className={cn("mb-4 flex items-center justify-between text-cds-textSecondary", danger && "text-cds-supportError")}>
+    <article
+      className={cn(
+        "bg-cds-layer01 p-4",
+        tone === "error" && "bg-lab-critTint shadow-[inset_2px_0_0_var(--cds-support-error)]",
+        tone === "warning" && "bg-lab-warmTint shadow-[inset_2px_0_0_var(--cds-support-warning)]",
+      )}
+    >
+      <div
+        className={cn(
+          "mb-4 flex items-center justify-between text-cds-textSecondary",
+          tone === "error" && "text-cds-supportError",
+          tone === "warning" && "text-lab-warmFg",
+        )}
+      >
         <span className="text-xs tracking-[0.32px]">{label}</span>
         <Icon size={18} aria-hidden="true" />
       </div>
-      <div className={cn("text-[32px] font-light leading-[1.25]", danger && "font-normal text-cds-supportError")}>{formatNumber(value)}</div>
+      <div
+        className={cn(
+          "text-[32px] font-light leading-[1.25]",
+          tone === "error" && "font-normal text-cds-supportError",
+          tone === "warning" && "font-normal text-lab-warmFg",
+        )}
+      >
+        {formatNumber(value)}
+      </div>
     </article>
   )
 }
@@ -348,42 +405,65 @@ function ReactivosTable({
 
   return (
     <div className="overflow-x-auto border-t border-cds-borderSubtle">
-      <table className="w-full min-w-[920px] border-collapse text-left text-sm">
+      <table className="w-full min-w-[1080px] border-collapse text-left text-sm">
         <thead>
           <tr className="border-b border-cds-borderSubtle bg-cds-layer01 text-xs tracking-[0.32px] text-cds-textSecondary">
             <th className="h-10 px-4 font-normal">{t("reactivos.thId")}</th>
             <th className="h-10 px-4 font-normal">{t("reactivos.thNombre")}</th>
-            <th className="h-10 px-4 font-normal">{t("reactivos.thUnidad")}</th>
             <th className="h-10 px-4 text-right font-normal">{t("reactivos.thStockActual")}</th>
+            <th className="h-10 px-4 font-normal">{t("reactivos.thUnidad")}</th>
+            <th className="h-10 w-[190px] px-4 font-normal">{t("reactivos.thCobertura")}</th>
             <th className="h-10 px-4 text-right font-normal">{t("reactivos.thStockMin")}</th>
-            <th className="h-10 px-4 font-normal">{t("reactivos.thUbicacion")}</th>
+            <th className="h-10 px-4 font-normal">{t("reactivos.thLotes")}</th>
+            <th className="h-10 w-[110px] px-4 font-normal">{t("reactivos.thUbicacion")}</th>
             <th className="h-10 px-4 font-normal">{t("reactivos.thCategoria")}</th>
           </tr>
         </thead>
         <tbody>
           {reactivos.map((reactivo) => {
-            const bajoMinimo = (reactivo.stock_total ?? 0) < (reactivo.stock_minimo ?? 0)
+            const stock = reactivo.stock_total ?? 0
+            const minimo = reactivo.stock_minimo ?? 0
+            const health = stockHealth(stock, minimo)
             return (
               <tr
                 key={reactivo.id}
                 className={cn(
                   "cursor-pointer border-b border-cds-borderSubtle transition-colors hover:bg-cds-layer01",
-                  bajoMinimo && "bg-lab-critTint/60 shadow-[inset_2px_0_0_var(--cds-support-error)]",
+                  // Sin stock: fondo + acento coral. Bajo mínimo: fondo + acento
+                  // ámbar, para distinguirlo de un vistazo del sin stock.
+                  health === "none" && "bg-lab-critTint/60 shadow-[inset_2px_0_0_var(--cds-support-error)]",
+                  health === "low" && "bg-lab-warmTint/60 shadow-[inset_2px_0_0_var(--cds-support-warning)]",
                   selectedId === reactivo.id && "bg-cds-layer01 shadow-[inset_2px_0_0_var(--cds-focus)]",
                 )}
                 onClick={() => onSelectDetalle(reactivo.id)}
               >
                 <td className="h-12 px-4 font-mono text-xs tracking-[0.16px] text-cds-textSecondary">{reactivo.id}</td>
                 <td className="h-12 px-4 font-semibold tracking-[0.16px]">{reactivo.nombre}</td>
-                <td className="h-12 px-4">{reactivo.unidad}</td>
-                <td className={cn("h-12 px-4 text-right font-mono", bajoMinimo && "font-semibold text-cds-supportError")}>
+                <td
+                  className={cn(
+                    "h-12 px-4 text-right font-mono",
+                    health === "none" && "font-semibold text-cds-supportError",
+                    health === "low" && "font-semibold text-lab-warmFg",
+                  )}
+                >
                   <span className="inline-flex items-center justify-end gap-1.5">
-                    {bajoMinimo ? <AlertTriangle size={14} aria-hidden="true" /> : null}
-                    {formatNumber(reactivo.stock_total)}
+                    {health !== "ok" ? <AlertTriangle size={14} aria-hidden="true" /> : null}
+                    {formatNumber(stock)}
                   </span>
                 </td>
+                <td className="h-12 px-4">{reactivo.unidad}</td>
+                <td className="h-12 px-4">
+                  <CoberturaBar stock={stock} min={minimo} />
+                </td>
                 <td className="h-12 px-4 text-right font-mono">{formatNumber(reactivo.stock_minimo)}</td>
-                <td className="h-12 px-4 text-cds-textSecondary">{reactivo.ubicacion || "-"}</td>
+                <td className="h-12 px-4">
+                  <LotesCell count={reactivo.lotes_count ?? 0} proximoVencimiento={reactivo.proximo_vencimiento} />
+                </td>
+                <td className="h-12 px-4 text-cds-textSecondary">
+                  <span className="block max-w-[110px] truncate" title={reactivo.ubicacion || undefined}>
+                    {reactivo.ubicacion || "-"}
+                  </span>
+                </td>
                 <td className="h-12 px-4 text-cds-textSecondary">
                   {reactivo.categoria ? <CategoryTag value={reactivo.categoria} /> : "-"}
                 </td>
@@ -392,6 +472,84 @@ function ReactivosTable({
           })}
         </tbody>
       </table>
+
+      <LeyendaCobertura />
+    </div>
+  )
+}
+
+// Medidor inline de cobertura: compara stock vs mínimo. La pista representa
+// 0–160% del mínimo, así que el 100% (el mínimo) cae al 62.5% del ancho, donde
+// va la marca vertical. El relleno se colorea por salud y el % va a la derecha.
+function CoberturaBar({ stock, min }: { stock: number; min: number }) {
+  if (min <= 0) {
+    return <span className="font-mono text-[11px] text-cds-textSecondary">—</span>
+  }
+  const health = stockHealth(stock, min)
+  const ratio = Math.round((stock / min) * 100)
+  const fillWidth = (Math.min(160, Math.max(0, ratio)) / 160) * 100
+  const color = healthColor[health]
+  return (
+    <div className="flex items-center gap-2">
+      <div className="relative h-1.5 w-full max-w-[160px] overflow-hidden bg-cds-borderSubtle">
+        <div className="absolute inset-y-0 left-0" style={{ width: `${fillWidth}%`, backgroundColor: color }} />
+        <div className="absolute inset-y-0 w-px bg-cds-textSecondary" style={{ left: "62.5%" }} aria-hidden="true" />
+      </div>
+      <span className="min-w-[34px] text-right font-mono text-[11px]" style={{ color }}>
+        {ratio}%
+      </span>
+    </div>
+  )
+}
+
+// Relación del reactivo con la pestaña Lotes: conteo de lotes activos y un chip
+// con el vencimiento más próximo (ámbar si vence dentro de ~2 meses).
+function LotesCell({ count, proximoVencimiento }: { count: number; proximoVencimiento?: string | null }) {
+  const { t } = useTranslation()
+  const soon = proximoVencimiento ? daysUntil(proximoVencimiento) <= 60 : false
+  return (
+    <div className="flex items-center gap-2">
+      <span className="font-mono text-[13px] text-cds-textSecondary">
+        {count > 0 ? t("reactivos.lotesCount", { count }) : "—"}
+      </span>
+      {proximoVencimiento ? (
+        <span
+          className={cn(
+            "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-[7px] py-0.5 text-[11px]",
+            soon ? "bg-lab-warmTint text-lab-warmFg" : "bg-cds-layer01 text-cds-textSecondary",
+          )}
+        >
+          <span
+            className="h-[5px] w-[5px] rounded-full"
+            style={{ backgroundColor: soon ? "var(--cds-support-warning)" : "var(--cds-text-secondary)" }}
+            aria-hidden="true"
+          />
+          {t("reactivos.venceChip", { fecha: formatMonth(proximoVencimiento) })}
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
+function LeyendaCobertura() {
+  const { t } = useTranslation()
+  const items: { health: StockHealth; label: string }[] = [
+    { health: "ok", label: t("reactivos.legendOk") },
+    { health: "low", label: t("reactivos.legendLow") },
+    { health: "none", label: t("reactivos.legendNone") },
+  ]
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-cds-textSecondary">
+      {items.map((item) => (
+        <span key={item.health} className="inline-flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5" style={{ backgroundColor: healthColor[item.health] }} aria-hidden="true" />
+          {item.label}
+        </span>
+      ))}
+      <span className="inline-flex items-center gap-1.5">
+        <span className="h-3 w-px bg-cds-textSecondary" aria-hidden="true" />
+        {t("reactivos.legendMinMark")}
+      </span>
     </div>
   )
 }

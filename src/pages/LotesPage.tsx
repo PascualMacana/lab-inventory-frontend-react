@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { CalendarClock, Camera, Check, Download, FileText, Package, PackagePlus, Plus, QrCode, Save, Search, X } from "lucide-react"
+import { ArrowRight, CalendarClock, Camera, Check, Download, FileText, Package, PackagePlus, Plus, QrCode, Save, Search, X } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { useSearchParams } from "react-router-dom"
 
@@ -44,6 +44,22 @@ function daysUntil(value: string) {
 function nullable(value: string) {
   const trimmed = value.trim()
   return trimmed ? trimmed : null
+}
+
+// Estado de vencimiento de un lote. vencido = ya pasó (descartar); soon = vence
+// dentro de 30 días (planificar); ok = vigente. Maneja el color del semáforo,
+// del texto relativo y del acento de la fila.
+type VencTone = "vencido" | "soon" | "ok"
+const vencColor: Record<VencTone, string> = {
+  vencido: "var(--cds-support-error)",
+  soon: "var(--cds-support-warning)",
+  ok: "var(--cds-support-success)",
+}
+
+function vencimientoTone(dias: number): VencTone {
+  if (dias < 0) return "vencido"
+  if (dias <= 30) return "soon"
+  return "ok"
 }
 
 function esPendiente(reactivo: Reactivo) {
@@ -283,6 +299,19 @@ function ListadoLotes({
 
   const pendientes = reactivos.filter(esPendiente)
   const reactivosConLote = new Set(lotesTodos.map((lote) => lote.reactivo_id)).size
+  // Tono del tile "Próximo vencimiento": coral si el más próximo ya venció
+  // (señal de descarte), ámbar si vence ≤30 d, neutro si está lejos.
+  const proximoVencTone: MetricTone = !proximoVencimiento
+    ? "neutral"
+    : daysUntil(proximoVencimiento) < 0
+      ? "error"
+      : daysUntil(proximoVencimiento) <= 30
+        ? "warning"
+        : "neutral"
+  // Lote FIFO: el primero no vencido (la lista viene ordenada por vencimiento).
+  const fifoLoteHint = reactivoSeleccionado
+    ? lotesTodos.find((lote) => daysUntil(lote.fecha_vencimiento) >= 0)
+    : undefined
 
   useEffect(() => {
     if (!isLoading && loteSeleccionadoId && !lotesTodos.some((lote) => lote.id === loteSeleccionadoId)) {
@@ -372,12 +401,13 @@ function ListadoLotes({
           icon={Package}
         />
         <MetricTile label={t("lotes.metricLotesActivos")} value={String(lotesTodos.length)} icon={Package} />
-        <MetricTile label={t("lotes.metricProximoVenc")} value={formatDate(proximoVencimiento)} icon={CalendarClock} />
+        <MetricTile label={t("lotes.metricProximoVenc")} value={formatDate(proximoVencimiento)} icon={CalendarClock} tone={proximoVencTone} />
       </div>
 
-      {reactivoSeleccionado && lotesTodos[0] ? (
-        <p className="mb-3 text-xs tracking-[0.32px] text-cds-textSecondary">
-          {t("lotes.fifo")} <span className="font-mono text-cds-textPrimary">{lotesTodos[0].codigo_interno}</span>
+      {fifoLoteHint ? (
+        <p className="mb-3 flex items-center gap-1.5 text-xs tracking-[0.32px] text-cds-textSecondary">
+          <ArrowRight size={14} aria-hidden="true" />
+          {t("lotes.proximoUsar")} <span className="font-mono text-cds-textPrimary">{fifoLoteHint.codigo_interno}</span>
         </p>
       ) : null}
 
@@ -1440,23 +1470,94 @@ function EtiquetasLotes({
   )
 }
 
+// Tono del tile: neutral, error/coral o warning/ámbar. Lo usa "Próximo
+// vencimiento" para señalar urgencia (vencido = descartar, ≤30 d = planificar).
+type MetricTone = "neutral" | "error" | "warning"
+
 function MetricTile({
   label,
   value,
   icon: Icon,
+  tone = "neutral",
 }: {
   label: string
   value: string
   icon: typeof Package
+  tone?: MetricTone
 }) {
   return (
-    <article className="bg-cds-layer01 p-4">
-      <div className="mb-4 flex items-center justify-between text-cds-textSecondary">
+    <article
+      className={cn(
+        "bg-cds-layer01 p-4",
+        tone === "error" && "bg-lab-critTint shadow-[inset_2px_0_0_var(--cds-support-error)]",
+        tone === "warning" && "bg-lab-warmTint shadow-[inset_2px_0_0_var(--cds-support-warning)]",
+      )}
+    >
+      <div
+        className={cn(
+          "mb-4 flex items-center justify-between text-cds-textSecondary",
+          tone === "error" && "text-cds-supportError",
+          tone === "warning" && "text-lab-warmFg",
+        )}
+      >
         <span className="text-xs tracking-[0.32px]">{label}</span>
         <Icon size={18} aria-hidden="true" />
       </div>
-      <div className="text-[24px] font-normal leading-[1.33]">{value}</div>
+      <div
+        className={cn(
+          "text-[24px] font-normal leading-[1.33]",
+          tone === "error" && "text-cds-supportError",
+          tone === "warning" && "text-lab-warmFg",
+        )}
+      >
+        {value}
+      </div>
     </article>
+  )
+}
+
+// Barra de consumo del frasco: cuánto queda (cantidad_actual / cantidad_inicial)
+// en petróleo, con el % a la derecha. Muestra qué tan agotado está cada lote.
+function ConsumoBar({ actual, inicial, unidad }: { actual: number; inicial: number; unidad: string }) {
+  const { t } = useTranslation()
+  if (inicial <= 0) {
+    return <span className="font-mono text-[11px] text-cds-textSecondary">—</span>
+  }
+  const pct = Math.round((actual / inicial) * 100)
+  const width = Math.min(100, Math.max(0, pct))
+  // El inicial absoluto deja de tener columna propia; queda a un hover de la barra.
+  return (
+    <div className="flex items-center gap-2" title={`${t("lotes.thInicial")}: ${formatNumber(inicial)} ${unidad}`}>
+      <div className="relative h-1.5 w-full max-w-[120px] overflow-hidden bg-cds-borderSubtle">
+        <div className="absolute inset-y-0 left-0" style={{ width: `${width}%`, backgroundColor: "var(--lab-blue)" }} />
+      </div>
+      <span className="min-w-[34px] text-right font-mono text-[11px] text-cds-textSecondary">{pct}%</span>
+    </div>
+  )
+}
+
+// Semáforo de vencimiento: punto de color + fecha + texto relativo coloreado
+// (vencido · hace N d / vence hoy / en N d).
+function VencimientoCelda({ fecha }: { fecha: string | null | undefined }) {
+  const { t } = useTranslation()
+  if (!fecha) {
+    return <span className="text-cds-textSecondary">-</span>
+  }
+  const dias = daysUntil(fecha)
+  const tone = vencimientoTone(dias)
+  const color = vencColor[tone]
+  const relativo =
+    dias < 0 ? t("lotes.vencidoHace", { n: Math.abs(dias) }) : dias === 0 ? t("lotes.venceHoy") : t("lotes.venceEnDias", { n: dias })
+  return (
+    <div className="flex items-start gap-2">
+      <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: color }} aria-hidden="true" />
+      <span className="flex flex-col">
+        <span className="font-mono text-cds-textPrimary">{formatDate(fecha)}</span>
+        <span className="text-[11px]" style={{ color }}>
+          {relativo}
+        </span>
+      </span>
+    </div>
   )
 }
 
@@ -1472,6 +1573,21 @@ function LotesTable({
   onSelect: (id: number) => void
 }) {
   const { t } = useTranslation()
+  // Marca FIFO: por reactivo, el primer lote no vencido (la lista ya viene
+  // ordenada ascendente por vencimiento). Es el próximo a usar.
+  const fifoLoteIds = useMemo(() => {
+    const ids = new Set<number>()
+    const conFifo = new Set<number>()
+    for (const lote of lotes) {
+      if (conFifo.has(lote.reactivo_id)) continue
+      if (daysUntil(lote.fecha_vencimiento) >= 0) {
+        ids.add(lote.id)
+        conFifo.add(lote.reactivo_id)
+      }
+    }
+    return ids
+  }, [lotes])
+
   if (isLoading) {
     return <div className="bg-cds-layer01 p-4 text-sm text-cds-textSecondary">{t("common.cargandoTabla")}</div>
   }
@@ -1482,7 +1598,7 @@ function LotesTable({
 
   return (
     <div className="overflow-x-auto border-t border-cds-borderSubtle">
-      <table className="w-full min-w-[1340px] border-collapse text-left text-sm">
+      <table className="w-full min-w-[1360px] border-collapse text-left text-sm">
         <thead>
           <tr className="border-b border-cds-borderSubtle bg-cds-layer01 text-xs tracking-[0.32px] text-cds-textSecondary">
             <th className="h-10 px-4 font-normal">{t("lotes.thQr")}</th>
@@ -1493,7 +1609,7 @@ function LotesTable({
             <th className="h-10 px-4 font-normal">{t("lotes.thCodProveedor")}</th>
             <th className="h-10 px-4 font-normal">{t("lotes.thIngreso")}</th>
             <th className="h-10 px-4 text-right font-normal">{t("lotes.thStock")}</th>
-            <th className="h-10 px-4 text-right font-normal">{t("lotes.thInicial")}</th>
+            <th className="h-10 px-4 font-normal">{t("lotes.thConsumo")}</th>
             <th className="h-10 px-4 font-normal">{t("lotes.thVencimiento")}</th>
             <th className="h-10 px-4 font-normal">{t("lotes.thProveedor")}</th>
             <th className="h-10 px-4 font-normal">{t("lotes.thUbicacion")}</th>
@@ -1509,11 +1625,23 @@ function LotesTable({
                 key={lote.id}
                 className={cn(
                   "cursor-pointer border-b border-cds-borderSubtle transition-colors hover:bg-cds-layer01",
+                  // Vencido: acento coral (descartar). Por vencer (≤30 d): ámbar.
+                  vencido && "bg-lab-critTint/60 shadow-[inset_2px_0_0_var(--cds-support-error)]",
+                  porVencer && "bg-lab-warmTint/60 shadow-[inset_2px_0_0_var(--cds-support-warning)]",
                   selectedId === lote.id && "bg-cds-layer01 shadow-[inset_2px_0_0_var(--cds-focus)]",
                 )}
                 onClick={() => onSelect(lote.id)}
               >
-                <td className="h-12 px-4 font-mono text-xs tracking-[0.16px]">{lote.codigo_interno}</td>
+                <td className="h-12 px-4 font-mono text-xs tracking-[0.16px]">
+                  <span className="inline-flex items-center gap-2">
+                    {lote.codigo_interno}
+                    {fifoLoteIds.has(lote.id) ? (
+                      <span className="rounded-full bg-lab-blueTint px-1.5 py-0.5 font-sans text-[10px] font-medium tracking-[0.16px] text-cds-linkPrimary">
+                        FIFO
+                      </span>
+                    ) : null}
+                  </span>
+                </td>
                 <td className="h-12 px-4 font-semibold tracking-[0.16px]">{lote.reactivo_nombre}</td>
                 <td className="h-12 px-4">{lote.numero_lote || "-"}</td>
                 <td className="h-12 px-4 text-cds-textSecondary">{lote.marca || "-"}</td>
@@ -1523,11 +1651,11 @@ function LotesTable({
                 <td className="h-12 px-4 text-right font-mono">
                   {formatNumber(lote.cantidad_actual)} {lote.unidad}
                 </td>
-                <td className="h-12 px-4 text-right font-mono">
-                  {formatNumber(lote.cantidad_inicial)} {lote.unidad}
+                <td className="h-12 px-4">
+                  <ConsumoBar actual={lote.cantidad_actual} inicial={lote.cantidad_inicial} unidad={lote.unidad} />
                 </td>
-                <td className={cn("h-12 px-4", vencido && "text-cds-supportError", porVencer && "text-cds-supportWarning")}>
-                  {formatDate(lote.fecha_vencimiento)}
+                <td className="h-12 px-4">
+                  <VencimientoCelda fecha={lote.fecha_vencimiento} />
                 </td>
                 <td className="h-12 px-4 text-cds-textSecondary">{lote.proveedor || "-"}</td>
                 <td className="h-12 px-4 text-cds-textSecondary">{lote.ubicacion || "-"}</td>

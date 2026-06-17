@@ -1,6 +1,6 @@
 import { FormEvent, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Building2, Eye, EyeOff, Mail, Phone, Plus, RotateCcw, Search, Trash2 } from "lucide-react"
+import { ArrowLeft, ExternalLink, Eye, EyeOff, Mail, Phone, Plus, RotateCcw, Search, Trash2 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { ModuleNav } from "../components/ModuleNav"
@@ -29,6 +29,88 @@ function mutationError(error: unknown, fallback: string) {
 
 function activoBool(value: number | boolean) {
   return value === true || value === 1
+}
+
+// Monograma de identidad: avatar de iniciales con color por hash del nombre.
+// Los hues salen de los tokens de grupo + petróleo + verde; el tint se deriva
+// con color-mix para que themee en claro/oscuro sin hardcodear hex.
+const MONOGRAMA_HUES = [
+  "var(--lab-grupo-h)",
+  "var(--lab-grupo-u)",
+  "var(--lab-grupo-p)",
+  "var(--lab-grupo-m)",
+  "var(--cds-link-primary)",
+  "var(--cds-support-success)",
+]
+
+function hashTexto(value: string) {
+  let hash = 0
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) | 0
+  }
+  return Math.abs(hash)
+}
+
+function inicialesDe(nombre: string) {
+  const palabras = nombre.trim().split(/[\s-]+/).filter(Boolean)
+  if (!palabras.length) {
+    return "?"
+  }
+  if (palabras.length === 1) {
+    return palabras[0].slice(0, 2).toLocaleUpperCase("es")
+  }
+  return (palabras[0][0] + palabras[1][0]).toLocaleUpperCase("es")
+}
+
+function Monograma({ nombre, size = 30, inactivo = false }: { nombre: string; size?: number; inactivo?: boolean }) {
+  const hue = inactivo ? "var(--cds-text-secondary)" : MONOGRAMA_HUES[hashTexto(nombre) % MONOGRAMA_HUES.length]
+  return (
+    <span
+      className="inline-flex shrink-0 items-center justify-center rounded-full font-medium leading-none"
+      style={{
+        width: size,
+        height: size,
+        fontSize: Math.round(size * 0.38),
+        color: hue,
+        backgroundColor: `color-mix(in srgb, ${hue} 16%, transparent)`,
+      }}
+      aria-hidden="true"
+    >
+      {inicialesDe(nombre)}
+    </span>
+  )
+}
+
+function normalizarUrl(raw: string) {
+  return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`
+}
+
+function soloDominio(raw: string) {
+  try {
+    return new URL(normalizarUrl(raw)).hostname.replace(/^www\./, "")
+  } catch {
+    return raw
+  }
+}
+
+// Sitio web como enlace real: solo el dominio, petróleo + icono, abre en pestaña
+// nueva. stopPropagation para no disparar la selección de la fila.
+function SitioWebLink({ sitio }: { sitio?: string | null }) {
+  if (!sitio) {
+    return <span className="text-cds-textPlaceholder">—</span>
+  }
+  return (
+    <a
+      href={normalizarUrl(sitio)}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(event) => event.stopPropagation()}
+      className="inline-flex items-center gap-1 font-mono text-[12.5px] text-cds-linkPrimary hover:text-cds-linkPrimaryHover"
+    >
+      {soloDominio(sitio)}
+      <ExternalLink size={13} aria-hidden="true" />
+    </a>
+  )
 }
 
 export function ProveedoresPage() {
@@ -204,13 +286,14 @@ function ProveedoresTable({
 
   return (
     <div className="overflow-x-auto border-t border-cds-borderSubtle">
-      <table className="w-full min-w-[760px] border-collapse text-left text-sm">
+      <table className="w-full min-w-[720px] border-collapse text-left text-sm">
         <thead>
           <tr className="border-b border-cds-borderSubtle bg-cds-layer01 text-xs tracking-[0.32px] text-cds-textSecondary">
-            <th className="h-10 px-4 font-normal">{t("proveedores.thNombre")}</th>
+            <th className="h-10 px-4 font-normal">{t("proveedores.thProveedor")}</th>
             <th className="h-10 px-4 font-normal">{t("proveedores.sitioWeb")}</th>
+            <th className="h-10 px-4 text-right font-normal">{t("proveedores.thLotes")}</th>
+            <th className="h-10 px-4 text-right font-normal">{t("proveedores.thContactos")}</th>
             <th className="h-10 px-4 font-normal">{t("proveedores.estado")}</th>
-            <th className="h-10 px-4 font-normal">{t("proveedores.descripcion")}</th>
           </tr>
         </thead>
         <tbody>
@@ -221,17 +304,32 @@ function ProveedoresTable({
                 key={proveedor.id}
                 className={cn(
                   "cursor-pointer border-b border-cds-borderSubtle transition-colors hover:bg-cds-layer01",
-                  selectedId === proveedor.id && "bg-cds-layer01",
+                  selectedId === proveedor.id && "bg-cds-layer01 shadow-[inset_2px_0_0_var(--cds-focus)]",
                 )}
                 onClick={() => onSelect(proveedor.id)}
               >
-                <td className="h-12 px-4 font-medium">{proveedor.nombre}</td>
-                <td className="h-12 px-4 text-cds-textSecondary">{proveedor.sitio_web || "-"}</td>
-                <td className="h-12 px-4">
-                  <EstadoBadge activo={activo} />
+                <td className="h-14 px-4">
+                  <div className="flex items-center gap-3">
+                    <Monograma nombre={proveedor.nombre} inactivo={!activo} />
+                    <div className="min-w-0 max-w-[340px]">
+                      <div className={cn("truncate font-semibold tracking-[0.16px]", !activo && "text-cds-textSecondary")}>
+                        {proveedor.nombre}
+                      </div>
+                      {proveedor.descripcion ? (
+                        <div className="truncate text-xs text-cds-textSecondary">{proveedor.descripcion}</div>
+                      ) : null}
+                    </div>
+                  </div>
                 </td>
-                <td className="h-12 max-w-[320px] px-4 text-cds-textSecondary">
-                  <span className="line-clamp-2">{proveedor.descripcion || "-"}</span>
+                <td className="h-14 px-4">
+                  <SitioWebLink sitio={proveedor.sitio_web} />
+                </td>
+                <td className="h-14 px-4 text-right font-mono">{proveedor.lotes_count ?? 0}</td>
+                <td className={cn("h-14 px-4 text-right font-mono", !proveedor.contactos_count && "text-cds-textPlaceholder")}>
+                  {proveedor.contactos_count ?? 0}
+                </td>
+                <td className="h-14 px-4">
+                  <EstadoBadge activo={activo} />
                 </td>
               </tr>
             )
@@ -325,13 +423,13 @@ function ProveedorDetallePanel({
   return (
     <aside className="bg-cds-layer01 p-4">
       <div className="mb-5 flex items-start justify-between gap-4">
-        <div>
-          <div className="mb-3 text-cds-textSecondary">
-            <Building2 size={22} aria-hidden="true" />
-          </div>
-          <h2 className="text-[24px] leading-[1.33]">{proveedor.nombre}</h2>
-          <div className="mt-2">
-            <EstadoBadge activo={activo} />
+        <div className="flex items-start gap-3">
+          <Monograma nombre={proveedor.nombre} size={46} inactivo={!activo} />
+          <div>
+            <h2 className="text-[24px] leading-[1.33]">{proveedor.nombre}</h2>
+            <div className="mt-2">
+              <EstadoBadge activo={activo} />
+            </div>
           </div>
         </div>
         {puedeEditar ? (
@@ -348,7 +446,18 @@ function ProveedorDetallePanel({
         <>
           <div className="space-y-4 border-t border-cds-borderSubtle pt-4 text-sm">
             <Info label={t("proveedores.descripcion")} value={detalle?.descripcion || "-"} />
-            <Info label={t("proveedores.sitioWeb")} value={detalle?.sitio_web || "-"} />
+            <div>
+              <div className="text-xs tracking-[0.32px] text-cds-textSecondary">{t("proveedores.sitioWeb")}</div>
+              <div className="mt-1">
+                <SitioWebLink sitio={detalle?.sitio_web} />
+              </div>
+            </div>
+            <div>
+              <div className="text-xs tracking-[0.32px] text-cds-textSecondary">{t("proveedores.abastece")}</div>
+              <div className="mt-1 font-mono text-cds-textPrimary">
+                {t("proveedores.abasteceValor", { lotes: proveedor.lotes_count ?? 0, reactivos: proveedor.reactivos_count ?? 0 })}
+              </div>
+            </div>
             <Info label={t("proveedores.notas")} value={detalle?.notas || "-"} />
           </div>
 
@@ -359,9 +468,12 @@ function ProveedorDetallePanel({
                 {contactos.map((contacto) => (
                   <article key={contacto.id} className="border border-cds-borderSubtle bg-cds-background p-3">
                     <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="font-medium">{contacto.nombre}</div>
-                        <div className="mt-1 text-xs tracking-[0.32px] text-cds-textSecondary">{contacto.rol || t("proveedores.sinRol")}</div>
+                      <div className="flex min-w-0 items-start gap-3">
+                        <Monograma nombre={contacto.nombre} />
+                        <div className="min-w-0">
+                          <div className="font-medium">{contacto.nombre}</div>
+                          <div className="mt-1 text-xs tracking-[0.32px] text-cds-textSecondary">{contacto.rol || t("proveedores.sinRol")}</div>
+                        </div>
                       </div>
                       {puedeEditar ? (
                         <Button
@@ -378,16 +490,22 @@ function ProveedorDetallePanel({
                       ) : null}
                     </div>
                     {contacto.email ? (
-                      <div className="mt-3 flex items-center gap-2 text-sm text-cds-textSecondary">
+                      <a
+                        href={`mailto:${contacto.email}`}
+                        className="mt-3 flex items-center gap-2 text-sm text-cds-linkPrimary hover:text-cds-linkPrimaryHover"
+                      >
                         <Mail size={16} aria-hidden="true" />
-                        {contacto.email}
-                      </div>
+                        <span className="font-mono">{contacto.email}</span>
+                      </a>
                     ) : null}
                     {contacto.telefono ? (
-                      <div className="mt-2 flex items-center gap-2 text-sm text-cds-textSecondary">
+                      <a
+                        href={`tel:${contacto.telefono}`}
+                        className="mt-2 flex items-center gap-2 text-sm text-cds-linkPrimary hover:text-cds-linkPrimaryHover"
+                      >
                         <Phone size={16} aria-hidden="true" />
-                        {contacto.telefono}
-                      </div>
+                        <span className="font-mono">{contacto.telefono}</span>
+                      </a>
                     ) : null}
                     {contacto.notas ? <p className="mt-3 text-sm text-cds-textSecondary">{contacto.notas}</p> : null}
                   </article>
