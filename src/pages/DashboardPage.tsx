@@ -274,6 +274,7 @@ export function DashboardPage() {
   const movimientosRaw = data.ultimos_movimientos ?? data.movimientos_recientes
   const movimientos = Array.isArray(movimientosRaw) ? movimientosRaw : emptyRows
   const reposicion = reposicionQuery.data?.recomendaciones ?? []
+  const horizonteStock = reposicionQuery.data?.horizonte_stock ?? reposicion
   const puedeVerValor = puede(usuario, "ver_valor_inventario")
   const puedeCrearTarea = puede(usuario, "crear_tarea")
   const loading = dashboardQuery.isLoading
@@ -366,7 +367,10 @@ export function DashboardPage() {
   // "Días hasta quiebre": reposición rows ranked by runway (soonest first), colored by nivel.
   const quiebreData = useMemo(() => {
     const horizonte = reposicionQuery.data?.parametros.dias ?? 30
-    const conDias = reposicion.filter((row) => row.dias_stock_estimado != null)
+    const conDias = horizonteStock.filter((row) => {
+      const quedaPoco = row.motivos.includes("stock_alcanza_pocos_dias") || row.motivos.includes("bajo_stock_minimo")
+      return row.stock_actual > 0 && row.dias_stock_estimado != null && quedaPoco
+    })
     const maxDias = Math.max(horizonte, ...conDias.map((row) => row.dias_stock_estimado ?? 0), 1)
     return [...conDias]
       .sort((a, b) => (a.dias_stock_estimado ?? 0) - (b.dias_stock_estimado ?? 0))
@@ -382,7 +386,7 @@ export function DashboardPage() {
           color,
         }
       })
-  }, [reposicion, reposicionQuery.data, t])
+  }, [horizonteStock, reposicionQuery.data, t])
 
   const today = new Intl.DateTimeFormat("es-AR", { day: "2-digit", month: "short", year: "2-digit" }).format(new Date())
 
@@ -494,7 +498,7 @@ export function DashboardPage() {
             <div className="border-l-2 border-cds-supportError bg-lab-critTint px-4 py-3 text-sm">
               {t("dashboard.reposicionError")}
             </div>
-          ) : reposicion.length ? (
+          ) : reposicion.length || quiebreData.length ? (
             <>
               {crearTareaReposicionMutation.isSuccess ? (
                 <div className="mb-3 border-l-2 border-cds-supportSuccess bg-lab-sageBg px-4 py-3 text-sm">
@@ -536,62 +540,66 @@ export function DashboardPage() {
                   </ul>
                 </div>
               ) : null}
-              <div className="grid gap-2 lg:grid-cols-2 xl:grid-cols-3">
-                {reposicion.slice(0, 6).map((item: ReposicionRecomendacion) => (
-                  <article
-                    key={item.reactivo_id}
-                    className="border border-cds-borderSubtle bg-cds-layer01 p-3"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <Link
-                          to={`/reactivos?reactivo_id=${item.reactivo_id}`}
-                          className="block truncate text-sm font-medium text-cds-textPrimary hover:text-cds-linkPrimary hover:underline"
-                        >
-                          {item.reactivo_nombre}
-                        </Link>
-                        <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.32px] text-cds-textSecondary">
-                          {diasStockLabel(item.dias_stock_estimado, t)}
+              {reposicion.length ? (
+                <div className="grid gap-2 lg:grid-cols-2 xl:grid-cols-3">
+                  {reposicion.slice(0, 6).map((item: ReposicionRecomendacion) => (
+                    <article
+                      key={item.reactivo_id}
+                      className="border border-cds-borderSubtle bg-cds-layer01 p-3"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <Link
+                            to={`/reactivos?reactivo_id=${item.reactivo_id}`}
+                            className="block truncate text-sm font-medium text-cds-textPrimary hover:text-cds-linkPrimary hover:underline"
+                          >
+                            {item.reactivo_nombre}
+                          </Link>
+                          <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.32px] text-cds-textSecondary">
+                            {diasStockLabel(item.dias_stock_estimado, t)}
+                          </div>
+                        </div>
+                        <span className={cn("shrink-0 rounded-full px-2.5 py-1 text-xs font-medium tracking-[0.16px]", reposicionToneClasses(item.nivel))}>
+                          {t(`dashboard.reposicionNivel.${item.nivel}`, { defaultValue: item.nivel })}
+                        </span>
+                      </div>
+                      <div className="mt-3 grid grid-cols-3 gap-2 font-mono text-[11px]">
+                        <div>
+                          <div className="text-cds-textSecondary">{t("dashboard.reposicionStock")}</div>
+                          <div className="mt-1 text-cds-textPrimary">{formatValue(item.stock_actual)} {item.unidad}</div>
+                        </div>
+                        <div>
+                          <div className="text-cds-textSecondary">{t("dashboard.reposicionConsumo")}</div>
+                          <div className="mt-1 text-cds-textPrimary">{formatValue(item.consumo_promedio_diario)} {item.unidad}/d</div>
+                        </div>
+                        <div>
+                          <div className="text-cds-textSecondary">{t("dashboard.reposicionSugerido")}</div>
+                          <div className="mt-1 text-cds-textPrimary">{formatValue(item.cantidad_sugerida)} {item.unidad}</div>
                         </div>
                       </div>
-                      <span className={cn("shrink-0 rounded-full px-2.5 py-1 text-xs font-medium tracking-[0.16px]", reposicionToneClasses(item.nivel))}>
-                        {t(`dashboard.reposicionNivel.${item.nivel}`, { defaultValue: item.nivel })}
-                      </span>
-                    </div>
-                    <div className="mt-3 grid grid-cols-3 gap-2 font-mono text-[11px]">
-                      <div>
-                        <div className="text-cds-textSecondary">{t("dashboard.reposicionStock")}</div>
-                        <div className="mt-1 text-cds-textPrimary">{formatValue(item.stock_actual)} {item.unidad}</div>
+                      <div className="mt-3 flex items-center gap-2 text-xs text-cds-textSecondary">
+                        <ShoppingCart size={13} aria-hidden="true" />
+                        <span className="truncate">{item.proveedor_reciente || t("dashboard.reposicionSinProveedor")}</span>
                       </div>
-                      <div>
-                        <div className="text-cds-textSecondary">{t("dashboard.reposicionConsumo")}</div>
-                        <div className="mt-1 text-cds-textPrimary">{formatValue(item.consumo_promedio_diario)} {item.unidad}/d</div>
-                      </div>
-                      <div>
-                        <div className="text-cds-textSecondary">{t("dashboard.reposicionSugerido")}</div>
-                        <div className="mt-1 text-cds-textPrimary">{formatValue(item.cantidad_sugerida)} {item.unidad}</div>
-                      </div>
-                    </div>
-                    <div className="mt-3 flex items-center gap-2 text-xs text-cds-textSecondary">
-                      <ShoppingCart size={13} aria-hidden="true" />
-                      <span className="truncate">{item.proveedor_reciente || t("dashboard.reposicionSinProveedor")}</span>
-                    </div>
-                    {puedeCrearTarea ? (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="compact"
-                        className="mt-3 h-8 w-full justify-center gap-2"
-                        disabled={crearTareaReposicionMutation.isPending}
-                        onClick={() => crearTareaReposicionMutation.mutate(item.reactivo_id)}
-                      >
-                        <ClipboardPlus size={14} aria-hidden="true" />
-                        {crearTareaReposicionMutation.isPending ? t("dashboard.reposicionCreandoTarea") : t("dashboard.reposicionCrearTarea")}
-                      </Button>
-                    ) : null}
-                  </article>
-                ))}
-              </div>
+                      {puedeCrearTarea ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="compact"
+                          className="mt-3 h-8 w-full justify-center gap-2"
+                          disabled={crearTareaReposicionMutation.isPending}
+                          onClick={() => crearTareaReposicionMutation.mutate(item.reactivo_id)}
+                        >
+                          <ClipboardPlus size={14} aria-hidden="true" />
+                          {crearTareaReposicionMutation.isPending ? t("dashboard.reposicionCreandoTarea") : t("dashboard.reposicionCrearTarea")}
+                        </Button>
+                      ) : null}
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <EmptyChart text={t("dashboard.reposicionVacia")} />
+              )}
             </>
           ) : reposicionQuery.isLoading ? (
             <EmptyChart text={t("dashboard.reposicionCargando")} />

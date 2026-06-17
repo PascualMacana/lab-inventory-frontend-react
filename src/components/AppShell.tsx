@@ -7,6 +7,7 @@ import {
   ChartNoAxesCombined,
   ClipboardCheck,
   Dna,
+  ExternalLink,
   FlaskRound,
   FlaskConical,
   Gauge,
@@ -56,6 +57,58 @@ const navItems = [
   { to: "/graphs", labelKey: "nav.analitica", icon: ChartNoAxesCombined, action: "ver_pagina_analitica" },
 ]
 
+type NavItem = (typeof navItems)[number]
+
+// Los 15 destinos se agrupan en 5 secciones. navItems sigue siendo la fuente de
+// datos (icono/permiso/labels); estos grupos solo ordenan el render por sección.
+const navGroups: { labelKey: string; items: string[] }[] = [
+  { labelKey: "navGroup.inicio", items: ["/"] },
+  { labelKey: "navGroup.inventario", items: ["/reactivos", "/cepario", "/equipamiento", "/proveedores"] },
+  { labelKey: "navGroup.operacion", items: ["/consumo", "/mesada", "/protocolos", "/tareas", "/movimientos"] },
+  { labelKey: "navGroup.analisis", items: ["/auditoria", "/graphs", "/asistente"] },
+  { labelKey: "navGroup.admin", items: ["/owner", "/usuarios"] },
+]
+
+// Build the visible groups for a viewport: keep each group's items in declared
+// order, drop items the user can't see, and drop a whole group if it ends empty
+// (so roles without permissions never leave an orphan eyebrow).
+function buildGroups(visible: NavItem[]) {
+  const visibleByPath = new Map(visible.map((item) => [item.to, item]))
+  return navGroups
+    .map((group) => ({
+      labelKey: group.labelKey,
+      items: group.items.map((to) => visibleByPath.get(to)).filter((item): item is NavItem => Boolean(item)),
+    }))
+    .filter((group) => group.items.length > 0)
+}
+
+// First letters of the name: "Juan Pérez" → "JP"; single word → first 2 chars.
+function iniciales(nombre?: string | null) {
+  const parts = (nombre ?? "").trim().split(/\s+/).filter(Boolean)
+  if (!parts.length) {
+    return "?"
+  }
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase()
+  }
+  return (parts[0][0] + parts[1][0]).toUpperCase()
+}
+
+// Monograma de cuenta: mismo recurso de identidad en sidebar y drawer mobile.
+function Monograma({ nombre, className }: { nombre?: string | null; className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full bg-cds-buttonPrimary text-[11.5px] font-semibold text-white",
+        className,
+      )}
+      aria-hidden="true"
+    >
+      {iniciales(nombre)}
+    </span>
+  )
+}
+
 const langs: Lang[] = ["es", "en"]
 
 export function AppShell() {
@@ -82,6 +135,8 @@ export function AppShell() {
   const visibleItems = navItems.filter((item) => puede(usuario, item.action))
   const desktopItems = visibleItems.filter((item) => !item.mobileOnly)
   const mobileItems = visibleItems.filter((item) => !item.desktopOnly)
+  const desktopGroups = buildGroups(desktopItems)
+  const mobileGroups = buildGroups(mobileItems)
   const online = healthQuery.data?.ok === true && !healthQuery.isError
 
   function handleModuleOpen(to: string) {
@@ -107,6 +162,88 @@ export function AppShell() {
     setAccountMenuOpen(false)
   }, [sidebarColapsado])
 
+  function renderDesktopItem(item: NavItem) {
+    const Icon = item.icon
+    if (item.to === "/cepario") {
+      // Cepario abre en pestaña nueva con su propio shell (dominio aparte del almacén).
+      return (
+        <a
+          key={item.to}
+          href={item.to}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={sidebarColapsado ? t(item.labelKey) : undefined}
+          className="grid h-12 grid-cols-[calc(4rem-2px)_1fr] items-center border-l-2 border-transparent text-sm tracking-[0.16px] transition-colors hover:bg-[color-mix(in_srgb,var(--lab-cepario)_50%,var(--lab-sidebar-hover))] hover:text-white"
+        >
+          <Icon className="mx-auto shrink-0" size={18} aria-hidden="true" />
+          {!sidebarColapsado ? (
+            <span className="flex items-center gap-1.5 overflow-hidden whitespace-nowrap pr-3">
+              {t(item.labelKey)}
+              <ExternalLink className="shrink-0 text-[var(--lab-cepario)]" size={12} aria-hidden="true" />
+            </span>
+          ) : null}
+        </a>
+      )
+    }
+    return (
+      <NavLink
+        key={item.to}
+        to={item.to}
+        end={item.to === "/"}
+        title={sidebarColapsado ? t(item.labelKey) : undefined}
+        onClick={() => handleModuleOpen(item.to)}
+        className={({ isActive }) =>
+          cn(
+            "grid h-12 grid-cols-[calc(4rem-2px)_1fr] items-center border-l-2 border-transparent text-sm tracking-[0.16px] transition-colors hover:bg-[var(--lab-sidebar-hover)] hover:text-white",
+            isActive && "border-cds-buttonPrimary bg-[var(--lab-sidebar-hover)] text-white",
+          )
+        }
+      >
+        <Icon className="mx-auto shrink-0" size={18} aria-hidden="true" />
+        {!sidebarColapsado ? (
+          <span className="overflow-hidden whitespace-nowrap pr-3">{t(item.labelKey)}</span>
+        ) : null}
+      </NavLink>
+    )
+  }
+
+  function renderMobileItem(item: NavItem) {
+    const Icon = item.icon
+    if (item.to === "/cepario") {
+      return (
+        <a
+          key={item.to}
+          href={item.to}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={() => setMenuAbierto(false)}
+          className="flex h-12 items-center gap-3 border-l-2 border-transparent px-4 text-sm tracking-[0.16px] transition-colors hover:bg-[color-mix(in_srgb,var(--lab-cepario)_50%,var(--lab-sidebar-hover))] hover:text-white"
+        >
+          <Icon size={18} aria-hidden="true" />
+          {t(item.labelKey)}
+          <ExternalLink className="shrink-0 text-[var(--lab-cepario)]" size={12} aria-hidden="true" />
+        </a>
+      )
+    }
+    return (
+      <NavLink
+        key={item.to}
+        to={item.to}
+        end={item.to === "/"}
+        onClick={() => handleModuleOpen(item.to)}
+        className={({ isActive }) =>
+          cn(
+            "flex h-12 items-center gap-3 border-l-2 border-transparent px-4 text-sm tracking-[0.16px] transition-colors hover:bg-[var(--lab-sidebar-hover)] hover:text-white",
+            isActive && "border-cds-buttonPrimary bg-[var(--lab-sidebar-hover)] text-white",
+          )
+        }
+      >
+        <Icon size={18} aria-hidden="true" />
+        {t(item.labelKey)}
+      </NavLink>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-cds-background text-cds-textPrimary">
       <aside
@@ -115,7 +252,10 @@ export function AppShell() {
           sidebarColapsado ? "w-16" : "w-60",
         )}
       >
-        <div className="flex h-full w-60 flex-col">
+        {/* Sigue el ancho de la barra (64/240) en vez de quedar fijo en 240: así
+            ningún hijo del nav (divisores, fondo del item activo) supera los 64px
+            colapsado y no puede escaparse del recorte (quirk de scroll-container). */}
+        <div className="flex h-full w-full flex-col">
         <div className="grid h-12 grid-cols-[4rem_1fr] items-center border-b border-[#393939] text-sm font-semibold tracking-[0.16px] text-white">
           <Button
             type="button"
@@ -142,43 +282,30 @@ export function AppShell() {
         ) : null}
 
         <nav className="flex-1 overflow-y-auto py-2">
-          {desktopItems.map((item) => {
-            const Icon = item.icon
-            if (item.to === "/cepario") {
-              // Cepario abre en pestaña nueva con su propio shell (dominio aparte del almacén).
-              return (
-                <a
-                  key={item.to}
-                  href={item.to}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title={sidebarColapsado ? t(item.labelKey) : undefined}
-                  className="grid h-12 grid-cols-[calc(4rem-2px)_1fr] items-center border-l-2 border-transparent text-sm tracking-[0.16px] transition-colors hover:bg-[color-mix(in_srgb,var(--lab-cepario)_50%,var(--lab-sidebar-hover))] hover:text-white"
+          {desktopGroups.map((group, index) => (
+            <div key={group.labelKey}>
+              {/* El primer grupo (Dashboard) va como item principal arriba, sin
+                  encabezado: evita que su "bloque" quede más alto que el resto y,
+                  colapsado, el hueco vacío bajo la fila de API. El resto lleva
+                  encabezado de igual alto expandido/colapsado (eyebrow ↔ línea)
+                  para que los iconos no salten al minimizar. */}
+              {index > 0 ? (
+                <div
+                  className={cn("flex h-[30px] items-center", !sidebarColapsado && "px-4")}
+                  aria-hidden="true"
                 >
-                  <Icon className="mx-auto shrink-0" size={18} aria-hidden="true" />
-                  <span className="overflow-hidden whitespace-nowrap pr-3">{t(item.labelKey)}</span>
-                </a>
-              )
-            }
-            return (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.to === "/"}
-                title={sidebarColapsado ? t(item.labelKey) : undefined}
-                onClick={() => handleModuleOpen(item.to)}
-                className={({ isActive }) =>
-                  cn(
-                    "grid h-12 grid-cols-[calc(4rem-2px)_1fr] items-center border-l-2 border-transparent text-sm tracking-[0.16px] transition-colors hover:bg-[var(--lab-sidebar-hover)] hover:text-white",
-                    isActive && "border-cds-buttonPrimary bg-[var(--lab-sidebar-hover)] text-white",
-                  )
-                }
-              >
-                <Icon className="mx-auto shrink-0" size={18} aria-hidden="true" />
-                <span className="overflow-hidden whitespace-nowrap pr-3">{t(item.labelKey)}</span>
-              </NavLink>
-            )
-          })}
+                  {sidebarColapsado ? (
+                    <span className="h-px w-full bg-[#393939]" />
+                  ) : (
+                    <span className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-[#717c86]">
+                      {t(group.labelKey)}
+                    </span>
+                  )}
+                </div>
+              ) : null}
+              {group.items.map((item) => renderDesktopItem(item))}
+            </div>
+          ))}
         </nav>
 
         <div className="border-t border-[#393939] p-2">
@@ -245,7 +372,7 @@ export function AppShell() {
               title={sidebarColapsado ? t("account.title") : undefined}
               onClick={() => setAccountMenuOpen((open) => !open)}
             >
-              <UserCircle className="mx-auto" size={20} aria-hidden="true" />
+              <Monograma nombre={usuario?.nombre} className="mx-auto" />
               <span className="min-w-0 overflow-hidden text-left">
                 <span className="block truncate text-sm text-white">{usuario?.nombre}</span>
                 <span className="block truncate text-xs tracking-[0.32px] text-[var(--lab-sidebar-text)]">
@@ -291,49 +418,27 @@ export function AppShell() {
               onClick={() => setMenuAbierto(false)}
             />
             <aside className="relative flex h-full w-[min(20rem,85vw)] flex-col bg-[var(--lab-sidebar-bg)] text-[var(--lab-sidebar-text)] shadow-xl">
-              <div className="border-b border-[#393939] px-4 py-4">
-                <div className="text-sm font-semibold tracking-[0.16px] text-white">{usuario?.nombre}</div>
-                <div className="mt-1 text-xs tracking-[0.32px]">
-                  {usuario ? t(`roles.${usuario.rol}`) : ""}{usuario?.sector ? ` · ${usuario.sector}` : ""}
+              <div className="flex items-center gap-3 border-b border-[#393939] px-4 py-4">
+                <Monograma nombre={usuario?.nombre} />
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold tracking-[0.16px] text-white">{usuario?.nombre}</div>
+                  <div className="mt-1 truncate text-xs tracking-[0.32px]">
+                    {usuario ? t(`roles.${usuario.rol}`) : ""}{usuario?.sector ? ` · ${usuario.sector}` : ""}
+                  </div>
                 </div>
               </div>
 
               <nav className="flex-1 overflow-y-auto py-2">
-                {mobileItems.map((item) => {
-                  const Icon = item.icon
-                  if (item.to === "/cepario") {
-                    return (
-                      <a
-                        key={item.to}
-                        href={item.to}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={() => setMenuAbierto(false)}
-                        className="flex h-12 items-center gap-3 border-l-2 border-transparent px-4 text-sm tracking-[0.16px] transition-colors hover:bg-[color-mix(in_srgb,var(--lab-cepario)_50%,var(--lab-sidebar-hover))] hover:text-white"
-                      >
-                        <Icon size={18} aria-hidden="true" />
-                        {t(item.labelKey)}
-                      </a>
-                    )
-                  }
-                  return (
-                    <NavLink
-                      key={item.to}
-                      to={item.to}
-                      end={item.to === "/"}
-                      onClick={() => handleModuleOpen(item.to)}
-                      className={({ isActive }) =>
-                        cn(
-                          "flex h-12 items-center gap-3 border-l-2 border-transparent px-4 text-sm tracking-[0.16px] transition-colors hover:bg-[var(--lab-sidebar-hover)] hover:text-white",
-                          isActive && "border-cds-buttonPrimary bg-[var(--lab-sidebar-hover)] text-white",
-                        )
-                      }
-                    >
-                      <Icon size={18} aria-hidden="true" />
-                      {t(item.labelKey)}
-                    </NavLink>
-                  )
-                })}
+                {mobileGroups.map((group, index) => (
+                  <div key={group.labelKey}>
+                    {index > 0 ? (
+                      <div className="px-4 pb-1.5 pt-3.5 font-mono text-[10.5px] uppercase tracking-[0.18em] text-[#717c86]">
+                        {t(group.labelKey)}
+                      </div>
+                    ) : null}
+                    {group.items.map((item) => renderMobileItem(item))}
+                  </div>
+                ))}
               </nav>
 
               <div className="flex items-center gap-3 border-t border-[#393939] px-4 py-3 text-sm tracking-[0.16px] text-[var(--lab-sidebar-text)]">

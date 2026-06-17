@@ -304,3 +304,49 @@
 .lab-status-dot {
   animation: lab-pulse 2s ease-in-out infinite;
 }
+
+/* Asistente — movimiento de redacción: puntitos (typing) + cursor (streaming). */
+.asistente-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: var(--lab-cepario);
+  animation: asistente-dot 1.2s ease-in-out infinite;
+}
+
+.asistente-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 16px;
+  margin-left: 2px;
+  vertical-align: middle;
+  border-radius: 2px;
+  background: var(--lab-cepario);
+  animation: asistente-cursor 1s steps(1) infinite;
+}
+
+@keyframes asistente-dot {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  40% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+@keyframes asistente-cursor {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .asistente-dot,
+  .asistente-cursor {
+    animation: none;
+  }
+}

@@ -16,6 +16,13 @@
     "auditoria": "Auditoría",
     "analitica": "Analítica"
   },
+  "navGroup": {
+    "inicio": "Inicio",
+    "inventario": "Inventario",
+    "operacion": "Operación",
+    "analisis": "Análisis",
+    "admin": "Admin"
+  },
   "roles": {
     "admin": "Administrador",
     "jefe": "Jefe de laboratorio",
@@ -531,6 +538,10 @@
     "limpiarChat": "Limpiar chat",
     "preguntasRapidas": "Preguntas rápidas",
     "consultando": "Consultando...",
+    "redactando": "Redactando respuesta…",
+    "fuentes": "Fuentes",
+    "recursos": "Recursos",
+    "notaFooter": "El asistente solo consulta — no modifica registros. Verificá los datos críticos.",
     "preguntaPh": "Hacé tu pregunta...",
     "enviar": "Enviar",
     "sinRespuesta": "(sin respuesta)",
@@ -538,6 +549,9 @@
     "errConsultar": "No se pudo consultar el asistente",
     "pdfListo": "PDF listo para descargar",
     "descargarPdf": "Descargar PDF",
+    "csvListo": "CSV listo para descargar",
+    "descargarCsv": "Descargar CSV",
+    "csvFilas": "{{n}} fila(s) de datos",
     "sinPreview": "(sin contenido para previsualizar)",
     "toolsUsadas": "Consultas internas ({{n}})",
     "sinArgumentos": "sin argumentos",

@@ -16,6 +16,13 @@
     "auditoria": "Audit",
     "analitica": "Analytics"
   },
+  "navGroup": {
+    "inicio": "Home",
+    "inventario": "Inventory",
+    "operacion": "Operations",
+    "analisis": "Analysis",
+    "admin": "Admin"
+  },
   "roles": {
     "admin": "Administrator",
     "jefe": "Lab manager",
@@ -531,6 +538,10 @@
     "limpiarChat": "Clear chat",
     "preguntasRapidas": "Quick questions",
     "consultando": "Querying...",
+    "redactando": "Drafting response…",
+    "fuentes": "Sources",
+    "recursos": "Resources",
+    "notaFooter": "The assistant only reads — it doesn't modify records. Double-check critical data.",
     "preguntaPh": "Ask your question...",
     "enviar": "Send",
     "sinRespuesta": "(no answer)",
@@ -538,6 +549,9 @@
     "errConsultar": "Could not query the assistant",
     "pdfListo": "PDF ready to download",
     "descargarPdf": "Download PDF",
+    "csvListo": "CSV ready to download",
+    "descargarCsv": "Download CSV",
+    "csvFilas": "{{n}} data row(s)",
     "sinPreview": "(no content to preview)",
     "toolsUsadas": "Internal queries ({{n}})",
     "sinArgumentos": "no arguments",
