@@ -251,7 +251,9 @@ export type DashboardReposicion = {
     hasta: string
   }
   recomendaciones: ReposicionRecomendacion[]
+  horizonte_stock?: ReposicionRecomendacion[]
   total: number
+  total_horizonte_stock?: number
 }
 
 export type ReposicionTareaResponse = {
@@ -827,6 +829,8 @@ export type EntidadBiologica = {
   nivel_bioseguridad?: string | null
   grupo_operativo?: GrupoOperativo | null
   taxon_presuntivo?: string | null
+  accession_16s?: string | null
+  accession_genoma?: string | null
   categoria?: string | null
   resistencia?: string | null
   concentracion_ng_ul?: number | null
@@ -894,6 +898,9 @@ export type EntidadDetalle = EntidadBiologica & {
   origen_muestra?: string | null
   fecha_aislamiento?: string | null
   medio_aislamiento?: string | null
+  accession_16s?: string | null
+  accession_genoma?: string | null
+  categoria?: string | null
   backbone_chasis?: string | null
   resistencia?: string | null
   concentracion_ng_ul?: number | null
@@ -959,7 +966,29 @@ export type CepEntidadCrear = {
   origen_muestra?: string | null
   fecha_aislamiento?: string | null
   medio_aislamiento?: string | null
+  accession_16s?: string | null
+  accession_genoma?: string | null
   categoria?: string | null
+  backbone_chasis?: string | null
+  resistencia?: string | null
+  concentracion_ng_ul?: number | null
+  funcion_uso?: string | null
+}
+
+export type CepEntidadActualizar = {
+  nombre?: string | null
+  nivel_bioseguridad?: string | null
+  propietario_origen?: string | null
+  procedencia?: string | null
+  notas?: string | null
+  grupo_operativo?: GrupoOperativo | null
+  rama_aislamiento?: string | null
+  taxon_presuntivo?: string | null
+  origen_muestra?: string | null
+  fecha_aislamiento?: string | null
+  medio_aislamiento?: string | null
+  accession_16s?: string | null
+  accession_genoma?: string | null
   backbone_chasis?: string | null
   resistencia?: string | null
   concentracion_ng_ul?: number | null
@@ -1000,6 +1029,107 @@ export type CepMovimientoResultado = {
   tipo: string
   cantidad: number
   nro_viales_actual: number
+}
+
+export type CepBacdiveTipoBusqueda = "taxon" | "culture_collection" | "bacdive_id" | "sequence_16s" | "sequence_genome"
+
+export type CepBacdiveResumen = {
+  bacdive_id: string
+  titulo?: string | null
+  descripcion?: string | null
+  doi?: string | null
+  taxonomia?: Record<string, unknown>
+  morfologia?: Record<string, unknown>
+  enzimas?: Record<string, unknown>
+  metabolismo?: Record<string, unknown>
+  crecimiento?: Record<string, unknown>
+  aislamiento?: Record<string, unknown>
+  seguridad?: Record<string, unknown>
+  colecciones?: string[]
+  url?: string | null
+  [key: string]: unknown
+}
+
+export type CepBacdiveCandidate = {
+  fuente: "bacdive"
+  external_id: string
+  titulo?: string | null
+  descripcion?: string | null
+  taxonomia?: Record<string, unknown>
+  morfologia?: Record<string, unknown>
+  enzimas?: Record<string, unknown>
+  metabolismo?: Record<string, unknown>
+  crecimiento?: Record<string, unknown>
+  aislamiento?: Record<string, unknown>
+  seguridad?: Record<string, unknown>
+  colecciones?: string[]
+  url?: string | null
+  query_usada?: string | null
+  payload_resumen: CepBacdiveResumen
+  payload_raw?: Record<string, unknown> | null
+}
+
+export type CepBacdiveSearchResponse = {
+  query_usada: string
+  count: number
+  candidatos: CepBacdiveCandidate[]
+}
+
+export type CepReferenciaExterna = {
+  id: number
+  organizacion_id: number
+  entidad_id: number
+  fuente: "bacdive" | string
+  external_id: string
+  query_usada?: string | null
+  match_estado: "confirmado" | "sugerido" | "descartado"
+  payload_resumen: CepBacdiveResumen
+  payload_raw?: Record<string, unknown> | null
+  fecha_consulta: string
+  usuario_id?: number | null
+  usuario_nombre?: string | null
+}
+
+export type CepBacdivePatchItem = {
+  id: string
+  grupo: "entidad" | "caracterizacion"
+  campo: string
+  etiqueta: string
+  valor_local?: string | number | null
+  valor_bacdive?: string | number | null
+  estado: "sin_dato_bacdive" | "igual" | "vacio_local" | "diferente" | string
+  aplicable: boolean
+}
+
+export type CepBacdivePatch = {
+  referencia_id: number
+  external_id: string
+  fuente: "bacdive"
+  items: CepBacdivePatchItem[]
+  aplicables: string[]
+  preseleccionados?: string[]
+}
+
+export type CepBacdivePatchAplicado = {
+  referencia_id: number
+  external_id: string
+  aplicados: Array<{ grupo: string; campo: string; valor: string | number | null }>
+  caracterizacion_id?: number | null
+  parche: CepBacdivePatch
+}
+
+export type CepBacdiveRefreshResponse = {
+  referencia: CepReferenciaExterna
+  diff: {
+    agregados: string[]
+    cambiados: string[]
+    removidos: string[]
+    total_agregados: number
+    total_cambiados: number
+    total_removidos: number
+    truncado: boolean
+  }
+  sin_cambios: boolean
 }
 
 type ApiOptions = RequestInit & {
@@ -1668,11 +1798,70 @@ export const api = {
   ceparioEntidad: async (token: string, entidadId: number) =>
     request<EntidadDetalle>(`/cepario/entidades/${entidadId}`, { token }),
 
+  ceparioBacdiveBuscar: async (
+    token: string,
+    q: string,
+    tipo: CepBacdiveTipoBusqueda = "taxon",
+    limite = 10,
+  ) => {
+    const params = new URLSearchParams({ q, tipo, limite: String(limite) })
+    return request<CepBacdiveSearchResponse>(`/cepario/bacdive/buscar?${params.toString()}`, { token })
+  },
+
+  ceparioBacdiveFetch: async (token: string, externalId: string) =>
+    request<CepBacdiveCandidate>(`/cepario/bacdive/fetch/${encodeURIComponent(externalId)}`, { token }),
+
+  ceparioReferenciasExternas: async (token: string, entidadId: number) =>
+    request<CepReferenciaExterna[]>(`/cepario/entidades/${entidadId}/referencias-externas`, { token }),
+
+  ceparioGuardarReferenciaExterna: async (token: string, entidadId: number, data: {
+    fuente?: "bacdive"
+    external_id: string
+    query_usada?: string | null
+    match_estado?: "confirmado" | "sugerido" | "descartado"
+    payload_resumen?: CepBacdiveResumen | null
+    payload_raw?: Record<string, unknown> | null
+  }) =>
+    request<CepReferenciaExterna>(`/cepario/entidades/${entidadId}/referencias-externas`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(data),
+    }),
+
+  ceparioDescartarReferenciaExterna: async (token: string, entidadId: number, referenciaId: number) =>
+    request<CepReferenciaExterna>(`/cepario/entidades/${entidadId}/referencias-externas/${referenciaId}`, {
+      method: "DELETE",
+      token,
+    }),
+
+  ceparioActualizarReferenciaExterna: async (token: string, entidadId: number, referenciaId: number) =>
+    request<CepBacdiveRefreshResponse>(`/cepario/entidades/${entidadId}/referencias-externas/${referenciaId}/refresh`, {
+      method: "POST",
+      token,
+    }),
+
+  ceparioBacdiveParche: async (token: string, entidadId: number, referenciaId: number) =>
+    request<CepBacdivePatch>(`/cepario/entidades/${entidadId}/referencias-externas/${referenciaId}/parche`, { token }),
+
+  ceparioBacdiveAplicarParche: async (token: string, entidadId: number, referenciaId: number, campos: string[]) =>
+    request<CepBacdivePatchAplicado>(`/cepario/entidades/${entidadId}/referencias-externas/${referenciaId}/parche`, {
+      method: "POST",
+      token,
+      body: JSON.stringify({ campos }),
+    }),
+
   crearEntidadCepario: async (token: string, data: CepEntidadCrear) =>
     request<{ id: number; codigo: string | null; codigo_temporal: string | null; tipo: string; estado: string }>(
       "/cepario/entidades",
       { method: "POST", token, body: JSON.stringify(data) },
     ),
+
+  actualizarEntidadCepario: async (token: string, entidadId: number, data: CepEntidadActualizar) =>
+    request<{ id: number; actualizado: number; cambios: string[] }>(`/cepario/entidades/${entidadId}`, {
+      method: "PATCH",
+      token,
+      body: JSON.stringify(data),
+    }),
 
   ceparioStock: async (token: string, entidadId: number) =>
     request<CeparioVial[]>(`/cepario/entidades/${entidadId}/stock`, { token }),

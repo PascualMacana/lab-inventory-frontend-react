@@ -1,6 +1,6 @@
-import { FormEvent, type ReactNode, useMemo, useState } from "react"
+import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Archive, ArrowLeft, ArrowRight, Calculator, Check, ChevronRight, ChevronUp, FileText, PenLine, Plus, QrCode, RotateCcw, Search, Snowflake } from "lucide-react"
+import { AlertTriangle, Archive, ArrowLeft, ArrowRight, Calculator, Check, ChevronRight, ChevronUp, ExternalLink, FileText, Link2, PenLine, Plus, QrCode, RotateCcw, Search, Snowflake } from "lucide-react"
 import { useSearchParams } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 
@@ -13,10 +13,15 @@ import {
   api,
   type CepCaracterizacionCrear,
   type CepCaracterizacionEditar,
+  type CepBacdiveCandidate,
+  type CepBacdivePatch,
+  type CepBacdiveTipoBusqueda,
   type CepConsumoInventario,
+  type CepEntidadActualizar,
   type CepEntidadCrear,
   type CepMovimientoCrear,
   type CepMovimientoTipo,
+  type CepReferenciaExterna,
   type CepScoreResultado,
   type CepStockCrear,
   type CeparioEvento,
@@ -141,6 +146,7 @@ const DECISION_KEY: Record<string, string> = {
   no_pasa: "cepario.decisionNoPasa",
   reevaluar: "cepario.decisionReevaluar",
 }
+const TAXON_TOKENS_IGNORADOS = new Set(["sp", "sp.", "spp", "spp.", "cf", "cf.", "aff", "aff.", "subsp", "subsp."])
 // Checks de Gate 1 (filtro mínimo) → su etiqueta i18n.
 const GATE1_KEY: Record<string, string> = {
   cultivo_puro: "cepario.gate1CultivoPuro",
@@ -437,6 +443,8 @@ function NuevaMicroForm({ pending, onSubmit }: { pending: boolean; onSubmit: (da
   const [taxon, setTaxon] = useState("")
   const [origen, setOrigen] = useState("")
   const [medio, setMedio] = useState("")
+  const [accession16s, setAccession16s] = useState("")
+  const [accessionGenoma, setAccessionGenoma] = useState("")
   const [bsl, setBsl] = useState("")
   const [errorForm, setErrorForm] = useState<string | null>(null)
 
@@ -455,6 +463,8 @@ function NuevaMicroForm({ pending, onSubmit }: { pending: boolean; onSubmit: (da
       taxon_presuntivo: taxon.trim() || null,
       origen_muestra: origen.trim() || null,
       medio_aislamiento: medio.trim() || null,
+      accession_16s: accession16s.trim() || null,
+      accession_genoma: accessionGenoma.trim() || null,
       nivel_bioseguridad: bsl.trim() || null,
     })
   }
@@ -501,10 +511,95 @@ function NuevaMicroForm({ pending, onSubmit }: { pending: boolean; onSubmit: (da
           <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoMedio")}</span>
           <Input value={medio} onChange={(e) => setMedio(e.target.value)} />
         </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoAccession16s")}</span>
+          <Input value={accession16s} onChange={(e) => setAccession16s(e.target.value)} placeholder="AB123456" />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoAccessionGenoma")}</span>
+          <Input value={accessionGenoma} onChange={(e) => setAccessionGenoma(e.target.value)} placeholder="GCA_000000000.1" />
+        </label>
       </div>
       <div className="mt-6">
         <Button type="submit" variant="primary" disabled={pending}>
           {modo === "aislado" ? t("cepario.guardarAislado") : t("cepario.guardarCepa")}
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+function EditarIdentidadMicroForm({
+  entidad,
+  pending,
+  onSubmit,
+  onCancel,
+}: {
+  entidad: EntidadDetalle
+  pending: boolean
+  onSubmit: (data: CepEntidadActualizar) => void
+  onCancel: () => void
+}) {
+  const { t } = useTranslation()
+  const [nombre, setNombre] = useState(entidad.nombre ?? "")
+  const [taxon, setTaxon] = useState(entidad.taxon_presuntivo ?? "")
+  const [origen, setOrigen] = useState(entidad.origen_muestra ?? "")
+  const [medio, setMedio] = useState(entidad.medio_aislamiento ?? "")
+  const [accession16s, setAccession16s] = useState(entidad.accession_16s ?? "")
+  const [accessionGenoma, setAccessionGenoma] = useState(entidad.accession_genoma ?? "")
+  const [bsl, setBsl] = useState(entidad.nivel_bioseguridad ?? "")
+
+  function submit(event: FormEvent) {
+    event.preventDefault()
+    onSubmit({
+      nombre: nombre.trim() || null,
+      taxon_presuntivo: taxon.trim() || null,
+      origen_muestra: origen.trim() || null,
+      medio_aislamiento: medio.trim() || null,
+      accession_16s: accession16s.trim() || null,
+      accession_genoma: accessionGenoma.trim() || null,
+      nivel_bioseguridad: bsl.trim() || null,
+    })
+  }
+
+  return (
+    <form onSubmit={submit} className="mt-5 border-t border-cds-borderSubtle pt-5">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoNombre")}</span>
+          <Input value={nombre} onChange={(e) => setNombre(e.target.value)} />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoTaxon")}</span>
+          <Input value={taxon} onChange={(e) => setTaxon(e.target.value)} />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoOrigen")}</span>
+          <Input value={origen} onChange={(e) => setOrigen(e.target.value)} />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoBsl")}</span>
+          <Input value={bsl} onChange={(e) => setBsl(e.target.value)} placeholder="BSL-1" />
+        </label>
+        <label className="block sm:col-span-2">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoMedio")}</span>
+          <Input value={medio} onChange={(e) => setMedio(e.target.value)} />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoAccession16s")}</span>
+          <Input value={accession16s} onChange={(e) => setAccession16s(e.target.value)} placeholder="AB123456" />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoAccessionGenoma")}</span>
+          <Input value={accessionGenoma} onChange={(e) => setAccessionGenoma(e.target.value)} placeholder="GCA_000000000.1" />
+        </label>
+      </div>
+      <div className="mt-4 flex gap-2">
+        <Button type="submit" variant="primary" size="compact" disabled={pending}>
+          {t("cepario.identidadGuardar")}
+        </Button>
+        <Button type="button" variant="ghost" size="compact" onClick={onCancel}>
+          {t("cepario.identidadCancelar")}
         </Button>
       </div>
     </form>
@@ -1110,11 +1205,866 @@ type ScreeningProps = {
   onReactivar: () => void
 }
 
+function textoCampo(value: unknown) {
+  if (value == null || value === "") {
+    return null
+  }
+  return String(value)
+}
+
+function textoItem(item: Record<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    const value = textoCampo(item[key])
+    if (value) {
+      return value
+    }
+  }
+  return null
+}
+
+function unirPartes(...parts: Array<string | null | undefined>) {
+  return parts.filter(Boolean).join(" · ")
+}
+
+function registrosBacdive(value: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+}
+
+function listaBacdive(values: Array<string | null | undefined>, limite = 3) {
+  const visibles = values.filter((value): value is string => Boolean(value)).slice(0, limite)
+  return visibles.length > 0 ? visibles.join(" · ") : null
+}
+
+function formatoEnsayo(item: Record<string, unknown>, valueKeys: string[], typeKeys: string[] = []) {
+  const value = textoItem(item, ...valueKeys)
+  if (!value) {
+    return null
+  }
+  const type = textoItem(item, ...typeKeys)
+  const growth = textoItem(item, "growth", "ability")
+  return unirPartes(value, type, growth)
+}
+
+function renderMediosBacdive(mediaItems: Array<Record<string, unknown>>) {
+  const visibles = mediaItems
+    .map((item) => ({
+      name: textoItem(item, "name", "medium_name"),
+      link: textoItem(item, "link", "media_link"),
+    }))
+    .filter((item): item is { name: string; link: string | null } => Boolean(item.name))
+    .slice(0, 3)
+
+  if (visibles.length === 0) {
+    return null
+  }
+
+  return (
+    <span className="inline-flex flex-wrap gap-x-1.5 gap-y-1">
+      {visibles.map((item, index) => (
+        <span key={`${item.name}-${index}`} className="inline-flex gap-1">
+          {index > 0 ? <span className="text-cds-textSecondary">·</span> : null}
+          {item.link ? (
+            <a className="text-cds-linkPrimary hover:text-cds-linkPrimaryHover" href={item.link} target="_blank" rel="noreferrer">
+              {item.name}
+            </a>
+          ) : (
+            <span>{item.name}</span>
+          )}
+        </span>
+      ))}
+    </span>
+  )
+}
+
+function formatearFechaBacdive(value: string | null | undefined) {
+  if (!value) {
+    return null
+  }
+  const normalizada = value.includes("T") ? value : value.replace(" ", "T")
+  const date = new Date(normalizada)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return date.toLocaleString(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
+function limpiarConsultaBacdive(value: string | null | undefined) {
+  return (value ?? "").replace(/\s+/g, " ").trim()
+}
+
+function consultaInicialBacdive(entidad: EntidadDetalle) {
+  const accessionGenoma = limpiarConsultaBacdive(entidad.accession_genoma)
+  if (accessionGenoma) {
+    return { query: accessionGenoma, tipo: "sequence_genome" as CepBacdiveTipoBusqueda }
+  }
+
+  const accession16s = limpiarConsultaBacdive(entidad.accession_16s)
+  if (accession16s) {
+    return { query: accession16s, tipo: "sequence_16s" as CepBacdiveTipoBusqueda }
+  }
+
+  const taxon = limpiarConsultaBacdive(entidad.taxon_presuntivo)
+  if (taxon) {
+    return { query: taxon, tipo: "taxon" as CepBacdiveTipoBusqueda }
+  }
+
+  const nombre = limpiarConsultaBacdive(entidad.nombre)
+  if (nombre) {
+    return { query: nombre, tipo: "taxon" as CepBacdiveTipoBusqueda }
+  }
+
+  return { query: "", tipo: "taxon" as CepBacdiveTipoBusqueda }
+}
+
+function taxonLocalBacdive(entidad: EntidadDetalle) {
+  return limpiarConsultaBacdive(entidad.taxon_presuntivo) || limpiarConsultaBacdive(entidad.nombre)
+}
+
+function tokensTaxon(value: unknown) {
+  const tokens = String(value ?? "")
+    .toLocaleLowerCase("es")
+    .replace(/[_()[\]{}.,;:]/g, " ")
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .filter((part) => part && !TAXON_TOKENS_IGNORADOS.has(part))
+  return {
+    genus: tokens[0] ?? null,
+    species: tokens[1] ?? null,
+  }
+}
+
+function taxonCandidato(resumen: CepBacdiveCandidate["payload_resumen"]) {
+  const tax = resumen.taxonomia ?? {}
+  const desdeSpecies = tokensTaxon(tax.species)
+  if (desdeSpecies.genus) {
+    return desdeSpecies
+  }
+  const desdeNombre = tokensTaxon(tax.full_scientific_name)
+  if (desdeNombre.genus) {
+    return desdeNombre
+  }
+  const genus = textoCampo(tax.genus)?.toLocaleLowerCase("es") ?? null
+  return { genus, species: null }
+}
+
+function taxonBacdiveLegible(resumen: CepBacdiveCandidate["payload_resumen"]) {
+  const tax = resumen.taxonomia ?? {}
+  return (
+    textoCampo(tax.full_scientific_name) ??
+    textoCampo(tax.species) ??
+    (unirPartes(textoCampo(tax.genus), textoCampo(tax.species_epithet)) ||
+      textoCampo(tax.genus) ||
+      textoCampo(resumen.titulo))
+  )
+}
+
+function tipoMatchTaxon(local: string, resumen: CepBacdiveCandidate["payload_resumen"]) {
+  const localTaxon = tokensTaxon(local)
+  const candidato = taxonCandidato(resumen)
+  if (!localTaxon.genus || !candidato.genus) {
+    return null
+  }
+  if (localTaxon.genus !== candidato.genus) {
+    return "revisar"
+  }
+  if (localTaxon.species && candidato.species && localTaxon.species === candidato.species) {
+    return "exacto"
+  }
+  return "genero"
+}
+
+function esTypeStrain(value: unknown) {
+  if (value === true) {
+    return true
+  }
+  const text = textoCampo(value)?.toLocaleLowerCase("es")
+  return text === "true" || text === "yes" || text === "1" || text === "type strain"
+}
+
+function normalizarBsl(value: unknown) {
+  const text = textoCampo(value)?.replace(/\s+/g, " ").trim()
+  if (!text) {
+    return null
+  }
+  const match = text.match(/\b(?:BSL|Biosafety level|Bioseguridad|Risk group|Grupo de riesgo|RG)?[-\s:]*(1|2|3|4)\b/i)
+  return match ? Number(match[1]) : null
+}
+
+function etiquetaBsl(value: number) {
+  return `BSL ${value}`
+}
+
+function etiquetaBslValor(value: unknown) {
+  const bsl = normalizarBsl(value)
+  return bsl == null ? textoCampo(value) : etiquetaBsl(bsl)
+}
+
+function patogenicidadReportada(value: unknown) {
+  const text = textoCampo(value)?.toLocaleLowerCase("es").trim()
+  if (!text) {
+    return false
+  }
+  if (["no", "none", "negative", "-", "false", "non-pathogenic", "not pathogenic"].includes(text)) {
+    return false
+  }
+  if (text.includes("non-pathogenic") || text.includes("not pathogenic")) {
+    return false
+  }
+  return ["yes", "positive", "+", "pathogenic", "opportunistic", "risk"].some((term) => text.includes(term))
+}
+
+function tiposPatogenicidad(seguridad: Record<string, unknown>, t: (key: string) => string) {
+  const tipos = [
+    patogenicidadReportada(seguridad.pathogenicity_human) ? t("cepario.bacdiveHumano") : null,
+    patogenicidadReportada(seguridad.pathogenicity_animal) ? t("cepario.bacdiveAnimal") : null,
+    patogenicidadReportada(seguridad.pathogenicity_plant) ? t("cepario.bacdivePlanta") : null,
+  ].filter(Boolean)
+  return tipos.join(" / ")
+}
+
+function tieneDesignacionLocal(entidad: EntidadDetalle) {
+  const nombre = limpiarConsultaBacdive(entidad.nombre)
+  if (!nombre) {
+    return false
+  }
+  const taxon = limpiarConsultaBacdive(entidad.taxon_presuntivo)
+  return !taxon || nombre.toLocaleLowerCase("es") !== taxon.toLocaleLowerCase("es")
+}
+
+function alertasConflictoBacdive(
+  entidad: EntidadDetalle,
+  resumen: CepBacdiveCandidate["payload_resumen"],
+  t: (key: string) => string,
+) {
+  const alertas: Array<{
+    id: string
+    key: string
+    values: Record<string, string>
+    tone: "danger" | "warn"
+  }> = []
+  const seguridad = resumen.seguridad ?? {}
+  const bslBacdive = normalizarBsl(seguridad.biosafety_level)
+  const bslLocal = normalizarBsl(entidad.nivel_bioseguridad)
+  if (bslBacdive != null && bslLocal != null && bslBacdive !== bslLocal) {
+    alertas.push({
+      id: "bsl",
+      key: "cepario.bacdiveAlertaBslConflicto",
+      values: { bacdive: etiquetaBsl(bslBacdive), local: etiquetaBsl(bslLocal) },
+      tone: bslBacdive > bslLocal ? "danger" : "warn",
+    })
+  }
+
+  const localLabel = taxonLocalBacdive(entidad)
+  const localTaxon = tokensTaxon(localLabel)
+  const externoTaxon = taxonCandidato(resumen)
+  const externoLabel = taxonBacdiveLegible(resumen)
+  const conflictoGenero = localTaxon.genus && externoTaxon.genus && localTaxon.genus !== externoTaxon.genus
+  const conflictoEspecie = (
+    localTaxon.genus &&
+    externoTaxon.genus &&
+    localTaxon.genus === externoTaxon.genus &&
+    localTaxon.species &&
+    externoTaxon.species &&
+    localTaxon.species !== externoTaxon.species
+  )
+  if ((conflictoGenero || conflictoEspecie) && localLabel && externoLabel) {
+    alertas.push({
+      id: "taxon",
+      key: "cepario.bacdiveAlertaTaxonConflicto",
+      values: { local: localLabel, bacdive: externoLabel },
+      tone: "warn",
+    })
+  }
+
+  const patogenicidad = tiposPatogenicidad(seguridad, t)
+  if (patogenicidad && bslLocal == null) {
+    alertas.push({
+      id: "patogenicidad-sin-bsl",
+      key: "cepario.bacdiveAlertaPatogenicidadSinBsl",
+      values: { tipos: patogenicidad },
+      tone: "danger",
+    })
+  } else if (patogenicidad && bslLocal != null && bslLocal <= 1) {
+    alertas.push({
+      id: "patogenicidad-bsl-bajo",
+      key: "cepario.bacdiveAlertaPatogenicidadBslBajo",
+      values: { tipos: patogenicidad, local: etiquetaBsl(bslLocal) },
+      tone: "danger",
+    })
+  }
+
+  const tax = resumen.taxonomia ?? {}
+  const designacion = textoCampo(tax.strain_designation)
+  if (esTypeStrain(tax.type_strain) && designacion && !tieneDesignacionLocal(entidad)) {
+    alertas.push({
+      id: "type-strain-designacion",
+      key: "cepario.bacdiveAlertaTypeStrainSinDesignacion",
+      values: { designacion },
+      tone: "warn",
+    })
+  }
+
+  return alertas
+}
+
+function etiquetaBusquedaBacdive(queryUsada?: string | null) {
+  const tipo = (queryUsada ?? "").split(":", 1)[0]
+  const keyByTipo: Record<string, string> = {
+    taxon: "cepario.bacdiveOrigenTaxon",
+    culture_collection: "cepario.bacdiveOrigenColeccion",
+    bacdive_id: "cepario.bacdiveOrigenId",
+    sequence_16s: "cepario.bacdiveOrigen16s",
+    sequence_genome: "cepario.bacdiveOrigenGenoma",
+  }
+  return keyByTipo[tipo] ?? null
+}
+
+function MatchChip({
+  children,
+  tone = "neutral",
+}: {
+  children: ReactNode
+  tone?: "neutral" | "ok" | "warn" | "accent"
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex max-w-full items-center rounded-full px-2 py-0.5 text-[11px] font-medium tracking-[0.16px] ring-1",
+        tone === "ok" && "bg-lab-sageBg text-cds-supportSuccess ring-cds-supportSuccess/30",
+        tone === "warn" && "bg-lab-warmTint text-lab-warmFg ring-lab-warm/30",
+        tone === "accent" && "bg-lab-ceparioTint text-lab-cepario ring-lab-cepario/30",
+        tone === "neutral" && "bg-cds-background text-cds-textSecondary ring-cds-borderSubtle",
+      )}
+    >
+      {children}
+    </span>
+  )
+}
+
+function BacDiveSenales({
+  resumen,
+  queryUsada,
+  taxonLocal,
+}: {
+  resumen: CepBacdiveCandidate["payload_resumen"]
+  queryUsada?: string | null
+  taxonLocal: string
+}) {
+  const { t } = useTranslation()
+  const tax = resumen.taxonomia ?? {}
+  const match = tipoMatchTaxon(taxonLocal, resumen)
+  const origenKey = etiquetaBusquedaBacdive(queryUsada)
+  const designacion = textoCampo(tax.strain_designation)
+  const colecciones = (resumen.colecciones ?? []).filter(Boolean).slice(0, 3)
+
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {origenKey ? <MatchChip>{t("cepario.bacdiveOrigenBusqueda", { tipo: t(origenKey) })}</MatchChip> : null}
+      {match === "exacto" ? <MatchChip tone="ok">{t("cepario.bacdiveMatchExacto")}</MatchChip> : null}
+      {match === "genero" ? <MatchChip tone="accent">{t("cepario.bacdiveMatchGenero")}</MatchChip> : null}
+      {match === "revisar" ? <MatchChip tone="warn">{t("cepario.bacdiveMatchRevisar")}</MatchChip> : null}
+      {esTypeStrain(tax.type_strain) ? <MatchChip tone="accent">{t("cepario.bacdiveTypeStrain")}</MatchChip> : null}
+      {designacion ? <MatchChip>{t("cepario.bacdiveDesignacion", { valor: designacion })}</MatchChip> : null}
+      {colecciones.map((coleccion) => (
+        <MatchChip key={coleccion}>{t("cepario.bacdiveColeccionChip", { valor: coleccion })}</MatchChip>
+      ))}
+    </div>
+  )
+}
+
+function BacDiveAlertasConflicto({
+  entidad,
+  resumen,
+}: {
+  entidad: EntidadDetalle
+  resumen: CepBacdiveCandidate["payload_resumen"]
+}) {
+  const { t } = useTranslation()
+  const alertas = alertasConflictoBacdive(entidad, resumen, t)
+  if (alertas.length === 0) {
+    return null
+  }
+  return (
+    <div className="mt-3 grid gap-2">
+      {alertas.map((alerta) => (
+        <div
+          key={alerta.id}
+          className={cn(
+            "flex items-start gap-2 border-l-4 px-3 py-2 text-sm",
+            alerta.tone === "danger" && "border-cds-supportError bg-lab-critTint text-cds-supportError",
+            alerta.tone === "warn" && "border-lab-warm bg-lab-warmTint text-lab-warmFg",
+          )}
+        >
+          <AlertTriangle className="mt-0.5 shrink-0" size={16} aria-hidden="true" />
+          <span>{t(alerta.key, alerta.values)}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function BacDiveFicha({ resumen }: { resumen: CepBacdiveCandidate["payload_resumen"] }) {
+  const { t } = useTranslation()
+  const tax = resumen.taxonomia ?? {}
+  const morph = resumen.morfologia ?? {}
+  const enz = resumen.enzimas ?? {}
+  const metabolismo = resumen.metabolismo as {
+    compuestos_producidos?: Array<Record<string, unknown>>
+    fatty_acids?: Array<Record<string, unknown>>
+    pathways?: Array<Record<string, unknown>>
+    antibiograma?: Array<Record<string, unknown>>
+    sensibilidad_antibioticos?: Array<Record<string, unknown>>
+  } | undefined
+  const crecimiento = resumen.crecimiento as {
+    media?: Array<Record<string, unknown>>
+    temperatures?: Array<Record<string, unknown>>
+    ph?: Array<Record<string, unknown>>
+    oxygen?: Array<Record<string, unknown>>
+    salinity?: Array<Record<string, unknown>>
+  } | undefined
+  const aislamiento = resumen.aislamiento ?? {}
+  const seguridad = resumen.seguridad ?? {}
+  const media = renderMediosBacdive(crecimiento?.media ?? [])
+  const colonias = listaBacdive(registrosBacdive(morph.colony_morphology).map((m) => (
+    unirPartes(
+      textoItem(m, "color"),
+      textoItem(m, "shape"),
+      textoItem(m, "size"),
+      textoItem(m, "medium_name"),
+    )
+  )))
+  const pigmentacion = listaBacdive(registrosBacdive(morph.pigmentation).map((m) => (
+    unirPartes(
+      textoItem(m, "name"),
+      textoItem(m, "color"),
+      textoItem(m, "production"),
+    )
+  )))
+  const enzimasExtendidas = listaBacdive(registrosBacdive(enz.items)
+    .filter((m) => {
+      const nombre = textoItem(m, "enzyme")?.toLocaleLowerCase("es")
+      return nombre && !["catalase", "oxidase", "cytochrome-c oxidase", "urease"].includes(nombre)
+    })
+    .map((m) => unirPartes(textoItem(m, "enzyme"), textoItem(m, "activity"), textoItem(m, "ec_number"))), 4)
+  const antibiograma = listaBacdive(registrosBacdive(metabolismo?.antibiograma).map((m) => {
+    const zona = textoItem(m, "zone_mm")
+    return unirPartes(textoItem(m, "antibiotic"), zona ? `${zona} mm` : null)
+  }), 4)
+  const sensibilidadAntibioticos = listaBacdive(registrosBacdive(metabolismo?.sensibilidad_antibioticos).map((m) => {
+    const estados = [
+      textoItem(m, "sensitive") ? `S ${textoItem(m, "sensitive")}` : null,
+      textoItem(m, "intermediate") ? `I ${textoItem(m, "intermediate")}` : null,
+      textoItem(m, "resistant") ? `R ${textoItem(m, "resistant")}` : null,
+    ].filter(Boolean).join(" / ")
+    return unirPartes(textoItem(m, "antibiotic"), estados || null)
+  }), 4)
+  const compuestos = listaBacdive(registrosBacdive(metabolismo?.compuestos_producidos).map((m) => (
+    unirPartes(
+      textoItem(m, "compound"),
+      textoItem(m, "production"),
+      textoItem(m, "excreted") === "true" ? t("cepario.bacdiveExcretado") : null,
+    )
+  )), 4)
+  const fattyAcids = listaBacdive(registrosBacdive(metabolismo?.fatty_acids).map((m) => {
+    const percent = textoItem(m, "percent")
+    return unirPartes(textoItem(m, "name"), percent ? `${percent}%` : null)
+  }), 4)
+  const pathways = listaBacdive(registrosBacdive(metabolismo?.pathways).map((m) => {
+    const coverage = textoItem(m, "coverage")
+    return unirPartes(textoItem(m, "pathway"), coverage ? `${coverage}%` : null)
+  }), 4)
+  const temps = crecimiento?.temperatures?.map((m) => formatoEnsayo(m, ["temperature", "temp"], ["type", "test_type"])).filter(Boolean).slice(0, 3) ?? []
+  const ph = crecimiento?.ph?.map((m) => formatoEnsayo(m, ["ph", "pH"], ["type", "test_type", "range"])).filter(Boolean).slice(0, 3) ?? []
+  const oxygen = crecimiento?.oxygen?.map((m) => textoItem(m, "value", "oxygen_tol")).filter(Boolean).slice(0, 3) ?? []
+  const salinity = crecimiento?.salinity?.map((m) => {
+    const concentration = unirPartes(textoItem(m, "concentration", "salt_concentration"), textoItem(m, "unit", "salt_concentration_unit"))
+    return unirPartes(textoItem(m, "halophily", "value"), textoItem(m, "salt"), concentration, textoItem(m, "growth", "ability"))
+  }).filter(Boolean).slice(0, 3) ?? []
+  const origen = unirPartes(
+    textoCampo(aislamiento.sample_type),
+    textoCampo(aislamiento.host_species),
+    textoCampo(aislamiento.geo_loc_name) ?? textoCampo(aislamiento.country),
+    textoCampo(aislamiento.isolation_date),
+  )
+  const bioseguridad = unirPartes(
+    etiquetaBslValor(seguridad.biosafety_level),
+    textoCampo(seguridad.biosafety_level_comment),
+  )
+  const patogenicidad = unirPartes(
+    textoCampo(seguridad.pathogenicity_human) ? `${t("cepario.bacdiveHumano")}: ${textoCampo(seguridad.pathogenicity_human)}` : null,
+    textoCampo(seguridad.pathogenicity_animal) ? `${t("cepario.bacdiveAnimal")}: ${textoCampo(seguridad.pathogenicity_animal)}` : null,
+    textoCampo(seguridad.pathogenicity_plant) ? `${t("cepario.bacdivePlanta")}: ${textoCampo(seguridad.pathogenicity_plant)}` : null,
+  )
+  const filas: Array<{ label: string; value: ReactNode | null }> = [
+    { label: t("cepario.bacdiveDatoTaxon"), value: textoCampo(tax.full_scientific_name) ?? textoCampo(tax.species) ?? textoCampo(tax.genus) },
+    { label: t("cepario.bacdiveDatoGram"), value: textoCampo(morph.gram) },
+    { label: t("cepario.bacdiveDatoMotilidad"), value: textoCampo(morph.motility) },
+    { label: t("cepario.bacdiveDatoTamanoCelular"), value: textoCampo(morph.cell_size) },
+    { label: t("cepario.bacdiveDatoFlagelos"), value: textoCampo(morph.flagellum_arrangement) },
+    { label: t("cepario.bacdiveDatoMorfologiaColonia"), value: colonias },
+    { label: t("cepario.bacdiveDatoPigmentacion"), value: pigmentacion },
+    { label: t("cepario.bacdiveDatoCatalasa"), value: textoCampo(enz.catalase) },
+    { label: t("cepario.bacdiveDatoOxidasa"), value: textoCampo(enz.oxidase) },
+    { label: t("cepario.bacdiveDatoUreasa"), value: textoCampo(enz.urease) },
+    { label: t("cepario.bacdiveDatoEnzimasExtendidas"), value: enzimasExtendidas },
+    { label: t("cepario.bacdiveDatoAntibiograma"), value: antibiograma },
+    { label: t("cepario.bacdiveDatoSensibilidadAntibioticos"), value: sensibilidadAntibioticos },
+    { label: t("cepario.bacdiveDatoCompuestos"), value: compuestos },
+    { label: t("cepario.bacdiveDatoFattyAcids"), value: fattyAcids },
+    { label: t("cepario.bacdiveDatoPathways"), value: pathways },
+    { label: t("cepario.bacdiveDatoMedios"), value: media },
+    { label: t("cepario.bacdiveDatoTemperatura"), value: temps.join(" · ") },
+    { label: t("cepario.bacdiveDatoPh"), value: ph.join(" · ") },
+    { label: t("cepario.bacdiveDatoOxigeno"), value: oxygen.join(" · ") },
+    { label: t("cepario.bacdiveDatoSalinidad"), value: salinity.join(" · ") },
+    { label: t("cepario.bacdiveDatoOrigen"), value: origen },
+    { label: t("cepario.bacdiveDatoBioseguridad"), value: bioseguridad },
+    { label: t("cepario.bacdiveDatoPatogenicidad"), value: patogenicidad },
+  ].filter(({ value }) => value != null && value !== "")
+
+  return (
+    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+      {filas.map(({ label, value }) => (
+        <div key={label} className="border-l border-cds-borderSubtle pl-3">
+          <div className="text-[11px] uppercase tracking-[0.32px] text-cds-textSecondary">{label}</div>
+          <div className="text-sm text-cds-textPrimary">{value}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function BacDiveReferencias({
+  entidad,
+  consultaInicial,
+  taxonLocal,
+  referencias,
+  candidatos,
+  puedeConfirmar,
+  pendingBuscar,
+  pendingGuardar,
+  pendingDescartar,
+  pendingRefresh,
+  pendingParche,
+  pendingAplicarParche,
+  parches,
+  onBuscar,
+  onConfirmar,
+  onDescartarCandidato,
+  onDescartarReferencia,
+  onActualizarReferencia,
+  onCargarParche,
+  onAplicarParche,
+}: {
+  entidad: EntidadDetalle
+  consultaInicial: { query: string; tipo: CepBacdiveTipoBusqueda }
+  taxonLocal: string
+  referencias: CepReferenciaExterna[]
+  candidatos: CepBacdiveCandidate[]
+  puedeConfirmar: boolean
+  pendingBuscar: boolean
+  pendingGuardar: boolean
+  pendingDescartar: boolean
+  pendingRefresh: boolean
+  pendingParche: boolean
+  pendingAplicarParche: boolean
+  parches: Record<number, CepBacdivePatch | undefined>
+  onBuscar: (q: string, tipo: CepBacdiveTipoBusqueda) => void
+  onConfirmar: (candidato: CepBacdiveCandidate) => void
+  onDescartarCandidato: (externalId: string) => void
+  onDescartarReferencia: (referenciaId: number) => void
+  onActualizarReferencia: (referenciaId: number) => void
+  onCargarParche: (referenciaId: number) => void
+  onAplicarParche: (referenciaId: number, campos: string[]) => void
+}) {
+  const { t } = useTranslation()
+  const [consulta, setConsulta] = useState(consultaInicial.query)
+  const [tipoBusqueda, setTipoBusqueda] = useState<CepBacdiveTipoBusqueda>(consultaInicial.tipo)
+  const [parcheAbierto, setParcheAbierto] = useState<number | null>(null)
+  const [seleccionPatch, setSeleccionPatch] = useState<Record<number, string[]>>({})
+  const referenciasBacdive = referencias.filter((r) => r.fuente === "bacdive")
+  const vinculados = new Set(referenciasBacdive.map((r) => r.external_id))
+
+  useEffect(() => {
+    setConsulta(consultaInicial.query)
+    setTipoBusqueda(consultaInicial.tipo)
+  }, [consultaInicial.query, consultaInicial.tipo])
+
+  function submit(e: FormEvent) {
+    e.preventDefault()
+    const q = consulta.trim()
+    if (q) {
+      onBuscar(q, tipoBusqueda)
+    }
+  }
+
+  function toggleParche(refId: number) {
+    const siguiente = parcheAbierto === refId ? null : refId
+    setParcheAbierto(siguiente)
+    if (siguiente && !parches[siguiente]) {
+      onCargarParche(siguiente)
+    }
+  }
+
+  function toggleCampo(refId: number, campo: string) {
+    setSeleccionPatch((actual) => {
+      const actuales = actual[refId] ?? []
+      const nuevos = actuales.includes(campo)
+        ? actuales.filter((c) => c !== campo)
+        : [...actuales, campo]
+      return { ...actual, [refId]: nuevos }
+    })
+  }
+
+  function seleccionPara(refId: number, patch?: CepBacdivePatch) {
+    if (seleccionPatch[refId]) {
+      return seleccionPatch[refId]
+    }
+    return patch?.preseleccionados ?? patch?.aplicables ?? []
+  }
+
+  return (
+    <section>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-cds-borderSubtle pb-2">
+        <h2 className="text-sm font-medium tracking-[0.16px] text-cds-textPrimary">{t("cepario.refExternas")}</h2>
+        <form onSubmit={submit} className="flex flex-wrap items-end gap-2">
+          <select
+            className="h-10 border border-cds-borderSubtle bg-cds-field px-3 text-sm text-cds-textPrimary"
+            value={tipoBusqueda}
+            onChange={(e) => setTipoBusqueda(e.target.value as CepBacdiveTipoBusqueda)}
+            aria-label={t("cepario.bacdiveTipo")}
+          >
+            <option value="taxon">{t("cepario.bacdiveTaxon")}</option>
+            <option value="culture_collection">{t("cepario.bacdiveColeccion")}</option>
+            <option value="bacdive_id">{t("cepario.bacdiveId")}</option>
+            <option value="sequence_16s">{t("cepario.bacdive16s")}</option>
+            <option value="sequence_genome">{t("cepario.bacdiveGenoma")}</option>
+          </select>
+          <Input
+            className="h-10 min-w-[220px]"
+            value={consulta}
+            onChange={(e) => setConsulta(e.target.value)}
+            placeholder={t("cepario.bacdiveBuscarPh")}
+          />
+          <Button type="submit" variant="secondary" size="compact" disabled={pendingBuscar || !consulta.trim()}>
+            <Search size={16} aria-hidden="true" />
+            {pendingBuscar ? t("cepario.bacdiveBuscando") : t("cepario.bacdiveBuscar")}
+          </Button>
+        </form>
+      </div>
+
+      {referenciasBacdive.length === 0 ? (
+        <PlacaVacia>
+          <div className="text-sm text-cds-textSecondary">{t("cepario.refExternasVacias")}</div>
+        </PlacaVacia>
+      ) : (
+        <ul className="grid gap-3 lg:grid-cols-2">
+          {referenciasBacdive.map((ref) => {
+            const resumen = ref.payload_resumen
+            const fechaConsulta = formatearFechaBacdive(ref.fecha_consulta)
+            return (
+              <li key={ref.id} className="rounded-[10px] border border-cds-borderSubtle bg-cds-layer01 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="inline-flex items-center gap-1.5 text-xs font-medium text-lab-cepario">
+                      <Link2 size={14} aria-hidden="true" />
+                      {t("cepario.bacdiveConfirmado")}
+                    </div>
+                    <div className="mt-1 text-sm font-medium italic text-cds-textPrimary">{resumen.titulo ?? `BacDive ${ref.external_id}`}</div>
+                    <div className="mt-1 font-mono text-xs text-cds-textSecondary">BacDive {ref.external_id}</div>
+                    <BacDiveSenales resumen={resumen} queryUsada={ref.query_usada} taxonLocal={taxonLocal} />
+                    <BacDiveAlertasConflicto entidad={entidad} resumen={resumen} />
+                    {fechaConsulta ? (
+                      <div className="mt-1 text-xs text-cds-textSecondary">{t("cepario.bacdiveConsultado", { fecha: fechaConsulta })}</div>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {resumen.url ? (
+                      <a className="inline-flex items-center gap-1 text-sm text-cds-linkPrimary hover:text-cds-linkPrimaryHover" href={resumen.url} target="_blank" rel="noreferrer">
+                        {t("cepario.bacdiveAbrir")}
+                        <ExternalLink size={14} aria-hidden="true" />
+                      </a>
+                    ) : null}
+                    {puedeConfirmar ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="compact"
+                        disabled={pendingRefresh}
+                        onClick={() => onActualizarReferencia(ref.id)}
+                      >
+                        {pendingRefresh ? t("cepario.bacdiveActualizando") : t("cepario.bacdiveActualizar")}
+                      </Button>
+                    ) : null}
+                    {puedeConfirmar ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="compact"
+                        disabled={pendingParche}
+                        onClick={() => toggleParche(ref.id)}
+                      >
+                        {parcheAbierto === ref.id ? t("cepario.bacdiveOcultarParche") : t("cepario.bacdiveVerParche")}
+                      </Button>
+                    ) : null}
+                    {puedeConfirmar ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="compact"
+                        disabled={pendingDescartar}
+                        onClick={() => onDescartarReferencia(ref.id)}
+                      >
+                        {t("cepario.bacdiveQuitar")}
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+                <BacDiveFicha resumen={resumen} />
+                {parcheAbierto === ref.id ? (
+                  <div className="mt-4 border-t border-cds-borderSubtle pt-4">
+                    {!parches[ref.id] ? (
+                      <div className="text-sm text-cds-textSecondary">{t("cepario.bacdiveParcheCargando")}</div>
+                    ) : (
+                      <div className="flex flex-col gap-3">
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full border-separate border-spacing-y-1 text-sm">
+                            <thead className="text-left text-xs text-cds-textSecondary">
+                              <tr>
+                                <th className="px-2 py-1">{t("cepario.bacdiveCampo")}</th>
+                                <th className="px-2 py-1">{t("cepario.bacdiveLocal")}</th>
+                                <th className="px-2 py-1">{t("cepario.bacdiveExterno")}</th>
+                                <th className="w-20 px-2 py-1 text-center">{t("cepario.bacdiveAplicar")}</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {parches[ref.id]!.items.map((item) => {
+                                const seleccion = seleccionPara(ref.id, parches[ref.id])
+                                const checked = seleccion.includes(item.id)
+                                return (
+                                  <tr key={item.id} className="bg-cds-background">
+                                    <td className="px-2 py-2 align-top text-cds-textPrimary">
+                                      <div>{item.etiqueta}</div>
+                                      <div className="mt-0.5 text-[11px] text-cds-textSecondary">
+                                        {t(item.grupo === "entidad" ? "cepario.bacdiveGrupoEntidad" : "cepario.bacdiveGrupoCaracterizacion")}
+                                      </div>
+                                    </td>
+                                    <td className="px-2 py-2 align-top text-cds-textSecondary">{item.valor_local ?? t("cepario.bacdiveVacio")}</td>
+                                    <td className="px-2 py-2 align-top text-cds-textPrimary">{item.valor_bacdive ?? t("cepario.bacdiveSinDato")}</td>
+                                    <td className="px-2 py-2 text-center align-top">
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        disabled={!item.aplicable}
+                                        onChange={() => toggleCampo(ref.id, item.id)}
+                                      />
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <Button
+                            type="button"
+                            variant="primary"
+                            size="compact"
+                            disabled={pendingAplicarParche || seleccionPara(ref.id, parches[ref.id]).length === 0}
+                            onClick={() => onAplicarParche(ref.id, seleccionPara(ref.id, parches[ref.id]))}
+                          >
+                            {t("cepario.bacdiveAplicarParche")}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+
+      {candidatos.length > 0 ? (
+        <div className="mt-5">
+          <h3 className="mb-3 text-sm font-medium tracking-[0.16px] text-cds-textSecondary">{t("cepario.bacdiveCandidatos")}</h3>
+          <ul className="grid gap-3 lg:grid-cols-2">
+            {candidatos.map((candidato) => {
+              const yaVinculado = vinculados.has(candidato.external_id)
+              return (
+                <li key={candidato.external_id} className="rounded-[10px] border border-cds-borderSubtle bg-cds-layer01 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-medium italic text-cds-textPrimary">{candidato.titulo ?? `BacDive ${candidato.external_id}`}</div>
+                        <div className="mt-1 font-mono text-xs text-cds-textSecondary">BacDive {candidato.external_id}</div>
+                        <BacDiveSenales resumen={candidato.payload_resumen} queryUsada={candidato.query_usada} taxonLocal={taxonLocal} />
+                        <BacDiveAlertasConflicto entidad={entidad} resumen={candidato.payload_resumen} />
+                      </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant={yaVinculado ? "secondary" : "primary"}
+                        size="compact"
+                        disabled={!puedeConfirmar || pendingGuardar || yaVinculado}
+                        onClick={() => onConfirmar(candidato)}
+                      >
+                        <Check size={16} aria-hidden="true" />
+                        {yaVinculado ? t("cepario.bacdiveYaVinculado") : t("cepario.bacdiveConfirmar")}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="compact"
+                        onClick={() => onDescartarCandidato(candidato.external_id)}
+                      >
+                        {t("cepario.bacdiveDescartar")}
+                      </Button>
+                    </div>
+                  </div>
+                  <BacDiveFicha resumen={candidato.payload_resumen} />
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
 function CeparioDetalle({
   entidad,
   puedeStock,
   puedeDescartar,
   screening,
+  referenciasExternas,
+  bacdiveCandidatos,
+  pendingBacdiveBuscar,
+  pendingBacdiveGuardar,
+  pendingBacdiveDescartar,
+  pendingBacdiveRefresh,
+  pendingBacdiveParche,
+  pendingBacdiveAplicarParche,
+  bacdiveParches,
+  pendingEditarIdentidad,
+  onBuscarBacdive,
+  onGuardarReferencia,
+  onDescartarCandidato,
+  onDescartarReferencia,
+  onActualizarReferencia,
+  onCargarParche,
+  onAplicarParche,
+  onEditarIdentidad,
   onCongelar,
   pendingCongelar,
   onMovimiento,
@@ -1127,6 +2077,24 @@ function CeparioDetalle({
   puedeStock: boolean
   puedeDescartar: boolean
   screening: ScreeningProps
+  referenciasExternas: CepReferenciaExterna[]
+  bacdiveCandidatos: CepBacdiveCandidate[]
+  pendingBacdiveBuscar: boolean
+  pendingBacdiveGuardar: boolean
+  pendingBacdiveDescartar: boolean
+  pendingBacdiveRefresh: boolean
+  pendingBacdiveParche: boolean
+  pendingBacdiveAplicarParche: boolean
+  bacdiveParches: Record<number, CepBacdivePatch | undefined>
+  pendingEditarIdentidad: boolean
+  onBuscarBacdive: (q: string, tipo: CepBacdiveTipoBusqueda) => void
+  onGuardarReferencia: (candidato: CepBacdiveCandidate) => void
+  onDescartarCandidato: (externalId: string) => void
+  onDescartarReferencia: (referenciaId: number) => void
+  onActualizarReferencia: (referenciaId: number) => void
+  onCargarParche: (referenciaId: number) => void
+  onAplicarParche: (referenciaId: number, campos: string[]) => void
+  onEditarIdentidad: (data: CepEntidadActualizar) => void
   onCongelar: (data: CepStockCrear) => void
   pendingCongelar: boolean
   onMovimiento: (stockId: number, data: CepMovimientoCrear) => void
@@ -1139,6 +2107,7 @@ function CeparioDetalle({
   const [congelando, setCongelando] = useState(false)
   const [movVial, setMovVial] = useState<number | null>(null)
   const [nuevaFicha, setNuevaFicha] = useState(false)
+  const [editandoIdentidad, setEditandoIdentidad] = useState(false)
   const [archivando, setArchivando] = useState(false)
   const [motivoArchivar, setMotivoArchivar] = useState("")
   const esParte = entidad.tipo === "parte_genetica"
@@ -1244,9 +2213,41 @@ function CeparioDetalle({
               {entidad.medio_aislamiento ? (
                 <MetaCampo label={t("cepario.detMedio")}>{entidad.medio_aislamiento}</MetaCampo>
               ) : null}
+              {entidad.accession_16s ? (
+                <MetaCampo label={t("cepario.detAccession16s")} mono>{entidad.accession_16s}</MetaCampo>
+              ) : null}
+              {entidad.accession_genoma ? (
+                <MetaCampo label={t("cepario.detAccessionGenoma")} mono>{entidad.accession_genoma}</MetaCampo>
+              ) : null}
             </>
           )}
         </dl>
+        {!esParte && screening.puedeCaracterizar ? (
+          <>
+            <div className="mt-5">
+              <Button
+                type="button"
+                variant="secondary"
+                size="compact"
+                onClick={() => setEditandoIdentidad((v) => !v)}
+              >
+                <PenLine size={16} aria-hidden="true" />
+                {t("cepario.identidadEditar")}
+              </Button>
+            </div>
+            {editandoIdentidad ? (
+              <EditarIdentidadMicroForm
+                entidad={entidad}
+                pending={pendingEditarIdentidad}
+                onSubmit={(data) => {
+                  onEditarIdentidad(data)
+                  setEditandoIdentidad(false)
+                }}
+                onCancel={() => setEditandoIdentidad(false)}
+              />
+            ) : null}
+          </>
+        ) : null}
       </div>
 
       {!esParte && (esAislado || esArchivado) && screening.puedePromover ? (
@@ -1296,6 +2297,31 @@ function CeparioDetalle({
             </div>
           ) : null}
         </div>
+      ) : null}
+
+      {!esParte ? (
+        <BacDiveReferencias
+          entidad={entidad}
+          consultaInicial={consultaInicialBacdive(entidad)}
+          taxonLocal={taxonLocalBacdive(entidad)}
+          referencias={referenciasExternas}
+          candidatos={bacdiveCandidatos}
+          puedeConfirmar={screening.puedeCaracterizar}
+          pendingBuscar={pendingBacdiveBuscar}
+          pendingGuardar={pendingBacdiveGuardar}
+          pendingDescartar={pendingBacdiveDescartar}
+          pendingRefresh={pendingBacdiveRefresh}
+          pendingParche={pendingBacdiveParche}
+          pendingAplicarParche={pendingBacdiveAplicarParche}
+          parches={bacdiveParches}
+          onBuscar={onBuscarBacdive}
+          onConfirmar={onGuardarReferencia}
+          onDescartarCandidato={onDescartarCandidato}
+          onDescartarReferencia={onDescartarReferencia}
+          onActualizarReferencia={onActualizarReferencia}
+          onCargarParche={onCargarParche}
+          onAplicarParche={onAplicarParche}
+        />
       ) : null}
 
       <section>
@@ -1539,6 +2565,8 @@ export function CeparioPage() {
   const [atencion, setAtencion] = useState(false)
   const [mensaje, setMensaje] = useState<string | null>(null)
   const [errorLocal, setErrorLocal] = useState<string | null>(null)
+  const [bacdiveCandidatos, setBacdiveCandidatos] = useState<CepBacdiveCandidate[]>([])
+  const [bacdiveParches, setBacdiveParches] = useState<Record<number, CepBacdivePatch | undefined>>({})
 
   const esParteVista = tipo === "parte_genetica"
   const entidadesQuery = useQuery({
@@ -1555,6 +2583,12 @@ export function CeparioPage() {
   const entidadQuery = useQuery({
     queryKey: ["cepario", "entidad", entidadId],
     queryFn: () => api.ceparioEntidad(token!, entidadId!),
+    enabled: Boolean(token) && tab === "detalle" && Boolean(entidadId),
+  })
+
+  const referenciasExternasQuery = useQuery({
+    queryKey: ["cepario", "referencias-externas", entidadId],
+    queryFn: () => api.ceparioReferenciasExternas(token!, entidadId!),
     enabled: Boolean(token) && tab === "detalle" && Boolean(entidadId),
   })
 
@@ -1578,12 +2612,18 @@ export function CeparioPage() {
     setEntidadId(id)
     setTab("detalle")
     setSearchParams({ id: String(id) })
+    setBacdiveCandidatos([])
+    setBacdiveParches({})
   }
 
   function volverAlListado() {
     setTab("listado")
     setEntidadId(null)
     setSearchParams({})
+    setBacdiveCandidatos([])
+    setBacdiveParches({})
+    setMensaje(null)
+    setErrorLocal(null)
   }
 
   // Cambiar de mundo (micro ↔ partes): resetea los filtros propios de cada tipo
@@ -1599,6 +2639,8 @@ export function CeparioPage() {
     setAtencion(false)
     setBusqueda("")
     setVista("galeria")
+    setBacdiveCandidatos([])
+    setBacdiveParches({})
     volverAlListado()
     setMensaje(null)
     setErrorLocal(null)
@@ -1617,6 +2659,16 @@ export function CeparioPage() {
       setMensaje(t(msgKey, { codigo: res.codigo ?? res.codigo_temporal ?? "" }))
       setErrorLocal(null)
       abrirDetalle(res.id)
+    },
+    onError: (error) => setErrorLocal(mutationError(error, "Error")),
+  })
+
+  const editarIdentidadMutation = useMutation({
+    mutationFn: (data: CepEntidadActualizar) => api.actualizarEntidadCepario(token!, entidadId!, data),
+    onSuccess: () => {
+      invalidarDetalle()
+      setMensaje(t("cepario.identidadGuardada"))
+      setErrorLocal(null)
     },
     onError: (error) => setErrorLocal(mutationError(error, "Error")),
   })
@@ -1657,6 +2709,89 @@ export function CeparioPage() {
     queryClient.invalidateQueries({ queryKey: ["cepario", "entidad", entidadId] })
     queryClient.invalidateQueries({ queryKey: ["cepario", "entidades"] })
   }
+
+  const buscarBacdiveMutation = useMutation({
+    mutationFn: ({ q, tipoBusqueda }: { q: string; tipoBusqueda: CepBacdiveTipoBusqueda }) =>
+      api.ceparioBacdiveBuscar(token!, q, tipoBusqueda, 10),
+    onSuccess: (res) => {
+      setBacdiveCandidatos(res.candidatos)
+      setMensaje(t("cepario.bacdiveResultados", { n: res.candidatos.length }))
+      setErrorLocal(null)
+    },
+    onError: (error) => setErrorLocal(mutationError(error, "Error")),
+  })
+
+  const guardarReferenciaMutation = useMutation({
+    mutationFn: (candidato: CepBacdiveCandidate) =>
+      api.ceparioGuardarReferenciaExterna(token!, entidadId!, {
+        fuente: "bacdive",
+        external_id: candidato.external_id,
+        query_usada: candidato.query_usada ?? null,
+        match_estado: "confirmado",
+        payload_resumen: candidato.payload_resumen,
+        payload_raw: candidato.payload_raw ?? null,
+      }),
+    onSuccess: (ref) => {
+      queryClient.invalidateQueries({ queryKey: ["cepario", "referencias-externas", entidadId] })
+      setMensaje(t("cepario.bacdiveVinculado", { id: ref.external_id }))
+      setErrorLocal(null)
+    },
+    onError: (error) => setErrorLocal(mutationError(error, "Error")),
+  })
+
+  const descartarReferenciaMutation = useMutation({
+    mutationFn: (referenciaId: number) =>
+      api.ceparioDescartarReferenciaExterna(token!, entidadId!, referenciaId),
+    onSuccess: (ref) => {
+      queryClient.invalidateQueries({ queryKey: ["cepario", "referencias-externas", entidadId] })
+      setBacdiveCandidatos((actuales) => actuales.filter((c) => c.external_id !== ref.external_id))
+      setMensaje(t("cepario.bacdiveQuitado", { id: ref.external_id }))
+      setErrorLocal(null)
+    },
+    onError: (error) => setErrorLocal(mutationError(error, "Error")),
+  })
+
+  const actualizarReferenciaMutation = useMutation({
+    mutationFn: (referenciaId: number) =>
+      api.ceparioActualizarReferenciaExterna(token!, entidadId!, referenciaId),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ["cepario", "referencias-externas", entidadId] })
+      queryClient.invalidateQueries({ queryKey: ["cepario", "entidad", entidadId] })
+      setBacdiveParches((actuales) => {
+        const siguientes = { ...actuales }
+        delete siguientes[res.referencia.id]
+        return siguientes
+      })
+      const total = res.diff.total_agregados + res.diff.total_cambiados + res.diff.total_removidos
+      setMensaje(res.sin_cambios
+        ? t("cepario.bacdiveActualizadoSinCambios", { id: res.referencia.external_id })
+        : t("cepario.bacdiveActualizado", { id: res.referencia.external_id, n: total }))
+      setErrorLocal(null)
+    },
+    onError: (error) => setErrorLocal(mutationError(error, "Error")),
+  })
+
+  const cargarParcheMutation = useMutation({
+    mutationFn: (referenciaId: number) =>
+      api.ceparioBacdiveParche(token!, entidadId!, referenciaId),
+    onSuccess: (patch) => {
+      setBacdiveParches((actuales) => ({ ...actuales, [patch.referencia_id]: patch }))
+      setErrorLocal(null)
+    },
+    onError: (error) => setErrorLocal(mutationError(error, "Error")),
+  })
+
+  const aplicarParcheMutation = useMutation({
+    mutationFn: ({ referenciaId, campos }: { referenciaId: number; campos: string[] }) =>
+      api.ceparioBacdiveAplicarParche(token!, entidadId!, referenciaId, campos),
+    onSuccess: (res) => {
+      invalidarDetalle()
+      setBacdiveParches((actuales) => ({ ...actuales, [res.referencia_id]: res.parche }))
+      setMensaje(t("cepario.bacdiveParcheAplicado", { n: res.aplicados.length }))
+      setErrorLocal(null)
+    },
+    onError: (error) => setErrorLocal(mutationError(error, "Error")),
+  })
 
   const registrarMovimientoMutation = useMutation({
     mutationFn: ({ stockId, data }: { stockId: number; data: CepMovimientoCrear }) =>
@@ -1807,6 +2942,27 @@ export function CeparioPage() {
             puedeStock={puedeStock}
             puedeDescartar={puedeDescartar}
             screening={screening}
+            referenciasExternas={referenciasExternasQuery.data ?? []}
+            bacdiveCandidatos={bacdiveCandidatos}
+            pendingBacdiveBuscar={buscarBacdiveMutation.isPending}
+            pendingBacdiveGuardar={guardarReferenciaMutation.isPending}
+            pendingBacdiveDescartar={descartarReferenciaMutation.isPending}
+            pendingBacdiveRefresh={actualizarReferenciaMutation.isPending}
+            pendingBacdiveParche={cargarParcheMutation.isPending}
+            pendingBacdiveAplicarParche={aplicarParcheMutation.isPending}
+            bacdiveParches={bacdiveParches}
+            pendingEditarIdentidad={editarIdentidadMutation.isPending}
+            onBuscarBacdive={(q, tipoBusqueda) => buscarBacdiveMutation.mutate({ q, tipoBusqueda })}
+            onGuardarReferencia={(candidato) => guardarReferenciaMutation.mutate(candidato)}
+            onDescartarCandidato={(externalId) => {
+              setBacdiveCandidatos((actuales) => actuales.filter((c) => c.external_id !== externalId))
+              setMensaje(null)
+            }}
+            onDescartarReferencia={(referenciaId) => descartarReferenciaMutation.mutate(referenciaId)}
+            onActualizarReferencia={(referenciaId) => actualizarReferenciaMutation.mutate(referenciaId)}
+            onCargarParche={(referenciaId) => cargarParcheMutation.mutate(referenciaId)}
+            onAplicarParche={(referenciaId, campos) => aplicarParcheMutation.mutate({ referenciaId, campos })}
+            onEditarIdentidad={(data) => editarIdentidadMutation.mutate(data)}
             onCongelar={(data) => crearStockMutation.mutate(data)}
             pendingCongelar={crearStockMutation.isPending}
             onMovimiento={(stockId, data) => registrarMovimientoMutation.mutate({ stockId, data })}
