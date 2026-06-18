@@ -7,7 +7,7 @@ import { useSearchParams } from "react-router-dom"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
 import { Label } from "../components/ui/label"
-import { api, type DatosEtiqueta, type Lote, type LoteAjusteStock, type LoteActualizar, type LoteCrear, type LoteCrearMultiple, type LoteCrearMultipleResponse, type Reactivo, type ReactivoCandidato, type ReactivoCrear, type ReactivoMatch, type ReactivoMatchRequest } from "../lib/api"
+import { api, type DatosEtiqueta, type Lote, type LoteAjusteStock, type LoteActualizar, type LoteCrear, type LoteCrearMultiple, type LoteCrearMultipleResponse, type Proveedor, type Reactivo, type ReactivoCandidato, type ReactivoCrear, type ReactivoMatch, type ReactivoMatchRequest } from "../lib/api"
 import { useAuth } from "../lib/auth"
 import { parseFormNumber, requireFiniteNumber } from "../lib/forms"
 import { puede } from "../lib/permissions"
@@ -15,6 +15,7 @@ import { cn } from "../lib/utils"
 
 const reactivosVacios: Reactivo[] = []
 const lotesVacios: Lote[] = []
+const proveedoresVacios: Proveedor[] = []
 
 function formatNumber(value: number | null | undefined) {
   return new Intl.NumberFormat("es-AR", { maximumFractionDigits: 2 }).format(value ?? 0)
@@ -464,6 +465,7 @@ export function NuevoLoteForm({
   const [nuevoUnidad, setNuevoUnidad] = useState("")
   const [nuevoCas, setNuevoCas] = useState("")
   const [nuevoUbicacion, setNuevoUbicacion] = useState("")
+  const [nuevoCategoria, setNuevoCategoria] = useState("")
   const [cantidadEnvases, setCantidadEnvases] = useState("2")
   const [cantidadInicial, setCantidadInicial] = useState("")
   const [unidadIngreso, setUnidadIngreso] = useState("")
@@ -472,7 +474,11 @@ export function NuevoLoteForm({
   const [marca, setMarca] = useState("")
   const [casNumero, setCasNumero] = useState("")
   const [codigoProveedor, setCodigoProveedor] = useState("")
-  const [proveedor, setProveedor] = useState("")
+  // Proveedor del lote: ahora se elige del registro (FK). proveedorSugerido
+  // guarda el fabricante extraído de la foto que no matcheó ninguno, para
+  // prellenar el alta inline de proveedor nuevo.
+  const [proveedorId, setProveedorId] = useState<number | null>(null)
+  const [proveedorSugerido, setProveedorSugerido] = useState("")
   const [costoTotal, setCostoTotal] = useState("0")
   const [altaMultipleResultado, setAltaMultipleResultado] = useState<LoteCrearMultipleResponse | null>(null)
   const crearMutation = useMutation({
@@ -494,6 +500,38 @@ export function NuevoLoteForm({
   const crearReactivoMutation = useMutation({
     mutationFn: (data: ReactivoCrear) => api.crearReactivo(token, data),
   })
+
+  const proveedoresQuery = useQuery({
+    queryKey: ["proveedores"],
+    queryFn: () => api.proveedores(token),
+    enabled: Boolean(token),
+  })
+  const proveedoresLista = proveedoresQuery.data ?? proveedoresVacios
+  // Nombre del proveedor elegido: snapshot de texto que viaja con el lote (el
+  // backend igual lo re-deriva de la FK, pero lo mandamos por claridad/legacy).
+  const proveedorNombre =
+    proveedorId != null ? proveedoresLista.find((p) => p.id === proveedorId)?.nombre ?? "" : ""
+
+  // Match del fabricante extraído de la foto contra un proveedor registrado
+  // (nombre exacto, sin distinguir mayúsculas/acentos mínimos). Si coincide, se
+  // preselecciona; si no, queda para el alta inline.
+  function matchProveedor(fabricante: string | null | undefined): number | null {
+    const objetivo = (fabricante ?? "").trim().toLocaleLowerCase("es")
+    if (!objetivo) {
+      return null
+    }
+    const encontrado = proveedoresLista.find(
+      (p) => p.nombre.trim().toLocaleLowerCase("es") === objetivo,
+    )
+    return encontrado?.id ?? null
+  }
+
+  async function crearProveedorInline(nombre: string): Promise<number | null> {
+    const res = await api.crearProveedor(token, { nombre })
+    await queryClient.invalidateQueries({ queryKey: ["proveedores"] })
+    await queryClient.refetchQueries({ queryKey: ["proveedores"] })
+    return res.id
+  }
 
   const reactivosFiltrados = soloPendientes ? reactivos.filter(esPendiente) : reactivos
   const reactivo = useMemo(() => {
@@ -543,7 +581,11 @@ export function NuevoLoteForm({
       setMarca(datos.fabricante ?? "")
       setCasNumero(datos.cas_numero ?? "")
       setCodigoProveedor(datos.codigo_proveedor ?? "")
-      setProveedor(datos.fabricante ?? "")
+      // Proveedor: si el fabricante extraído coincide con uno registrado, se
+      // preselecciona; si no, se guarda como sugerencia para el alta inline.
+      const proveedorMatch = matchProveedor(datos.fabricante)
+      setProveedorId(proveedorMatch)
+      setProveedorSugerido(proveedorMatch == null ? datos.fabricante ?? "" : "")
 
       // Wizard foto-primero: sugerir el reactivo del catálogo. Es asistencia: el
       // usuario confirma/cambia abajo y nada se guarda hasta crear el lote.
@@ -606,6 +648,7 @@ export function NuevoLoteForm({
         unidad,
         stock_minimo: 0,
         ubicacion: nullable(nuevoUbicacion),
+        categoria: nullable(nuevoCategoria),
         cas_numero: nullable(nuevoCas),
       })
       await queryClient.invalidateQueries({ queryKey: ["reactivos"] })
@@ -658,7 +701,8 @@ export function NuevoLoteForm({
           cantidad_por_envase: cantidadParseada,
           unidad_ingreso: unidadSeleccionada || reactivo.unidad,
           fecha_vencimiento: fechaVencimiento,
-          proveedor: proveedor.trim(),
+          proveedor: proveedorNombre,
+          proveedor_id: proveedorId,
           costo_total_compra: costoParseado,
           usuario_id: usuarioId,
           numero_lote: nullable(numeroLote),
@@ -675,7 +719,8 @@ export function NuevoLoteForm({
           cantidad_inicial: cantidadParseada,
           unidad_ingreso: unidadSeleccionada || reactivo.unidad,
           fecha_vencimiento: fechaVencimiento,
-          proveedor: proveedor.trim(),
+          proveedor: proveedorNombre,
+          proveedor_id: proveedorId,
           costo_total: costoParseado,
           usuario_id: usuarioId,
           numero_lote: nullable(numeroLote),
@@ -697,7 +742,8 @@ export function NuevoLoteForm({
       setMarca("")
       setCasNumero("")
       setCodigoProveedor("")
-      setProveedor("")
+      setProveedorId(null)
+      setProveedorSugerido("")
       setCostoTotal("0")
       await onSuccess(reactivo.id, mensajeCreacion, modoCarga === "multiple", codigoCreado)
     } catch (error) {
@@ -926,6 +972,7 @@ export function NuevoLoteForm({
               <Field label={t("lotes.fNuevoUnidad")} name="nuevo_reactivo_unidad" value={nuevoUnidad} onChange={(event) => setNuevoUnidad(event.target.value)} placeholder={t("lotes.fNuevoUnidadPh")} required />
               <Field label={t("lotes.fCas")} name="nuevo_reactivo_cas" value={nuevoCas} onChange={(event) => setNuevoCas(event.target.value)} placeholder={t("lotes.fCasPh")} />
               <Field label={t("lotes.fUbicacion")} name="nuevo_reactivo_ubicacion" value={nuevoUbicacion} onChange={(event) => setNuevoUbicacion(event.target.value)} placeholder={t("lotes.fUbicacionPh")} />
+              <Field label={t("lotes.fCategoria")} name="nuevo_reactivo_categoria" value={nuevoCategoria} onChange={(event) => setNuevoCategoria(event.target.value)} placeholder={t("lotes.fCategoriaPh")} />
             </div>
             <p className="mt-2 text-xs leading-4 text-cds-textSecondary">
               {t("lotes.unidadBaseDesc")}
@@ -1030,14 +1077,17 @@ export function NuevoLoteForm({
               onChange={(event) => setCodigoProveedor(event.target.value)}
               placeholder={t("lotes.fCodigoBarrasPh")}
             />
-            <Field
-              label={t("lotes.fProveedor")}
-              name="proveedor"
-              value={proveedor}
-              onChange={(event) => setProveedor(event.target.value)}
-              placeholder={t("lotes.fProveedorPh")}
-              required
-            />
+            <div className="block">
+              <Label className="mb-2" htmlFor="lote_proveedor">{t("lotes.fProveedor")}</Label>
+              <ProveedorSelect
+                id="lote_proveedor"
+                proveedores={proveedoresLista}
+                value={proveedorId}
+                onChange={setProveedorId}
+                onCrear={crearProveedorInline}
+                sugerenciaNombre={proveedorSugerido}
+              />
+            </div>
             <DecimalField
               label={modoCarga === "multiple" ? t("lotes.fCostoTotalCompra") : t("lotes.fCostoTotal")}
               name="costo_total"
@@ -1126,6 +1176,29 @@ function EditarLoteForm({
   })
   const unidadesDisponibles = unidadesQuery.data?.unidades ?? [lote.unidad]
 
+  const queryClient = useQueryClient()
+  const proveedoresQuery = useQuery({
+    queryKey: ["proveedores"],
+    queryFn: () => api.proveedores(token),
+    enabled: Boolean(token),
+  })
+  const proveedoresLista = proveedoresQuery.data ?? proveedoresVacios
+  // Proveedor (FK) del lote en edición. Se re-sincroniza al cambiar de lote
+  // porque el form no se re-monta (no tiene key por id).
+  const [proveedorId, setProveedorId] = useState<number | null>(lote.proveedor_id ?? null)
+  useEffect(() => {
+    setProveedorId(lote.proveedor_id ?? null)
+  }, [lote.id, lote.proveedor_id])
+  const proveedorNombre =
+    proveedorId != null ? proveedoresLista.find((p) => p.id === proveedorId)?.nombre ?? "" : ""
+
+  async function crearProveedorInline(nombre: string): Promise<number | null> {
+    const res = await api.crearProveedor(token, { nombre })
+    await queryClient.invalidateQueries({ queryKey: ["proveedores"] })
+    await queryClient.refetchQueries({ queryKey: ["proveedores"] })
+    return res.id
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setErrorLocal(null)
@@ -1146,7 +1219,8 @@ function EditarLoteForm({
         cas_numero: nullable(String(form.get("cas_numero") ?? "")),
         codigo_proveedor: nullable(String(form.get("codigo_proveedor") ?? "")),
         fecha_vencimiento: String(form.get("fecha_vencimiento") ?? lote.fecha_vencimiento),
-        proveedor: String(form.get("proveedor") ?? "").trim(),
+        proveedor: proveedorNombre,
+        proveedor_id: proveedorId,
         costo_total: costoTotal,
       }
       await actualizarMutation.mutateAsync({ id: lote.id, data: payload })
@@ -1223,7 +1297,16 @@ function EditarLoteForm({
           <Field label={t("lotes.fCas")} name="cas_numero" defaultValue={lote.cas_numero ?? ""} />
           <Field label={t("lotes.fCodigoProveedor")} name="codigo_proveedor" defaultValue={lote.codigo_proveedor ?? ""} />
           <Field label={t("lotes.fFechaVencEdit")} name="fecha_vencimiento" type="date" defaultValue={lote.fecha_vencimiento} required />
-          <Field label={t("lotes.fProveedor")} name="proveedor" defaultValue={lote.proveedor ?? ""} required />
+          <div className="block">
+            <Label className="mb-2" htmlFor="editar_lote_proveedor">{t("lotes.fProveedor")}</Label>
+            <ProveedorSelect
+              id="editar_lote_proveedor"
+              proveedores={proveedoresLista}
+              value={proveedorId}
+              onChange={setProveedorId}
+              onCrear={crearProveedorInline}
+            />
+          </div>
           <DecimalField label={t("lotes.fCostoTotalSimple")} name="costo_total" defaultValue={String(lote.costo_total ?? 0)} />
         </div>
 
@@ -1664,6 +1747,114 @@ function LotesTable({
           })}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+// Select de proveedor del registro + alta inline. Elegís uno de la lista o creás
+// uno nuevo ahí mismo (queda en el módulo Proveedores y se selecciona solo). Lo
+// que viaja al lote es la FK (proveedor_id); el conteo del módulo cuenta por ella.
+function ProveedorSelect({
+  id,
+  proveedores,
+  value,
+  onChange,
+  onCrear,
+  sugerenciaNombre,
+}: {
+  id?: string
+  proveedores: Proveedor[]
+  value: number | null
+  onChange: (value: number | null) => void
+  onCrear: (nombre: string) => Promise<number | null>
+  sugerenciaNombre?: string
+}) {
+  const { t } = useTranslation()
+  const [modoNuevo, setModoNuevo] = useState(false)
+  const [nombreNuevo, setNombreNuevo] = useState("")
+  const [creando, setCreando] = useState(false)
+  const [errorNuevo, setErrorNuevo] = useState<string | null>(null)
+
+  function abrirNuevo() {
+    setNombreNuevo(sugerenciaNombre?.trim() ?? "")
+    setErrorNuevo(null)
+    setModoNuevo(true)
+  }
+
+  function cancelarNuevo() {
+    setModoNuevo(false)
+    setErrorNuevo(null)
+  }
+
+  async function confirmarNuevo() {
+    const nombre = nombreNuevo.trim()
+    if (!nombre) {
+      setErrorNuevo(t("lotes.errProveedorNombre"))
+      return
+    }
+    setCreando(true)
+    setErrorNuevo(null)
+    try {
+      const nuevoId = await onCrear(nombre)
+      if (nuevoId != null) {
+        onChange(nuevoId)
+        setModoNuevo(false)
+        setNombreNuevo("")
+      }
+    } catch (error) {
+      setErrorNuevo(mutationError(error, t("lotes.errCrearProveedor")))
+    } finally {
+      setCreando(false)
+    }
+  }
+
+  if (modoNuevo) {
+    return (
+      <div>
+        <div className="flex flex-wrap gap-2">
+          <Input
+            autoFocus
+            className="min-w-[180px] flex-1"
+            value={nombreNuevo}
+            onChange={(event) => setNombreNuevo(event.target.value)}
+            placeholder={t("lotes.fProveedorNuevoPh")}
+          />
+          <Button type="button" size="compact" onClick={() => void confirmarNuevo()} disabled={creando}>
+            {creando ? t("common.creando") : t("lotes.proveedorCrear")}
+          </Button>
+          <Button type="button" size="compact" variant="secondary" onClick={cancelarNuevo} disabled={creando}>
+            {t("lotes.cerrar")}
+          </Button>
+        </div>
+        {errorNuevo ? <p className="mt-1 text-xs text-cds-supportError">{errorNuevo}</p> : null}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex gap-2">
+      <select
+        id={id}
+        className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
+        value={value ?? ""}
+        onChange={(event) => onChange(event.target.value ? Number(event.target.value) : null)}
+      >
+        <option value="">{t("lotes.proveedorSinElegir")}</option>
+        {proveedores.map((proveedor) => (
+          <option key={proveedor.id} value={proveedor.id}>
+            {proveedor.nombre}
+          </option>
+        ))}
+      </select>
+      <Button
+        type="button"
+        size="compact"
+        variant="secondary"
+        onClick={abrirNuevo}
+        className="shrink-0 whitespace-nowrap"
+      >
+        {t("lotes.proveedorNuevo")}
+      </Button>
     </div>
   )
 }

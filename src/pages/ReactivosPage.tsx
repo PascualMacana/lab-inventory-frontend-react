@@ -1,6 +1,6 @@
-import { FormEvent, lazy, Suspense, useEffect, useMemo, useState } from "react"
+import { FormEvent, KeyboardEvent, lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Check, Plus, AlertTriangle, FlaskConical, PackageCheck, Search, Save } from "lucide-react"
+import { ArrowLeft, Check, ChevronDown, Plus, AlertTriangle, Search, Save, X } from "lucide-react"
 import { useSearchParams } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 
@@ -32,6 +32,12 @@ const filtroKey: Record<FiltroEstado, string> = {
 }
 const reactivosVacios: Reactivo[] = []
 const unidades = ["ml", "L", "g", "kg", "mg", "ug", "unidad"]
+
+// Sentinels del filtro de categoría: "todas" y "sin categoría". El resto de los
+// valores son la categoría tal cual (trimmed) — las opciones se derivan del dato.
+const CATEGORIA_TODAS = "__all"
+const CATEGORIA_SIN = "__none"
+type CategoriaOpcion = { value: string; label: string; count: number }
 
 function normalizarTexto(value: string | null | undefined) {
   return (value ?? "").toLocaleLowerCase("es")
@@ -89,6 +95,8 @@ export function ReactivosPage() {
   const [tab, setTab] = useState<TabReactivos>("listado")
   const [busqueda, setBusqueda] = useState("")
   const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>("Todos")
+  // Multi-categoría: array de categorías elegidas. Vacío = todas.
+  const [categorias, setCategorias] = useState<string[]>([])
   const [reactivoDetalleId, setReactivoDetalleId] = useState<number | null>(null)
   const [mensaje, setMensaje] = useState<string | null>(null)
 
@@ -114,13 +122,26 @@ export function ReactivosPage() {
     const texto = normalizarTexto(busqueda.trim())
 
     return reactivos.filter((reactivo) => {
+      // La búsqueda es solo texto libre (nombre + ubicación); la categoría tiene
+      // su propio selector dedicado, así no se mezclan en la barra.
       const coincideBusqueda =
         !texto ||
         normalizarTexto(reactivo.nombre).includes(texto) ||
-        normalizarTexto(reactivo.categoria).includes(texto) ||
         normalizarTexto(reactivo.ubicacion).includes(texto)
 
       if (!coincideBusqueda) {
+        return false
+      }
+
+      // Multi-categoría: sin selección = todas; si hay elegidas, matchea si la
+      // categoría del reactivo es alguna de ellas (OR, igualdad exacta trimmed).
+      // "__none" matchea los reactivos sin categoría cargada.
+      const cat = (reactivo.categoria ?? "").trim()
+      const coincideCategoria =
+        categorias.length === 0 ||
+        categorias.some((sel) => (sel === CATEGORIA_SIN ? !cat : cat === sel))
+
+      if (!coincideCategoria) {
         return false
       }
 
@@ -135,7 +156,28 @@ export function ReactivosPage() {
       }
       return true
     })
-  }, [busqueda, filtroEstado, reactivos])
+  }, [busqueda, categorias, filtroEstado, reactivos])
+
+  // Categorías derivadas del propio dato (cero configuración por laboratorio):
+  // se cuentan las distintas presentes y se ordenan alfabéticamente. Agrupado
+  // por valor trimmed exacto; si más adelante se quiere unificar variantes por
+  // mayúsculas/acentos, la clave puede pasar a normalizarTexto().
+  const categoriasResumen = useMemo(() => {
+    const counts = new Map<string, number>()
+    let sinCategoria = 0
+    for (const reactivo of reactivos) {
+      const cat = (reactivo.categoria ?? "").trim()
+      if (!cat) {
+        sinCategoria += 1
+        continue
+      }
+      counts.set(cat, (counts.get(cat) ?? 0) + 1)
+    }
+    const items = [...counts.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], "es"))
+      .map(([label, count]) => ({ label, count }))
+    return { total: reactivos.length, items, sinCategoria }
+  }, [reactivos])
 
   const resumen = useMemo(() => {
     return {
@@ -178,6 +220,7 @@ export function ReactivosPage() {
     setTab("detalle")
     setBusqueda("")
     setFiltroEstado("Todos")
+    setCategorias([])
     setMensaje(null)
   }, [reactivoIdQuery, reactivos])
 
@@ -215,11 +258,14 @@ export function ReactivosPage() {
             resumen={resumen}
             busqueda={busqueda}
             filtroEstado={filtroEstado}
+            categorias={categorias}
+            categoriasResumen={categoriasResumen}
             reactivos={reactivosFiltrados}
             isLoading={reactivosQuery.isLoading}
             selectedId={reactivoDetalle?.id ?? null}
             onBusquedaChange={setBusqueda}
             onFiltroChange={setFiltroEstado}
+            onCategoriasChange={setCategorias}
             onSelectDetalle={handleSelectDetalle}
           />
         </>
@@ -266,34 +312,79 @@ function ListadoReactivos({
   resumen,
   busqueda,
   filtroEstado,
+  categorias,
+  categoriasResumen,
   reactivos,
   isLoading,
   selectedId,
   onBusquedaChange,
   onFiltroChange,
+  onCategoriasChange,
   onSelectDetalle,
 }: {
   resumen: { total: number; conStock: number; sinStock: number; stockBajo: number }
   busqueda: string
   filtroEstado: FiltroEstado
+  categorias: string[]
+  categoriasResumen: { total: number; items: { label: string; count: number }[]; sinCategoria: number }
   reactivos: Reactivo[]
   isLoading: boolean
   selectedId: number | null
   onBusquedaChange: (value: string) => void
   onFiltroChange: (value: FiltroEstado) => void
+  onCategoriasChange: (value: string[]) => void
   onSelectDetalle: (id: number) => void
 }) {
   const { t } = useTranslation()
+
+  // Opciones del selector: "Todas" + cada categoría del dato + "Sin categoría"
+  // (solo si hay reactivos sin categoría). Los labels de los sentinels se
+  // traducen acá; las categorías reales se muestran tal cual las cargó el lab.
+  const opcionesCategoria: CategoriaOpcion[] = [
+    { value: CATEGORIA_TODAS, label: t("reactivos.catTodas"), count: categoriasResumen.total },
+    ...categoriasResumen.items.map((item) => ({ value: item.label, label: item.label, count: item.count })),
+    ...(categoriasResumen.sinCategoria > 0
+      ? [{ value: CATEGORIA_SIN, label: t("reactivos.catSinCategoria"), count: categoriasResumen.sinCategoria }]
+      : []),
+  ]
+
+  // Chips de filtros activos (removibles). Da feedback de qué está aplicado y
+  // permite quitar de a uno; "Limpiar todo" resetea los tres filtros. Con
+  // multi-categoría hay un chip por cada categoría elegida.
+  const chips: { key: string; label: string; onClear: () => void }[] = []
+  categorias.forEach((valor) => {
+    const opcion = opcionesCategoria.find((item) => item.value === valor)
+    chips.push({
+      key: `categoria-${valor}`,
+      label: `${t("reactivos.fLabelCategoria")}: ${opcion?.label ?? valor}`,
+      onClear: () => onCategoriasChange(categorias.filter((item) => item !== valor)),
+    })
+  })
+  if (filtroEstado !== "Todos") {
+    chips.push({
+      key: "estado",
+      label: `${t("reactivos.chipEstado")}: ${t(`reactivos.filtro.${filtroKey[filtroEstado]}`)}`,
+      onClear: () => onFiltroChange("Todos"),
+    })
+  }
+  if (busqueda.trim()) {
+    chips.push({
+      key: "texto",
+      label: `${t("reactivos.chipTexto")}: “${busqueda.trim()}”`,
+      onClear: () => onBusquedaChange(""),
+    })
+  }
+
   return (
     <>
-      <div className="mb-4 grid gap-px bg-cds-borderSubtle md:grid-cols-4">
-        <MetricTile label={t("reactivos.metricTotal")} value={resumen.total} icon={FlaskConical} />
-        <MetricTile label={t("reactivos.metricConStock")} value={resumen.conStock} icon={PackageCheck} />
-        <MetricTile label={t("reactivos.metricSinStock")} value={resumen.sinStock} icon={AlertTriangle} tone="error" />
-        <MetricTile label={t("reactivos.metricStockBajo")} value={resumen.stockBajo} icon={AlertTriangle} tone="warning" />
+      <div className="mb-4 grid grid-cols-1 gap-3.5 sm:grid-cols-2 md:grid-cols-4">
+        <MetricTile label={t("reactivos.metricTotal")} value={resumen.total} />
+        <MetricTile label={t("reactivos.metricConStock")} value={resumen.conStock} />
+        <MetricTile label={t("reactivos.metricSinStock")} value={resumen.sinStock} tone="error" />
+        <MetricTile label={t("reactivos.metricStockBajo")} value={resumen.stockBajo} tone="warning" />
       </div>
 
-      <div className="mb-4 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
+      <div className="mb-4 grid gap-4 lg:grid-cols-[1fr_auto_auto] lg:items-end">
         <label className="block">
           <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">{t("common.buscar")}</span>
           <div className="relative">
@@ -310,6 +401,11 @@ function ListadoReactivos({
             />
           </div>
         </label>
+
+        <div className="lg:w-[230px]">
+          <div className="mb-2 text-xs tracking-[0.32px] text-cds-textSecondary">{t("reactivos.fLabelCategoria")}</div>
+          <CategoriaDropdown value={categorias} options={opcionesCategoria} onChange={onCategoriasChange} />
+        </div>
 
         <div>
           <div className="mb-2 text-xs tracking-[0.32px] text-cds-textSecondary">{t("reactivos.filtrar")}</div>
@@ -331,8 +427,214 @@ function ListadoReactivos({
         </div>
       </div>
 
+      {chips.length > 0 ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <span className="text-xs tracking-[0.32px] text-cds-textPlaceholder">{t("reactivos.filtrosActivos")}:</span>
+          {chips.map((chip) => (
+            <button
+              key={chip.key}
+              type="button"
+              onClick={chip.onClear}
+              className="inline-flex h-7 items-center gap-1.5 border border-[#cddde2] bg-[#e6eef1] py-0 pl-3 pr-1.5 text-xs text-cds-linkPrimary transition-colors hover:bg-[#dbe7ec] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-cds-focus"
+            >
+              {chip.label}
+              <X size={13} aria-hidden="true" />
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => {
+              onCategoriasChange([])
+              onFiltroChange("Todos")
+              onBusquedaChange("")
+            }}
+            className="text-xs text-cds-textSecondary underline underline-offset-2 hover:text-cds-textPrimary"
+          >
+            {t("reactivos.limpiarTodo")}
+          </button>
+        </div>
+      ) : null}
+
       <ReactivosTable reactivos={reactivos} isLoading={isLoading} selectedId={selectedId} onSelectDetalle={onSelectDetalle} />
     </>
+  )
+}
+
+// Selector de Categoría (multi-select): las opciones se derivan del dato. "Todas"
+// limpia la selección; cada categoría se alterna y el menú queda abierto para
+// elegir varias. Subrayado petróleo cuando hay alguna activa; check + conteo mono
+// por opción. Cierra al clickear afuera, con Esc o con el trigger; navegable con
+// flechas/Enter/Espacio.
+function CategoriaDropdown({
+  value,
+  options,
+  onChange,
+}: {
+  value: string[]
+  options: CategoriaOpcion[]
+  onChange: (value: string[]) => void
+}) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const [activeIndex, setActiveIndex] = useState(0)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLUListElement>(null)
+  const activa = value.length > 0
+
+  // Label del trigger: "Todas" / el nombre si hay una sola / "N categorías".
+  const triggerLabel =
+    value.length === 0
+      ? options.find((option) => option.value === CATEGORIA_TODAS)?.label
+      : value.length === 1
+        ? options.find((option) => option.value === value[0])?.label ?? value[0]
+        : t("reactivos.catVarias", { n: value.length })
+
+  // Cerrar al clickear afuera mientras está abierto.
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+    function handlePointer(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handlePointer)
+    return () => document.removeEventListener("mousedown", handlePointer)
+  }, [open])
+
+  // Al abrir, resaltar la primera opción ya seleccionada (o la primera).
+  useEffect(() => {
+    if (open) {
+      const index = options.findIndex((option) =>
+        option.value === CATEGORIA_TODAS ? value.length === 0 : value.includes(option.value),
+      )
+      setActiveIndex(index >= 0 ? index : 0)
+    }
+  }, [open, options, value])
+
+  // Mantener la opción resaltada visible dentro del scroll del menú.
+  useEffect(() => {
+    if (!open || !listRef.current) {
+      return
+    }
+    const node = listRef.current.children[activeIndex] as HTMLElement | undefined
+    node?.scrollIntoView({ block: "nearest" })
+  }, [open, activeIndex])
+
+  // Alternar una categoría; "Todas" limpia la selección. No cierra el menú
+  // (multi-select: se siguen eligiendo varias).
+  function alternar(optionValue: string) {
+    if (optionValue === CATEGORIA_TODAS) {
+      onChange([])
+      return
+    }
+    onChange(value.includes(optionValue) ? value.filter((item) => item !== optionValue) : [...value, optionValue])
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    if (event.key === "Escape") {
+      setOpen(false)
+      return
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault()
+      if (!open) {
+        setOpen(true)
+        return
+      }
+      setActiveIndex((index) => Math.min(index + 1, options.length - 1))
+      return
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault()
+      if (!open) {
+        setOpen(true)
+        return
+      }
+      setActiveIndex((index) => Math.max(index - 1, 0))
+      return
+    }
+    if (event.key === "Home" && open) {
+      event.preventDefault()
+      setActiveIndex(0)
+      return
+    }
+    if (event.key === "End" && open) {
+      event.preventDefault()
+      setActiveIndex(options.length - 1)
+      return
+    }
+    if ((event.key === "Enter" || event.key === " ") && open) {
+      event.preventDefault()
+      const opcion = options[activeIndex]
+      if (opcion) {
+        alternar(opcion.value)
+      }
+    }
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        onKeyDown={handleKeyDown}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-activedescendant={open ? `categoria-opt-${activeIndex}` : undefined}
+        className={cn(
+          "flex h-10 w-full items-center justify-between gap-2 border-0 border-b-2 bg-cds-field px-3.5 text-sm transition-colors focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-cds-focus",
+          activa ? "border-b-cds-focus" : "border-b-transparent",
+        )}
+      >
+        <span className={cn("truncate text-left", activa ? "text-cds-textPrimary" : "text-cds-textSecondary")}>
+          {triggerLabel}
+        </span>
+        <ChevronDown
+          size={16}
+          className={cn("flex-none text-cds-textSecondary transition-transform", open && "rotate-180")}
+          aria-hidden="true"
+        />
+      </button>
+
+      {open ? (
+        <ul
+          ref={listRef}
+          role="listbox"
+          aria-multiselectable="true"
+          className="absolute left-0 top-[calc(100%+2px)] z-20 max-h-[280px] w-max min-w-full max-w-[340px] overflow-y-auto border border-cds-borderSubtle bg-cds-background shadow-[0_8px_24px_rgba(31,41,51,0.16)]"
+        >
+          {options.map((option, index) => {
+            const seleccion = option.value === CATEGORIA_TODAS ? value.length === 0 : value.includes(option.value)
+            return (
+              <li key={option.value} id={`categoria-opt-${index}`} role="option" aria-selected={seleccion}>
+                <button
+                  type="button"
+                  onClick={() => alternar(option.value)}
+                  onMouseEnter={() => setActiveIndex(index)}
+                  className={cn(
+                    "flex h-10 w-full items-center justify-between gap-2.5 border-l-2 px-3.5 text-left text-sm transition-colors",
+                    seleccion ? "border-l-cds-focus bg-[#eef5f7]" : "border-l-transparent bg-cds-background",
+                    !seleccion && index === activeIndex && "bg-[var(--cds-layer-hover-01)]",
+                  )}
+                >
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    {seleccion ? (
+                      <Check size={15} className="flex-none text-cds-linkPrimary" aria-hidden="true" />
+                    ) : (
+                      <span className="w-[15px] flex-none" aria-hidden="true" />
+                    )}
+                    <span className="truncate text-cds-textPrimary">{option.label}</span>
+                  </span>
+                  <span className="flex-none pl-4 font-mono text-xs text-cds-textPlaceholder">{option.count}</span>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      ) : null}
+    </div>
   )
 }
 
@@ -344,37 +646,29 @@ type MetricTone = "neutral" | "error" | "warning"
 function MetricTile({
   label,
   value,
-  icon: Icon,
   tone = "neutral",
 }: {
   label: string
   value: number
-  icon: typeof FlaskConical
   tone?: MetricTone
 }) {
+  // Mismo lenguaje de card que Dashboard y Movimientos: tile con borde, acento
+  // izquierdo que codifica la severidad, label mono en mayúsculas y valor mono
+  // coloreado por tono (peso regular, sin bold).
+  const card =
+    tone === "error"
+      ? "bg-lab-critTint shadow-[inset_3px_0_0_var(--cds-support-error)]"
+      : tone === "warning"
+        ? "bg-lab-warmTint shadow-[inset_3px_0_0_var(--lab-warm)]"
+        : "bg-cds-layer01 shadow-[inset_3px_0_0_var(--lab-blue)]"
   return (
-    <article
-      className={cn(
-        "bg-cds-layer01 p-4",
-        tone === "error" && "bg-lab-critTint shadow-[inset_2px_0_0_var(--cds-support-error)]",
-        tone === "warning" && "bg-lab-warmTint shadow-[inset_2px_0_0_var(--cds-support-warning)]",
-      )}
-    >
+    <article className={cn("border border-cds-borderSubtle p-[18px_20px]", card)}>
+      <div className="font-mono text-[10.5px] uppercase tracking-[0.09em] text-cds-textSecondary">{label}</div>
       <div
         className={cn(
-          "mb-4 flex items-center justify-between text-cds-textSecondary",
+          "mt-2.5 font-mono text-[34px] leading-none",
           tone === "error" && "text-cds-supportError",
           tone === "warning" && "text-lab-warmFg",
-        )}
-      >
-        <span className="text-xs tracking-[0.32px]">{label}</span>
-        <Icon size={18} aria-hidden="true" />
-      </div>
-      <div
-        className={cn(
-          "text-[32px] font-light leading-[1.25]",
-          tone === "error" && "font-normal text-cds-supportError",
-          tone === "warning" && "font-normal text-lab-warmFg",
         )}
       >
         {formatNumber(value)}
@@ -404,77 +698,78 @@ function ReactivosTable({
   }
 
   return (
-    <div className="overflow-x-auto border-t border-cds-borderSubtle">
-      <table className="w-full min-w-[1080px] border-collapse text-left text-sm">
-        <thead>
-          <tr className="border-b border-cds-borderSubtle bg-cds-layer01 text-xs tracking-[0.32px] text-cds-textSecondary">
-            <th className="h-10 px-4 font-normal">{t("reactivos.thId")}</th>
-            <th className="h-10 px-4 font-normal">{t("reactivos.thNombre")}</th>
-            <th className="h-10 px-4 text-right font-normal">{t("reactivos.thStockActual")}</th>
-            <th className="h-10 px-4 font-normal">{t("reactivos.thUnidad")}</th>
-            <th className="h-10 w-[190px] px-4 font-normal">{t("reactivos.thCobertura")}</th>
-            <th className="h-10 px-4 text-right font-normal">{t("reactivos.thStockMin")}</th>
-            <th className="h-10 px-4 font-normal">{t("reactivos.thLotes")}</th>
-            <th className="h-10 w-[110px] px-4 font-normal">{t("reactivos.thUbicacion")}</th>
-            <th className="h-10 px-4 font-normal">{t("reactivos.thCategoria")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {reactivos.map((reactivo) => {
-            const stock = reactivo.stock_total ?? 0
-            const minimo = reactivo.stock_minimo ?? 0
-            const health = stockHealth(stock, minimo)
-            return (
-              <tr
-                key={reactivo.id}
-                className={cn(
-                  "cursor-pointer border-b border-cds-borderSubtle transition-colors hover:bg-cds-layer01",
-                  // Sin stock: fondo + acento coral. Bajo mínimo: fondo + acento
-                  // ámbar, para distinguirlo de un vistazo del sin stock.
-                  health === "none" && "bg-lab-critTint/60 shadow-[inset_2px_0_0_var(--cds-support-error)]",
-                  health === "low" && "bg-lab-warmTint/60 shadow-[inset_2px_0_0_var(--cds-support-warning)]",
-                  selectedId === reactivo.id && "bg-cds-layer01 shadow-[inset_2px_0_0_var(--cds-focus)]",
-                )}
-                onClick={() => onSelectDetalle(reactivo.id)}
-              >
-                <td className="h-12 px-4 font-mono text-xs tracking-[0.16px] text-cds-textSecondary">{reactivo.id}</td>
-                <td className="h-12 px-4 font-semibold tracking-[0.16px]">{reactivo.nombre}</td>
-                <td
-                  className={cn(
-                    "h-12 px-4 text-right font-mono",
-                    health === "none" && "font-semibold text-cds-supportError",
-                    health === "low" && "font-semibold text-lab-warmFg",
-                  )}
-                >
-                  <span className="inline-flex items-center justify-end gap-1.5">
-                    {health !== "ok" ? <AlertTriangle size={14} aria-hidden="true" /> : null}
-                    {formatNumber(stock)}
-                  </span>
-                </td>
-                <td className="h-12 px-4">{reactivo.unidad}</td>
-                <td className="h-12 px-4">
-                  <CoberturaBar stock={stock} min={minimo} />
-                </td>
-                <td className="h-12 px-4 text-right font-mono">{formatNumber(reactivo.stock_minimo)}</td>
-                <td className="h-12 px-4">
-                  <LotesCell count={reactivo.lotes_count ?? 0} proximoVencimiento={reactivo.proximo_vencimiento} />
-                </td>
-                <td className="h-12 px-4 text-cds-textSecondary">
-                  <span className="block max-w-[110px] truncate" title={reactivo.ubicacion || undefined}>
-                    {reactivo.ubicacion || "-"}
-                  </span>
-                </td>
-                <td className="h-12 px-4 text-cds-textSecondary">
-                  {reactivo.categoria ? <CategoryTag value={reactivo.categoria} /> : "-"}
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-
+    <>
       <LeyendaCobertura />
-    </div>
+      <div className="overflow-x-auto border-t border-cds-borderSubtle">
+        <table className="w-full min-w-[1080px] border-collapse text-left text-sm">
+          <thead>
+            <tr className="border-b border-cds-borderSubtle bg-cds-layer01 text-xs tracking-[0.32px] text-cds-textSecondary">
+              <th className="h-10 px-4 font-normal">{t("reactivos.thId")}</th>
+              <th className="h-10 px-4 font-normal">{t("reactivos.thNombre")}</th>
+              <th className="h-10 px-4 text-right font-normal">{t("reactivos.thStockActual")}</th>
+              <th className="h-10 px-4 font-normal">{t("reactivos.thUnidad")}</th>
+              <th className="h-10 w-[190px] px-4 font-normal">{t("reactivos.thCobertura")}</th>
+              <th className="h-10 px-4 text-right font-normal">{t("reactivos.thStockMin")}</th>
+              <th className="h-10 px-4 font-normal">{t("reactivos.thLotes")}</th>
+              <th className="h-10 w-[110px] px-4 font-normal">{t("reactivos.thUbicacion")}</th>
+              <th className="h-10 px-4 font-normal">{t("reactivos.thCategoria")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {reactivos.map((reactivo) => {
+              const stock = reactivo.stock_total ?? 0
+              const minimo = reactivo.stock_minimo ?? 0
+              const health = stockHealth(stock, minimo)
+              return (
+                <tr
+                  key={reactivo.id}
+                  className={cn(
+                    "cursor-pointer border-b border-cds-borderSubtle transition-colors hover:bg-cds-layer01",
+                    // Sin stock: fondo + acento coral. Bajo mínimo: fondo + acento
+                    // ámbar, para distinguirlo de un vistazo del sin stock.
+                    health === "none" && "bg-lab-critTint/60 shadow-[inset_2px_0_0_var(--cds-support-error)]",
+                    health === "low" && "bg-lab-warmTint/60 shadow-[inset_2px_0_0_var(--cds-support-warning)]",
+                    selectedId === reactivo.id && "bg-cds-layer01 shadow-[inset_2px_0_0_var(--cds-focus)]",
+                  )}
+                  onClick={() => onSelectDetalle(reactivo.id)}
+                >
+                  <td className="h-12 px-4 font-mono text-xs tracking-[0.16px] text-cds-textSecondary">{reactivo.id}</td>
+                  <td className="h-12 px-4 font-semibold tracking-[0.16px]">{reactivo.nombre}</td>
+                  <td
+                    className={cn(
+                      "h-12 px-4 text-right font-mono",
+                      health === "none" && "font-semibold text-cds-supportError",
+                      health === "low" && "font-semibold text-lab-warmFg",
+                    )}
+                  >
+                    <span className="inline-flex items-center justify-end gap-1.5">
+                      {health !== "ok" ? <AlertTriangle size={14} aria-hidden="true" /> : null}
+                      {formatNumber(stock)}
+                    </span>
+                  </td>
+                  <td className="h-12 px-4">{reactivo.unidad}</td>
+                  <td className="h-12 px-4">
+                    <CoberturaBar stock={stock} min={minimo} />
+                  </td>
+                  <td className="h-12 px-4 text-right font-mono">{formatNumber(reactivo.stock_minimo)}</td>
+                  <td className="h-12 px-4">
+                    <LotesCell count={reactivo.lotes_count ?? 0} proximoVencimiento={reactivo.proximo_vencimiento} />
+                  </td>
+                  <td className="h-12 px-4 text-cds-textSecondary">
+                    <span className="block max-w-[110px] truncate" title={reactivo.ubicacion || undefined}>
+                      {reactivo.ubicacion || "-"}
+                    </span>
+                  </td>
+                  <td className="h-12 px-4 text-cds-textSecondary">
+                    {reactivo.categoria ? <CategoryTag value={reactivo.categoria} /> : "-"}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
   )
 }
 
@@ -539,7 +834,7 @@ function LeyendaCobertura() {
     { health: "none", label: t("reactivos.legendNone") },
   ]
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-cds-textSecondary">
+    <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-cds-textSecondary">
       {items.map((item) => (
         <span key={item.health} className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5" style={{ backgroundColor: healthColor[item.health] }} aria-hidden="true" />

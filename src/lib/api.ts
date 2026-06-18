@@ -358,6 +358,7 @@ export type Lote = {
   fecha_ingreso?: string | null
   fecha_vencimiento: string
   proveedor: string
+  proveedor_id?: number | null
   costo_total: number
   usuario_id?: number | null
 }
@@ -417,6 +418,7 @@ export type LoteCrear = {
   unidad_ingreso: string
   fecha_vencimiento: string
   proveedor: string
+  proveedor_id?: number | null
   costo_total: number
   usuario_id: number
   numero_lote?: string | null
@@ -432,6 +434,7 @@ export type LoteCrearMultiple = {
   unidad_ingreso: string
   fecha_vencimiento: string
   proveedor: string
+  proveedor_id?: number | null
   costo_total_compra: number
   usuario_id?: number | null
   numero_lote?: string | null
@@ -462,6 +465,7 @@ export type LoteActualizar = {
   cas_numero?: string | null
   fecha_vencimiento: string
   proveedor: string
+  proveedor_id?: number | null
   costo_total: number
 }
 
