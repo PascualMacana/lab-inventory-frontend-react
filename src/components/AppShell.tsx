@@ -21,6 +21,7 @@ import {
   PanelLeftOpen,
   ScanLine,
   ScrollText,
+  ShoppingCart,
   Sun,
   Truck,
   UserCircle,
@@ -47,6 +48,7 @@ const navItems = [
   { to: "/mesada", labelKey: "nav.mesada", icon: FlaskRound, action: "ver_pagina_mesada", mobileOnly: true },
   { to: "/protocolos", labelKey: "nav.protocolos", icon: ScrollText, action: "ver_pagina_protocolos" },
   { to: "/tareas", labelKey: "nav.tareas", icon: ClipboardCheck, action: "ver_pagina_tareas" },
+  { to: "/compras", labelKey: "nav.compras", icon: ShoppingCart, action: "ver_pagina_compras" },
   { to: "/movimientos", labelKey: "nav.movimientos", icon: History, action: "ver_pagina_movimientos" },
   { to: "/proveedores", labelKey: "nav.proveedores", icon: Truck, action: "ver_pagina_proveedores" },
   { to: "/equipamiento", labelKey: "nav.equipamiento", icon: Microscope, action: "ver_pagina_equipamiento" },
@@ -64,7 +66,7 @@ type NavItem = (typeof navItems)[number]
 const navGroups: { labelKey: string; items: string[] }[] = [
   { labelKey: "navGroup.inicio", items: ["/"] },
   { labelKey: "navGroup.inventario", items: ["/reactivos", "/cepario", "/equipamiento", "/proveedores"] },
-  { labelKey: "navGroup.operacion", items: ["/consumo", "/mesada", "/protocolos", "/tareas", "/movimientos"] },
+  { labelKey: "navGroup.operacion", items: ["/consumo", "/mesada", "/protocolos", "/tareas", "/compras", "/movimientos"] },
   { labelKey: "navGroup.analisis", items: ["/auditoria", "/graphs", "/asistente"] },
   { labelKey: "navGroup.admin", items: ["/owner", "/usuarios"] },
 ]

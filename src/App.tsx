@@ -13,6 +13,7 @@ import { AsistentePage } from "./pages/AsistentePage"
 import { AuditoriaPage } from "./pages/AuditoriaPage"
 import { CeparioPage } from "./pages/CeparioPage"
 import { ConsumoPage } from "./pages/ConsumoPage"
+import { ComprasPage } from "./pages/ComprasPage"
 import { DashboardPage } from "./pages/DashboardPage"
 import { EquipamientoPage } from "./pages/EquipamientoPage"
 import { IngresarFrascoPage } from "./pages/IngresarFrascoPage"
@@ -36,6 +37,7 @@ const protectedRoutes = [
   { path: "mesada", action: "ver_pagina_mesada", element: <MesadaPage /> },
   { path: "protocolos", action: "ver_pagina_protocolos", element: <ProtocolosPage /> },
   { path: "tareas", action: "ver_pagina_tareas", element: <TareasPage /> },
+  { path: "compras", action: "ver_pagina_compras", element: <ComprasPage /> },
   { path: "movimientos", action: "ver_pagina_movimientos", element: <MovimientosPage /> },
   { path: "proveedores", action: "ver_pagina_proveedores", element: <ProveedoresPage /> },
   { path: "equipamiento", action: "ver_pagina_equipamiento", element: <EquipamientoPage /> },

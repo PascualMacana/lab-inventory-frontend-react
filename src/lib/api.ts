@@ -239,7 +239,16 @@ export type ReposicionRecomendacion = {
   cantidad_sugerida: number
   proveedor_reciente?: string | null
   costo_reciente?: number | null
+  cantidad_inicial_reciente?: number | null
+  costo_unitario_reciente?: number | null
   fecha_proveedor_reciente?: string | null
+  compra_activa?: {
+    estado: "borrador" | "pendiente_aprobacion" | "aprobada" | "pedido" | "en_camino" | "recibida_parcial" | string
+    solicitud_id: number
+    codigo: string
+    cantidad_pendiente: number
+    unidad: string
+  } | null
 }
 
 export type DashboardReposicion = {
@@ -254,6 +263,204 @@ export type DashboardReposicion = {
   horizonte_stock?: ReposicionRecomendacion[]
   total: number
   total_horizonte_stock?: number
+}
+
+export type CompraEstado =
+  | "borrador"
+  | "pendiente_aprobacion"
+  | "aprobada"
+  | "rechazada"
+  | "cambios_solicitados"
+  | "cancelada"
+  | "recibida_parcial"
+  | "recibida"
+
+export type CompraPrioridad = "baja" | "media" | "alta" | "urgente"
+export type CompraEstadoEntrega = "no_pedido" | "pedido" | "en_camino"
+
+export type CompraItem = {
+  id: number
+  solicitud_id: number
+  reactivo_id?: number | null
+  reactivo_nombre?: string | null
+  descripcion_manual?: string | null
+  origen: "reposicion" | "manual"
+  estado: string
+  unidad: string
+  cantidad_sugerida: number
+  cantidad_solicitada: number
+  cantidad_aprobada?: number | null
+  cantidad_recibida?: number
+  motivos?: string[]
+  snapshot_reposicion?: Record<string, unknown> | null
+  proveedor_id?: number | null
+  proveedor_nombre?: string | null
+  proveedor_nombre_snapshot?: string | null
+  presentacion?: string | null
+  costo_unitario_estimado: number
+  costo_total_estimado: number
+  moneda: string
+  notas?: string | null
+}
+
+export type CompraEvento = {
+  id: number
+  solicitud_id: number
+  item_id?: number | null
+  usuario_id: number
+  usuario_nombre?: string | null
+  tipo: string
+  estado_anterior?: string | null
+  estado_nuevo?: string | null
+  comentario?: string | null
+  detalle?: Record<string, unknown> | null
+  fecha: string
+}
+
+export type CompraComunicacion = {
+  id: number
+  organizacion_id?: number
+  solicitud_id: number
+  proveedor_id?: number | null
+  proveedor_nombre_snapshot?: string | null
+  contacto_id?: number | null
+  contacto_email_snapshot?: string | null
+  estado: "borrador" | "descargado" | "copiado" | "descartado" | string
+  origen: "deterministico" | "ia" | string
+  titulo: string
+  contenido_generado: string
+  contenido_editado?: string | null
+  contenido: string
+  version_actual?: number
+  versiones_count?: number
+  fecha_creacion: string
+  fecha_actualizacion?: string | null
+  creado_por: number
+  creado_por_nombre?: string | null
+}
+
+export type CompraComunicacionVersion = {
+  id: number
+  organizacion_id: number
+  comunicacion_id: number
+  solicitud_id: number
+  version_numero: number
+  contenido: string
+  origen: "generada" | "edicion" | string
+  usuario_id: number
+  usuario_nombre?: string | null
+  fecha: string
+}
+
+export type CompraRecepcion = {
+  id: number
+  organizacion_id: number
+  solicitud_id: number
+  item_id: number
+  lote_id: number
+  cantidad_vinculada: number
+  unidad: string
+  usuario_id: number
+  usuario_nombre?: string | null
+  observacion?: string | null
+  fecha: string
+  codigo_interno?: string | null
+  lote_reactivo_id?: number | null
+  reactivo_nombre?: string | null
+}
+
+export type CompraSolicitud = {
+  id: number
+  codigo: string
+  estado: CompraEstado
+  estado_entrega?: CompraEstadoEntrega
+  prioridad: CompraPrioridad
+  titulo: string
+  notas?: string | null
+  solicitado_por: number
+  solicitado_por_nombre?: string | null
+  aprobado_por?: number | null
+  aprobado_por_nombre?: string | null
+  rechazado_por?: number | null
+  rechazado_por_nombre?: string | null
+  fecha_necesaria?: string | null
+  fecha_creacion: string
+  fecha_actualizacion?: string | null
+  fecha_envio_aprobacion?: string | null
+  fecha_aprobacion?: string | null
+  fecha_pedido?: string | null
+  fecha_en_camino?: string | null
+  fecha_cierre?: string | null
+  costo_total_estimado?: number
+  items_count?: number
+  items?: CompraItem[]
+  eventos?: CompraEvento[]
+  comunicaciones?: CompraComunicacion[]
+  recepciones?: CompraRecepcion[]
+}
+
+export type CompraItemCrear = {
+  origen: "reposicion" | "manual"
+  reactivo_id?: number | null
+  descripcion_manual?: string | null
+  dias_reposicion?: number
+  cantidad_solicitada: number
+  unidad?: string | null
+  proveedor_id?: number | null
+  proveedor_nombre?: string | null
+  presentacion?: string | null
+  costo_unitario_estimado?: number
+  moneda?: string
+  notas?: string | null
+}
+
+export type CompraSolicitudCrear = {
+  titulo: string
+  prioridad: CompraPrioridad
+  fecha_necesaria?: string | null
+  notas?: string | null
+  enviar_a_aprobacion?: boolean
+  items: CompraItemCrear[]
+}
+
+export type CompraSolicitudActualizar = {
+  titulo?: string
+  prioridad?: CompraPrioridad
+  fecha_necesaria?: string | null
+  notas?: string | null
+  fecha_actualizacion_esperada?: string | null
+  items?: CompraItemCrear[]
+}
+
+export type CompraComunicacionCrear = {
+  proveedor_id?: number | null
+  contacto_id?: number | null
+  titulo?: string | null
+  observaciones?: string | null
+}
+
+export type CompraRevalidacion = {
+  solicitud_id: number
+  items: Array<{
+    item_id: number
+    reactivo_id?: number | null
+    stale: boolean
+    cambios: string[]
+    snapshot?: Record<string, unknown> | null
+    actual?: Record<string, unknown> | null
+  }>
+}
+
+export type CompraRecepcionCrear = {
+  lote_id: number
+  cantidad_vinculada: number
+  unidad: string
+  observacion?: string | null
+}
+
+export type CompraRecepcionResponse = {
+  recepcion: CompraRecepcion
+  solicitud: CompraSolicitud
 }
 
 export type ReposicionTareaResponse = {
@@ -361,6 +568,7 @@ export type Lote = {
   proveedor_id?: number | null
   costo_total: number
   usuario_id?: number | null
+  compras_recepciones_count?: number
 }
 
 export type MovimientoConsumo = {
@@ -1431,6 +1639,144 @@ export const api = {
 
   dashboardReposicion: async (token: string, dias = 30, limite = 10) =>
     request<DashboardReposicion>(`/dashboard/reposicion?dias=${dias}&limite=${limite}`, { token }),
+
+  comprasSugerencias: async (token: string, dias = 30, limite = 10) =>
+    request<DashboardReposicion>(`/compras/sugerencias?dias=${dias}&limite=${limite}`, { token }),
+
+  comprasSolicitudes: async (
+    token: string,
+    filtros: {
+      estado?: string
+      prioridad?: string
+      proveedor_id?: number | null
+      reactivo_id?: number | null
+      solicitado_por?: number | null
+      aprobado_por?: number | null
+      desde?: string
+      hasta?: string
+      fecha_necesaria_desde?: string
+      fecha_necesaria_hasta?: string
+      q?: string
+      limite?: number
+    } = {},
+  ) => {
+    const params = new URLSearchParams()
+    Object.entries(filtros).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && String(value).trim() !== "") {
+        params.set(key, String(value))
+      }
+    })
+    const query = params.toString()
+    return request<CompraSolicitud[]>(`/compras/solicitudes${query ? `?${query}` : ""}`, { token })
+  },
+
+  crearCompraSolicitud: async (token: string, data: CompraSolicitudCrear) =>
+    request<CompraSolicitud>("/compras/solicitudes", {
+      method: "POST",
+      token,
+      body: JSON.stringify(data),
+    }),
+
+  compraSolicitud: async (token: string, id: number) =>
+    request<CompraSolicitud>(`/compras/solicitudes/${id}`, { token }),
+
+  actualizarCompraSolicitud: async (token: string, id: number, data: CompraSolicitudActualizar) =>
+    request<CompraSolicitud>(`/compras/solicitudes/${id}`, {
+      method: "PATCH",
+      token,
+      body: JSON.stringify(data),
+    }),
+
+  enviarCompraSolicitudAprobacion: async (token: string, id: number, comentario?: string | null) =>
+    request<CompraSolicitud>(`/compras/solicitudes/${id}/enviar-aprobacion`, {
+      method: "POST",
+      token,
+      body: comentario ? JSON.stringify({ comentario }) : undefined,
+    }),
+
+  aprobarCompraSolicitud: async (token: string, id: number, comentario?: string | null) =>
+    request<CompraSolicitud>(`/compras/solicitudes/${id}/aprobar`, {
+      method: "POST",
+      token,
+      body: comentario ? JSON.stringify({ comentario }) : undefined,
+    }),
+
+  rechazarCompraSolicitud: async (token: string, id: number, motivo: string) =>
+    request<CompraSolicitud>(`/compras/solicitudes/${id}/rechazar`, {
+      method: "POST",
+      token,
+      body: JSON.stringify({ motivo }),
+    }),
+
+  solicitarCambiosCompraSolicitud: async (token: string, id: number, motivo: string) =>
+    request<CompraSolicitud>(`/compras/solicitudes/${id}/solicitar-cambios`, {
+      method: "POST",
+      token,
+      body: JSON.stringify({ motivo }),
+    }),
+
+  cancelarCompraSolicitud: async (token: string, id: number, motivo?: string | null) =>
+    request<CompraSolicitud>(`/compras/solicitudes/${id}/cancelar`, {
+      method: "POST",
+      token,
+      body: motivo ? JSON.stringify({ motivo }) : undefined,
+    }),
+
+  marcarCompraPedido: async (token: string, id: number, comentario?: string | null, fechaPedido?: string | null) =>
+    request<CompraSolicitud>(`/compras/solicitudes/${id}/marcar-pedido`, {
+      method: "POST",
+      token,
+      body: JSON.stringify({ comentario: comentario || null, fecha_pedido: fechaPedido || null }),
+    }),
+
+  marcarCompraEnCamino: async (token: string, id: number, comentario?: string | null, fechaPedido?: string | null) =>
+    request<CompraSolicitud>(`/compras/solicitudes/${id}/marcar-en-camino`, {
+      method: "POST",
+      token,
+      body: JSON.stringify({ comentario: comentario || null, fecha_pedido: fechaPedido || null }),
+    }),
+
+  compraSolicitudEventos: async (token: string, id: number) =>
+    request<CompraEvento[]>(`/compras/solicitudes/${id}/eventos`, { token }),
+
+  crearCompraComunicacion: async (token: string, solicitudId: number, data: CompraComunicacionCrear = {}) =>
+    request<CompraComunicacion>(`/compras/solicitudes/${solicitudId}/comunicaciones`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(data),
+    }),
+
+  actualizarCompraComunicacion: async (token: string, comunicacionId: number, contenidoEditado: string) =>
+    request<CompraComunicacion>(`/compras/comunicaciones/${comunicacionId}`, {
+      method: "PATCH",
+      token,
+      body: JSON.stringify({ contenido_editado: contenidoEditado }),
+    }),
+
+  marcarCompraComunicacionCopiada: async (token: string, comunicacionId: number) =>
+    request<CompraComunicacion>(`/compras/comunicaciones/${comunicacionId}/marcar-copiado`, {
+      method: "POST",
+      token,
+    }),
+
+  compraComunicacionVersiones: async (token: string, comunicacionId: number) =>
+    request<CompraComunicacionVersion[]>(`/compras/comunicaciones/${comunicacionId}/versiones`, { token }),
+
+  descargarCompraComunicacion: async (token: string, comunicacionId: number) =>
+    requestBlob(`/compras/comunicaciones/${comunicacionId}/descargar`, { token }),
+
+  registrarCompraRecepcion: async (token: string, itemId: number, data: CompraRecepcionCrear) =>
+    request<CompraRecepcionResponse>(`/compras/items/${itemId}/recepciones`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(data),
+    }),
+
+  revalidarCompraSolicitud: async (token: string, id: number) =>
+    request<CompraRevalidacion>(`/compras/solicitudes/${id}/revalidar`, {
+      method: "POST",
+      token,
+    }),
 
   crearTareaReposicion: async (token: string, reactivoId: number, dias = 30, asignadoA?: number | null) =>
     request<ReposicionTareaResponse>("/dashboard/reposicion/tarea", {
