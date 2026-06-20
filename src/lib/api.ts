@@ -479,6 +479,7 @@ export type Reactivo = {
   marca?: string | null
   numero_catalogo?: string | null
   enlace_compra?: string | null
+  cas_numero?: string | null
   stock_total: number
   // Lotes activos (cantidad_actual > 0) del reactivo y el vencimiento más
   // próximo entre ellos. Los agrega el listado de /reactivos para que el
@@ -1058,6 +1059,7 @@ export type CeparioVial = {
   codigo_interno: string
   nro_viales_inicial: number
   nro_viales_actual: number
+  caja_equipamiento_id: number | null
   ubicacion_freezer: string | null
   ubicacion_caja: string | null
   ubicacion_posicion: string | null
@@ -1208,7 +1210,12 @@ export type CepEntidadActualizar = {
 }
 
 export type CepStockCrear = {
-  nro_viales: number
+  // Una fila por vial (un tubo = una celda). La caja es un equipamiento del
+  // inventario (`caja_equipamiento_id`): con `nro_viales` el backend autoasigna las
+  // próximas celdas libres; `posiciones` las fija a mano (dispersión).
+  nro_viales?: number | null
+  caja_equipamiento_id?: number | null
+  posiciones?: string[] | null
   ubicacion_freezer?: string | null
   ubicacion_caja?: string | null
   ubicacion_posicion?: string | null
@@ -1217,6 +1224,45 @@ export type CepStockCrear = {
   viabilidad?: CeparioViabilidad
   medio_repique?: string | null
   ultimo_control?: string | null
+}
+
+export type CepVialCreado = {
+  stock_id: number
+  codigo_interno: string
+  ubicacion_posicion: string | null
+}
+
+export type CepStockCrearResultado = {
+  viales: CepVialCreado[]
+  creados: number
+}
+
+export type CepCaja = {
+  id: number
+  nombre: string
+  ocupadas: number
+  capacidad: number
+}
+
+export type CepCeldaOcupada = {
+  posicion: string
+  stock_id: number
+  codigo_interno: string
+  viabilidad: CeparioViabilidad | null
+  entidad_id: number
+  entidad_codigo: string | null
+  entidad_codigo_temporal: string | null
+  entidad_nombre: string | null
+  entidad_tipo: CeparioTipo
+}
+
+export type CepMapaCaja = {
+  caja_equipamiento_id: number
+  nombre: string
+  filas: string[]
+  columnas: number
+  capacidad: number
+  ocupadas: CepCeldaOcupada[]
 }
 
 export type CepMovimientoTipo = "descongelar" | "repique" | "descarte" | "ajuste"
@@ -2217,11 +2263,27 @@ export const api = {
     request<CeparioVial[]>(`/cepario/entidades/${entidadId}/stock`, { token }),
 
   crearStockCepario: async (token: string, entidadId: number, data: CepStockCrear) =>
-    request<{ stock_id: number; codigo_interno: string }>(`/cepario/entidades/${entidadId}/stock`, {
+    request<CepStockCrearResultado>(`/cepario/entidades/${entidadId}/stock`, {
       method: "POST",
       token,
       body: JSON.stringify(data),
     }),
+
+  // Sugiere las próximas celdas libres de una caja (del inventario), para prellenar el alta.
+  celdasLibresCepario: async (token: string, cajaEquipamientoId: number, cantidad: number) => {
+    const params = new URLSearchParams({
+      caja_equipamiento_id: String(cajaEquipamientoId),
+      cantidad: String(cantidad),
+    })
+    return request<{ celdas: string[] }>(`/cepario/celdas-libres?${params.toString()}`, { token })
+  },
+
+  // Mapa visual de cajas (ocupación en tiempo real).
+  ceparioCajas: async (token: string) =>
+    request<{ cajas: CepCaja[] }>("/cepario/cajas", { token }),
+
+  ceparioMapaCaja: async (token: string, cajaEquipamientoId: number) =>
+    request<CepMapaCaja>(`/cepario/cajas/${cajaEquipamientoId}/mapa`, { token }),
 
   ceparioRegistrarMovimiento: async (token: string, stockId: number, data: CepMovimientoCrear) =>
     request<CepMovimientoResultado>(`/cepario/stock/${stockId}/movimientos`, {

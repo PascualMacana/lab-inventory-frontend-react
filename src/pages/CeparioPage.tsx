@@ -1,6 +1,6 @@
-import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react"
+import { FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { AlertTriangle, Archive, ArrowLeft, ArrowRight, Calculator, Check, ChevronRight, ChevronUp, ExternalLink, FileText, Link2, PenLine, Plus, QrCode, RotateCcw, Search, Snowflake } from "lucide-react"
+import { AlertTriangle, Archive, ArrowLeft, ArrowRight, Calculator, Check, ChevronRight, ChevronUp, ExternalLink, FileText, Grid3x3, Link2, PenLine, Plus, QrCode, RotateCcw, Search, Snowflake } from "lucide-react"
 import { useSearchParams } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 
@@ -30,6 +30,9 @@ import {
   type CeparioVial,
   type EntidadBiologica,
   type EntidadCaracterizacion,
+  type CepCaja,
+  type CepCeldaOcupada,
+  type CepMapaCaja,
   type EntidadDetalle,
   type GrupoOperativo,
 } from "../lib/api"
@@ -38,7 +41,7 @@ import { puede } from "../lib/permissions"
 import { cn } from "../lib/utils"
 
 type Vista = "galeria" | "tabla"
-type Tab = "listado" | "detalle" | "nueva"
+type Tab = "listado" | "detalle" | "nueva" | "cajas"
 
 const GRUPOS: GrupoOperativo[] = ["H", "U", "P", "M"]
 const SELECT_CLASS = "h-12 w-full border-b border-cds-borderStrong bg-cds-field px-4 text-sm text-cds-textPrimary"
@@ -695,17 +698,54 @@ function NuevaParteForm({ pending, onSubmit }: { pending: boolean; onSubmit: (da
   )
 }
 
-function CongelarVialesForm({ pending, onSubmit, defaultTemperatura = "-80" }: { pending: boolean; onSubmit: (data: CepStockCrear) => void; defaultTemperatura?: string }) {
+// Las cajas (cryoboxes) viven en el inventario (categoría "Caja criogénica"); el
+// cepario solo las lista (vía /cepario/cajas) para seleccionar al congelar y para
+// el mapa visual. No se administran desde el cepario.
+function CongelarVialesForm({ pending, onSubmit, sugerirCeldas, cajas, defaultTemperatura = "-80" }: { pending: boolean; onSubmit: (data: CepStockCrear) => void; sugerirCeldas: (cajaEquipamientoId: number, cantidad: number) => Promise<string[]>; cajas: CepCaja[]; defaultTemperatura?: string }) {
   const { t } = useTranslation()
   const [nroViales, setNroViales] = useState("1")
-  const [freezer, setFreezer] = useState("")
-  const [caja, setCaja] = useState("")
-  const [posicion, setPosicion] = useState("")
+  const [cajaId, setCajaId] = useState("")
+  const [celdas, setCeldas] = useState("")
+  const [celdasTocadas, setCeldasTocadas] = useState(false)
+  const [sugiriendo, setSugiriendo] = useState(false)
+  const [sugerenciaInfo, setSugerenciaInfo] = useState<string | null>(null)
   const [temperatura, setTemperatura] = useState(defaultTemperatura)
   const [crio, setCrio] = useState("")
   const [viabilidad, setViabilidad] = useState<CeparioViabilidad>("viable")
   const [medioRepique, setMedioRepique] = useState("")
   const [errorForm, setErrorForm] = useState<string | null>(null)
+
+  // Mientras el usuario no edite las celdas a mano, las prellenamos con las
+  // próximas libres de la caja (llenado secuencial A1, A2, A3…). Un tubo por celda.
+  useEffect(() => {
+    const n = Number(nroViales)
+    const id = Number(cajaId)
+    if (celdasTocadas) return
+    if (!id || !Number.isFinite(n) || n <= 0) {
+      setCeldas("")
+      setSugerenciaInfo(null)
+      return
+    }
+    let cancelado = false
+    setSugiriendo(true)
+    sugerirCeldas(id, n)
+      .then((cs) => {
+        if (cancelado) return
+        setCeldas(cs.join(", "))
+        setSugerenciaInfo(null)
+      })
+      .catch(() => {
+        if (cancelado) return
+        setCeldas("")
+        setSugerenciaInfo(t("cepario.celdasSinSugerencia"))
+      })
+      .finally(() => {
+        if (!cancelado) setSugiriendo(false)
+      })
+    return () => {
+      cancelado = true
+    }
+  }, [cajaId, nroViales, celdasTocadas, sugerirCeldas, t])
 
   function submit(event: FormEvent) {
     event.preventDefault()
@@ -714,17 +754,29 @@ function CongelarVialesForm({ pending, onSubmit, defaultTemperatura = "-80" }: {
       setErrorForm(t("cepario.faltaViales"))
       return
     }
+    if (!cajaId) {
+      setErrorForm(t("cepario.faltaCaja"))
+      return
+    }
+    const celdasList = celdas
+      .split(",")
+      .map((c) => c.trim().toUpperCase())
+      .filter(Boolean)
+    if (celdasList.length > 0 && celdasList.length !== n) {
+      setErrorForm(t("cepario.celdasNoCoincide", { n, celdas: celdasList.length }))
+      return
+    }
     setErrorForm(null)
-    onSubmit({
-      nro_viales: n,
-      ubicacion_freezer: freezer.trim() || null,
-      ubicacion_caja: caja.trim() || null,
-      ubicacion_posicion: posicion.trim() || null,
+    const base = {
+      caja_equipamiento_id: Number(cajaId),
       temperatura: temperatura.trim() || null,
       crioprotectante: crio.trim() || null,
       viabilidad,
       medio_repique: medioRepique.trim() || null,
-    })
+    }
+    // Con celdas explícitas mandamos `posiciones` (las define una a una, sirve para
+    // dispersar); sin celdas, `nro_viales` y el backend autoasigna las próximas libres.
+    onSubmit(celdasList.length > 0 ? { ...base, posiciones: celdasList } : { ...base, nro_viales: n })
   }
 
   return (
@@ -738,20 +790,37 @@ function CongelarVialesForm({ pending, onSubmit, defaultTemperatura = "-80" }: {
           <Input type="number" min={1} value={nroViales} onChange={(e) => setNroViales(e.target.value)} />
         </label>
         <label className="block">
-          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoFreezer")}</span>
-          <Input value={freezer} onChange={(e) => setFreezer(e.target.value)} placeholder="Freezer -80" />
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoCaja")}</span>
+          <select className={SELECT_CLASS} value={cajaId} onChange={(e) => { setCajaId(e.target.value); setCeldasTocadas(false) }}>
+            <option value="">{cajas.length ? t("cepario.cajaElegir") : t("cepario.cajaSinCajas")}</option>
+            {cajas.map((c) => (
+              <option key={c.id} value={c.id}>{c.nombre}</option>
+            ))}
+          </select>
         </label>
         <label className="block">
           <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoTemperatura")}</span>
           <Input value={temperatura} onChange={(e) => setTemperatura(e.target.value)} />
         </label>
-        <label className="block">
-          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoCaja")}</span>
-          <Input value={caja} onChange={(e) => setCaja(e.target.value)} placeholder="Caja A" />
-        </label>
-        <label className="block">
-          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoPosicion")}</span>
-          <Input value={posicion} onChange={(e) => setPosicion(e.target.value)} placeholder="A1" />
+        <label className="block sm:col-span-2">
+          <span className="mb-2 flex items-center justify-between text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">
+            <span>{t("cepario.campoCeldas")}</span>
+            <button
+              type="button"
+              className="underline hover:text-cds-textPrimary disabled:opacity-50"
+              disabled={!cajaId || sugiriendo}
+              onClick={() => {
+                setCeldasTocadas(false)
+                setSugerenciaInfo(null)
+              }}
+            >
+              {t("cepario.celdasSugerir")}
+            </button>
+          </span>
+          <Input value={celdas} onChange={(e) => { setCeldas(e.target.value); setCeldasTocadas(true) }} placeholder="A1, A2, A3" />
+          <span className="mt-1 block text-xs text-cds-textSecondary">
+            {sugiriendo ? t("cepario.celdasSugiriendo") : sugerenciaInfo ?? t("cepario.celdasAyuda")}
+          </span>
         </label>
         <label className="block">
           <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoViabilidad")}</span>
@@ -779,7 +848,10 @@ function CongelarVialesForm({ pending, onSubmit, defaultTemperatura = "-80" }: {
   )
 }
 
-const TIPOS_MOVIMIENTO: CepMovimientoTipo[] = ["descongelar", "repique", "descarte", "ajuste"]
+// Acciones de un vial individual (un tubo = una fila). Como cada acción opera sobre
+// ESE tubo, no hay campo "cantidad" (siempre 1) ni 'ajuste': se elige la acción
+// (descongelar/repique/descarte) y, opcionalmente, motivo + consumo de inventario.
+const ACCIONES_VIAL: CepMovimientoTipo[] = ["descongelar", "repique", "descarte"]
 
 function MovimientoForm({
   puedeDescartar,
@@ -794,8 +866,7 @@ function MovimientoForm({
 }) {
   const { t } = useTranslation()
   const { token } = useAuth()
-  const [tipo, setTipo] = useState<CepMovimientoTipo>("descongelar")
-  const [cantidad, setCantidad] = useState("1")
+  const [accion, setAccion] = useState<CepMovimientoTipo | null>(null)
   const [motivo, setMotivo] = useState("")
   const [conConsumo, setConConsumo] = useState(false)
   const [reactivoId, setReactivoId] = useState("")
@@ -804,8 +875,7 @@ function MovimientoForm({
   const [errorForm, setErrorForm] = useState<string | null>(null)
 
   // 'descarte' solo si el rol puede (el backend igual lo gatea por descartar_stock).
-  const tipos = TIPOS_MOVIMIENTO.filter((tp) => tp !== "descarte" || puedeDescartar)
-  const esAjuste = tipo === "ajuste"
+  const acciones = ACCIONES_VIAL.filter((tp) => tp !== "descarte" || puedeDescartar)
 
   // Catálogo de reactivos + lotes para la costura; solo se piden si el toggle está activo.
   const reactivosQuery = useQuery({
@@ -822,11 +892,9 @@ function MovimientoForm({
   const lotes = lotesQuery.data ?? []
   const reactivoSel = reactivos.find((r) => String(r.id) === reactivoId)
 
-  function submit(event: FormEvent) {
+  function confirmar(event: FormEvent) {
     event.preventDefault()
-    const n = Number(cantidad)
-    if (!Number.isInteger(n) || (esAjuste ? n < 0 : n <= 0)) {
-      setErrorForm(t("cepario.movCantidadInvalida"))
+    if (!accion) {
       return
     }
     let consumo: CepConsumoInventario | null = null
@@ -843,70 +911,88 @@ function MovimientoForm({
       consumo = { reactivo_id: Number(reactivoId), cantidad: c, lote_id: loteId ? Number(loteId) : null }
     }
     setErrorForm(null)
-    onSubmit({ tipo, cantidad: n, motivo: motivo.trim() || null, consumo_inventario: consumo })
+    // Un tubo por fila: la acción saca ESE vial → cantidad implícita = 1.
+    onSubmit({ tipo: accion, cantidad: 1, motivo: motivo.trim() || null, consumo_inventario: consumo })
   }
 
+  // Botón de variante según la acción (descarte es destructivo → rojo sutil vía secondary).
   return (
-    <form onSubmit={submit} className="mt-2 border border-cds-borderSubtle bg-cds-background p-3">
-      {errorForm ? (
-        <div className="mb-3 border-l-4 border-cds-supportError px-3 py-2 text-sm">{errorForm}</div>
-      ) : null}
-      <div className="grid gap-3 sm:grid-cols-[10rem_8rem_1fr] sm:items-end">
-        <label className="block">
-          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.movTipo")}</span>
-          <select className={SELECT_CLASS} value={tipo} onChange={(e) => setTipo(e.target.value as CepMovimientoTipo)}>
-            {tipos.map((tp) => (
-              <option key={tp} value={tp}>{t(`cepario.mov_${tp}`)}</option>
-            ))}
-          </select>
-        </label>
-        <label className="block">
-          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{esAjuste ? t("cepario.movNuevoTotal") : t("cepario.movCantidad")}</span>
-          <Input type="number" min={esAjuste ? 0 : 1} value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
-        </label>
-        <label className="block">
-          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.movMotivo")}</span>
-          <Input value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder={t("cepario.movMotivoPh")} />
-        </label>
+    <div className="mt-2 border border-cds-borderSubtle bg-cds-background p-3">
+      {/* Acciones directas: cada una opera sobre este tubo. */}
+      <div className="flex flex-wrap items-center gap-2">
+        {acciones.map((tp) => (
+          <button
+            key={tp}
+            type="button"
+            onClick={() => { setAccion(tp); setErrorForm(null) }}
+            className={cn(
+              "inline-flex h-9 items-center rounded-full px-4 text-sm tracking-[0.16px] ring-1 ring-inset transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cds-focus",
+              accion === tp
+                ? "bg-lab-ceparioTint text-cds-textPrimary ring-lab-cepario/40"
+                : "text-cds-textSecondary ring-cds-borderSubtle hover:text-cds-textPrimary",
+            )}
+          >
+            {t(`cepario.mov_${tp}`)}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={onCancel}
+          className="ml-auto text-sm text-cds-textSecondary underline hover:text-cds-textPrimary"
+        >
+          {t("cepario.movCancelar")}
+        </button>
       </div>
 
-      {/* Costura opcional: descontar un reactivo real del inventario al registrar el movimiento. */}
-      <label className="mt-3 inline-flex items-center gap-2 text-sm text-cds-textSecondary">
-        <input type="checkbox" checked={conConsumo} onChange={(e) => setConConsumo(e.target.checked)} />
-        {t("cepario.movConConsumo")}
-      </label>
-      {conConsumo ? (
-        <div className="mt-3 grid gap-3 border-l-2 border-cds-borderSubtle pl-3 sm:grid-cols-[1fr_1fr_8rem] sm:items-end">
+      {accion ? (
+        <form onSubmit={confirmar} className="mt-3 border-t border-cds-borderSubtle pt-3">
+          {errorForm ? (
+            <div className="mb-3 border-l-4 border-cds-supportError px-3 py-2 text-sm">{errorForm}</div>
+          ) : null}
           <label className="block">
-            <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.movReactivo")}</span>
-            <select className={SELECT_CLASS} value={reactivoId} onChange={(e) => { setReactivoId(e.target.value); setLoteId("") }}>
-              <option value="">{t("cepario.movReactivoPlaceholder")}</option>
-              {reactivos.map((r) => (
-                <option key={r.id} value={r.id}>{r.nombre}</option>
-              ))}
-            </select>
+            <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.movMotivo")}</span>
+            <Input value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder={t("cepario.movMotivoPh")} />
           </label>
-          <label className="block">
-            <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.movLote")}</span>
-            <select className={SELECT_CLASS} value={loteId} onChange={(e) => setLoteId(e.target.value)} disabled={!reactivoId}>
-              <option value="">{t("cepario.movLoteFifo")}</option>
-              {lotes.map((l) => (
-                <option key={l.id} value={l.id}>{l.codigo_interno} · {l.cantidad_actual} {l.unidad}</option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.movConsumoCantidad")}{reactivoSel ? ` (${reactivoSel.unidad})` : ""}</span>
-            <Input type="number" min={0} step="any" value={consumoCantidad} onChange={(e) => setConsumoCantidad(e.target.value)} />
-          </label>
-        </div>
-      ) : null}
 
-      <div className="mt-3 flex gap-2">
-        <Button type="submit" variant="primary" size="compact" disabled={pending}>{t("cepario.movRegistrar")}</Button>
-        <Button type="button" variant="secondary" size="compact" onClick={onCancel}>{t("cepario.movCancelar")}</Button>
-      </div>
-    </form>
+          {/* Costura opcional: descontar un reactivo real del inventario (típico en repique). */}
+          <label className="mt-3 inline-flex items-center gap-2 text-sm text-cds-textSecondary">
+            <input type="checkbox" checked={conConsumo} onChange={(e) => setConConsumo(e.target.checked)} />
+            {t("cepario.movConConsumo")}
+          </label>
+          {conConsumo ? (
+            <div className="mt-3 grid gap-3 border-l-2 border-cds-borderSubtle pl-3 sm:grid-cols-[1fr_1fr_8rem] sm:items-end">
+              <label className="block">
+                <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.movReactivo")}</span>
+                <select className={SELECT_CLASS} value={reactivoId} onChange={(e) => { setReactivoId(e.target.value); setLoteId("") }}>
+                  <option value="">{t("cepario.movReactivoPlaceholder")}</option>
+                  {reactivos.map((r) => (
+                    <option key={r.id} value={r.id}>{r.nombre}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.movLote")}</span>
+                <select className={SELECT_CLASS} value={loteId} onChange={(e) => setLoteId(e.target.value)} disabled={!reactivoId}>
+                  <option value="">{t("cepario.movLoteFifo")}</option>
+                  {lotes.map((l) => (
+                    <option key={l.id} value={l.id}>{l.codigo_interno} · {l.cantidad_actual} {l.unidad}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.movConsumoCantidad")}{reactivoSel ? ` (${reactivoSel.unidad})` : ""}</span>
+                <Input type="number" min={0} step="any" value={consumoCantidad} onChange={(e) => setConsumoCantidad(e.target.value)} />
+              </label>
+            </div>
+          ) : null}
+
+          <div className="mt-3 flex gap-2">
+            <Button type="submit" variant="primary" size="compact" disabled={pending}>{t("cepario.movConfirmar")}</Button>
+            <Button type="button" variant="secondary" size="compact" onClick={() => setAccion(null)}>{t("cepario.movVolver")}</Button>
+          </div>
+        </form>
+      ) : null}
+    </div>
   )
 }
 
@@ -2042,6 +2128,160 @@ function BacDiveReferencias({
   )
 }
 
+// Vista "Cajas": mapa visual de una caja completa (todas las cepas) en tiempo real.
+// Elegís una caja del inventario y ves su grilla 9×9; click en una celda ocupada
+// muestra el vial y la cepa, con acceso directo a la ficha.
+function CajasView({
+  cajas,
+  cargando,
+  cargarMapa,
+  onVerCepa,
+}: {
+  cajas: CepCaja[]
+  cargando: boolean
+  cargarMapa: (cajaEquipamientoId: number) => Promise<CepMapaCaja>
+  onVerCepa: (entidadId: number) => void
+}) {
+  const { t } = useTranslation()
+  const [sel, setSel] = useState<number | null>(null)
+  const [celdaSel, setCeldaSel] = useState<CepCeldaOcupada | null>(null)
+
+  // Mantener una caja seleccionada válida a medida que cargan/cambian.
+  useEffect(() => {
+    if (cajas.length === 0) {
+      setSel(null)
+      return
+    }
+    if (sel == null || !cajas.some((c) => c.id === sel)) {
+      setSel(cajas[0].id)
+    }
+  }, [cajas, sel])
+
+  // Al cambiar de caja, limpiar la celda seleccionada.
+  useEffect(() => {
+    setCeldaSel(null)
+  }, [sel])
+
+  const mapaQuery = useQuery({
+    queryKey: ["cepario", "mapa", sel],
+    queryFn: () => cargarMapa(sel!),
+    enabled: sel != null,
+  })
+
+  const mapa = mapaQuery.data
+  const porPosicion = useMemo(() => {
+    const m = new Map<string, CepCeldaOcupada>()
+    for (const o of mapa?.ocupadas ?? []) {
+      m.set(o.posicion, o)
+    }
+    return m
+  }, [mapa])
+
+  const ocupadas: CeldaOcupada[] = (mapa?.ocupadas ?? []).map((o) => ({
+    posicion: o.posicion,
+    titulo: o.entidad_codigo ?? o.entidad_codigo_temporal ?? "—",
+    detalle: [o.entidad_nombre, o.codigo_interno].filter(Boolean).join(" · "),
+  }))
+
+  if (!cargando && cajas.length === 0) {
+    return (
+      <div className="border border-cds-borderSubtle bg-cds-layer01 p-6 text-sm text-cds-textSecondary">
+        {t("cepario.cajasVacias")}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* Selector de caja: chips con ocupación. */}
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label={t("cepario.verCajas")}>
+        {cajas.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            role="tab"
+            aria-selected={sel === c.id}
+            onClick={() => setSel(c.id)}
+            className={cn(
+              "inline-flex h-10 items-center gap-2 rounded-full px-4 text-sm tracking-[0.16px] ring-1 ring-inset transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cds-focus",
+              sel === c.id
+                ? "bg-lab-ceparioTint text-cds-textPrimary ring-lab-cepario/40"
+                : "text-cds-textSecondary ring-cds-borderSubtle hover:text-cds-textPrimary",
+            )}
+          >
+            {c.nombre}
+            <span className="text-xs text-cds-textSecondary">{c.ocupadas}/{c.capacidad}</span>
+          </button>
+        ))}
+      </div>
+
+      {mapaQuery.isLoading ? (
+        <p className="text-sm text-cds-textSecondary">{t("cepario.cargando")}</p>
+      ) : mapa ? (
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+          <div className="border border-cds-borderSubtle bg-cds-layer01 p-5">
+            <MapaCaja
+              ocupadas={ocupadas}
+              color="var(--lab-cepario)"
+              filas={mapa.filas.length}
+              columnas={mapa.columnas}
+              onCelda={(celda) => {
+                const full = celda.posicion ? porPosicion.get(celda.posicion.toUpperCase()) : undefined
+                setCeldaSel(full ?? null)
+              }}
+            />
+            <p className="mt-3 text-xs text-cds-textSecondary">
+              {t("cepario.cajasOcupacion", { ocupadas: mapa.ocupadas.length, capacidad: mapa.capacidad })}
+            </p>
+          </div>
+
+          {/* Panel de la celda seleccionada. */}
+          <div className="w-full max-w-xs border border-cds-borderSubtle bg-cds-layer01 p-5">
+            {celdaSel ? (
+              <div className="flex flex-col gap-3">
+                <div className="flex items-baseline gap-2">
+                  <span className="font-mono text-2xl font-medium text-cds-textPrimary">{celdaSel.posicion}</span>
+                  <span className="text-xs text-cds-textSecondary">{mapa.nombre}</span>
+                </div>
+                <dl className="flex flex-col gap-2 border-t border-cds-borderSubtle pt-3 text-sm">
+                  <div>
+                    <dt className="text-xs text-cds-textSecondary">{t("cepario.thCodigo")}</dt>
+                    <dd className="font-mono text-cds-textPrimary">{celdaSel.entidad_codigo ?? celdaSel.entidad_codigo_temporal ?? "—"}</dd>
+                  </div>
+                  {celdaSel.entidad_nombre ? (
+                    <div>
+                      <dt className="text-xs text-cds-textSecondary">{t("cepario.thTaxon")}</dt>
+                      <dd className="text-cds-textPrimary">{celdaSel.entidad_nombre}</dd>
+                    </div>
+                  ) : null}
+                  <div>
+                    <dt className="text-xs text-cds-textSecondary">{t("cepario.campoCodigoVial")}</dt>
+                    <dd className="font-mono text-cds-textPrimary">{celdaSel.codigo_interno}</dd>
+                  </div>
+                  {celdaSel.viabilidad ? (
+                    <div>
+                      <dt className="text-xs text-cds-textSecondary">{t("cepario.campoViabilidad")}</dt>
+                      <dd><ViabilidadPill viabilidad={celdaSel.viabilidad} /></dd>
+                    </div>
+                  ) : null}
+                </dl>
+                <Button type="button" variant="secondary" size="compact" onClick={() => onVerCepa(celdaSel.entidad_id)}>
+                  <ArrowRight size={16} aria-hidden="true" />
+                  {t("cepario.verCepa")}
+                </Button>
+              </div>
+            ) : (
+              <p className="text-sm text-cds-textSecondary">{t("cepario.cajasClickCelda")}</p>
+            )}
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm text-cds-textSecondary">{t("cepario.sinResultados")}</p>
+      )}
+    </div>
+  )
+}
+
 function CeparioDetalle({
   entidad,
   puedeStock,
@@ -2067,6 +2307,8 @@ function CeparioDetalle({
   onEditarIdentidad,
   onCongelar,
   pendingCongelar,
+  sugerirCeldas,
+  cajas,
   onMovimiento,
   pendingMovimiento,
   onEtiquetas,
@@ -2097,6 +2339,8 @@ function CeparioDetalle({
   onEditarIdentidad: (data: CepEntidadActualizar) => void
   onCongelar: (data: CepStockCrear) => void
   pendingCongelar: boolean
+  sugerirCeldas: (cajaEquipamientoId: number, cantidad: number) => Promise<string[]>
+  cajas: CepCaja[]
   onMovimiento: (stockId: number, data: CepMovimientoCrear) => void
   pendingMovimiento: boolean
   onEtiquetas: () => void
@@ -2345,6 +2589,8 @@ function CeparioDetalle({
           <CongelarVialesForm
             pending={pendingCongelar}
             defaultTemperatura={esParte ? "-20" : "-80"}
+            sugerirCeldas={sugerirCeldas}
+            cajas={cajas}
             onSubmit={(data) => {
               onCongelar(data)
               setCongelando(false)
@@ -2407,11 +2653,8 @@ function CeparioDetalle({
                           </div>
                         </div>
                         <div className="flex flex-col items-end gap-2">
-                          <div className="flex items-center gap-3">
-                            <VialBars n={vial.nro_viales_actual} color={spine} />
-                            <span className="text-sm text-cds-textPrimary">{t("cepario.vialesN", { n: vial.nro_viales_actual })}</span>
-                            <ViabilidadPlano viabilidad={vial.viabilidad} />
-                          </div>
+                          {/* Cada fila es UN tubo: no mostramos cantidad, solo el estado. */}
+                          <ViabilidadPlano viabilidad={vial.viabilidad} />
                           {puedeStock ? (
                             <button
                               type="button"
@@ -2673,12 +2916,41 @@ export function CeparioPage() {
     onError: (error) => setErrorLocal(mutationError(error, "Error")),
   })
 
+  // Cajas del inventario (cryobox) con su ocupación: sirve para el selector del
+  // alta y para la Vista Cajas (mapa visual).
+  const cajasQuery = useQuery({
+    queryKey: ["cepario", "cajas"],
+    queryFn: () => api.ceparioCajas(token!).then((r) => r.cajas),
+    enabled: Boolean(token) && (tab === "detalle" || tab === "cajas"),
+  })
+
+  // Memoizada (estable por token) para que el effect de sugerencia del form no
+  // se redispare en cada render.
+  const sugerirCeldas = useCallback(
+    (cajaEquipamientoId: number, cantidad: number) =>
+      api.celdasLibresCepario(token!, cajaEquipamientoId, cantidad).then((r) => r.celdas),
+    [token],
+  )
+
+  // Fetcher del mapa de una caja (Vista Cajas + mini-mapa de la ficha).
+  const cargarMapaCaja = useCallback(
+    (cajaEquipamientoId: number) => api.ceparioMapaCaja(token!, cajaEquipamientoId),
+    [token],
+  )
+
   const crearStockMutation = useMutation({
     mutationFn: (data: CepStockCrear) => api.crearStockCepario(token!, entidadId!, data),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ["cepario", "entidad", entidadId] })
       queryClient.invalidateQueries({ queryKey: ["cepario", "entidades"] })
-      setMensaje(t("cepario.vialCongelado", { codigo: res.codigo_interno }))
+      queryClient.invalidateQueries({ queryKey: ["cepario", "cajas"] })
+      queryClient.invalidateQueries({ queryKey: ["cepario", "mapa"] })
+      const celdas = res.viales.map((v) => v.ubicacion_posicion).filter(Boolean).join(", ")
+      setMensaje(
+        celdas
+          ? t("cepario.vialesCongeladosEn", { n: res.creados, celdas })
+          : t("cepario.vialesCongelados", { n: res.creados }),
+      )
       setErrorLocal(null)
     },
     onError: (error) => setErrorLocal(mutationError(error, "Error")),
@@ -2798,6 +3070,8 @@ export function CeparioPage() {
       api.ceparioRegistrarMovimiento(token!, stockId, data),
     onSuccess: (res) => {
       invalidarDetalle()
+      queryClient.invalidateQueries({ queryKey: ["cepario", "cajas"] })
+      queryClient.invalidateQueries({ queryKey: ["cepario", "mapa"] })
       setMensaje(t("cepario.movRegistrado", { n: res.nro_viales_actual }))
       setErrorLocal(null)
     },
@@ -2876,9 +3150,12 @@ export function CeparioPage() {
 
   const moduleActions =
     tab === "listado"
-      ? puedeCrear
-        ? [{ label: t(esParteVista ? "cepario.nuevaParte" : "cepario.nuevoMicro"), onClick: () => { setTab("nueva"); setMensaje(null); setErrorLocal(null) }, icon: <Plus size={18} aria-hidden="true" /> }]
-        : []
+      ? [
+          ...(puedeCrear
+            ? [{ label: t(esParteVista ? "cepario.nuevaParte" : "cepario.nuevoMicro"), onClick: () => { setTab("nueva"); setMensaje(null); setErrorLocal(null) }, icon: <Plus size={18} aria-hidden="true" /> }]
+            : []),
+          { label: t("cepario.verCajas"), onClick: () => { setTab("cajas"); setMensaje(null); setErrorLocal(null) }, icon: <Grid3x3 size={18} aria-hidden="true" />, variant: "secondary" as const },
+        ]
       : [{ label: t("common.volverAlListado"), onClick: volverAlListado, icon: <ArrowLeft size={18} aria-hidden="true" />, variant: "secondary" as const }]
 
   return (
@@ -2933,6 +3210,13 @@ export function CeparioPage() {
         ) : (
           <NuevaMicroForm pending={crearEntidadMutation.isPending} onSubmit={(data) => crearEntidadMutation.mutate(data)} />
         )
+      ) : tab === "cajas" ? (
+        <CajasView
+          cajas={cajasQuery.data ?? []}
+          cargando={cajasQuery.isLoading}
+          cargarMapa={cargarMapaCaja}
+          onVerCepa={abrirDetalle}
+        />
       ) : tab === "detalle" ? (
         entidadQuery.isLoading ? (
           <p className="text-sm text-cds-textSecondary">{t("cepario.cargando")}</p>
@@ -2965,6 +3249,8 @@ export function CeparioPage() {
             onEditarIdentidad={(data) => editarIdentidadMutation.mutate(data)}
             onCongelar={(data) => crearStockMutation.mutate(data)}
             pendingCongelar={crearStockMutation.isPending}
+            sugerirCeldas={sugerirCeldas}
+            cajas={cajasQuery.data ?? []}
             onMovimiento={(stockId, data) => registrarMovimientoMutation.mutate({ stockId, data })}
             pendingMovimiento={registrarMovimientoMutation.isPending}
             onEtiquetas={imprimirEtiquetas}

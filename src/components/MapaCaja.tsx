@@ -19,16 +19,23 @@ export type CeldaOcupada = {
 // aparte por reutilizable.
 export function MapaCaja({
   ocupadas,
+  secundarias = [],
   color = "var(--lab-cepario)",
   filas = 9,
   columnas = 9,
+  onCelda,
 }: {
   ocupadas: CeldaOcupada[]
+  // Otras celdas ocupadas (p. ej. de otras cepas en la misma caja): se pintan en
+  // gris tenue, como contexto. En la Vista Cajas no se usan (todo va en `ocupadas`).
+  secundarias?: CeldaOcupada[]
   // Color de las celdas ocupadas: morado del cepario en micro, color de la
   // categoría en partes. Lo decide la página dueña.
   color?: string
   filas?: number
   columnas?: number
+  // Si se pasa, las celdas ocupadas (y secundarias) son clickeables.
+  onCelda?: (celda: CeldaOcupada) => void
 }) {
   const { t } = useTranslation()
   const porPosicion = new Map<string, CeldaOcupada>()
@@ -36,6 +43,13 @@ export function MapaCaja({
     const clave = (celda.posicion ?? "").trim().toUpperCase()
     if (clave) {
       porPosicion.set(clave, celda)
+    }
+  }
+  const porPosicionSec = new Map<string, CeldaOcupada>()
+  for (const celda of secundarias) {
+    const clave = (celda.posicion ?? "").trim().toUpperCase()
+    if (clave && !porPosicion.has(clave)) {
+      porPosicionSec.set(clave, celda)
     }
   }
   const filasLetras = LETRAS.slice(0, filas)
@@ -56,7 +70,8 @@ export function MapaCaja({
             {Array.from({ length: columnas }, (_, i) => {
               const pos = `${letra}${i + 1}`
               const info = porPosicion.get(pos)
-              if (!info) {
+              const sec = info ? undefined : porPosicionSec.get(pos)
+              if (!info && !sec) {
                 // Vacía: hover nativo con la posición, sin más.
                 return (
                   <span
@@ -66,17 +81,29 @@ export function MapaCaja({
                   />
                 )
               }
+              const celda = (info ?? sec) as CeldaOcupada
+              const clickable = Boolean(onCelda)
+              // La celda primaria va en color; la secundaria (otra cepa) en gris tenue.
+              const estilo = info
+                ? { backgroundColor: color, borderColor: color, boxShadow: "inset 0 0 0 2px rgba(255,255,255,0.4)" }
+                : { backgroundColor: "var(--cds-border-subtle)", borderColor: "var(--cds-border-subtle)", opacity: 0.7 }
               return (
                 <span key={pos} className="group relative">
-                  <span
-                    aria-label={`${pos} · ${info.titulo}${info.detalle ? ` · ${info.detalle}` : ""}`}
-                    className="block h-6 w-6 rounded-sm border transition-transform group-hover:scale-110"
-                    style={{
-                      backgroundColor: color,
-                      borderColor: color,
-                      boxShadow: "inset 0 0 0 2px rgba(255,255,255,0.4)",
-                    }}
-                  />
+                  {clickable ? (
+                    <button
+                      type="button"
+                      onClick={() => onCelda?.(celda)}
+                      aria-label={`${pos} · ${celda.titulo}${celda.detalle ? ` · ${celda.detalle}` : ""}`}
+                      className="block h-6 w-6 rounded-sm border transition-transform hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-cds-focus"
+                      style={estilo}
+                    />
+                  ) : (
+                    <span
+                      aria-label={`${pos} · ${celda.titulo}${celda.detalle ? ` · ${celda.detalle}` : ""}`}
+                      className="block h-6 w-6 rounded-sm border transition-transform group-hover:scale-110"
+                      style={estilo}
+                    />
+                  )}
                   <span
                     role="tooltip"
                     className={cn(
@@ -85,10 +112,10 @@ export function MapaCaja({
                     )}
                   >
                     <span className="block font-mono text-[11px] text-cds-textPrimary">
-                      {pos} · {info.titulo}
+                      {pos} · {celda.titulo}
                     </span>
-                    {info.detalle ? (
-                      <span className="mt-0.5 block text-[10px] text-cds-textSecondary">{info.detalle}</span>
+                    {celda.detalle ? (
+                      <span className="mt-0.5 block text-[10px] text-cds-textSecondary">{celda.detalle}</span>
                     ) : null}
                   </span>
                 </span>
@@ -97,7 +124,7 @@ export function MapaCaja({
           </div>
         ))}
       </div>
-      {porPosicion.size === 0 ? (
+      {porPosicion.size === 0 && porPosicionSec.size === 0 ? (
         <p className="mt-2 text-xs text-cds-textSecondary">{t("cepario.mapaCajaSinPos")}</p>
       ) : null}
     </div>
