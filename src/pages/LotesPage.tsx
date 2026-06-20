@@ -395,7 +395,7 @@ function ListadoLotes({
         </label>
       </div>
 
-      <div className="mb-4 grid gap-px bg-cds-borderSubtle md:grid-cols-3">
+      <div className="mb-4 grid grid-cols-1 gap-3.5 md:grid-cols-3">
         <MetricTile
           label={reactivoSeleccionado ? t("lotes.metricStockActivo") : t("lotes.metricReactivosConLote")}
           value={reactivoSeleccionado ? `${formatNumber(stockTotal)} ${reactivoSeleccionado.unidad}` : String(reactivosConLote)}
@@ -1568,27 +1568,24 @@ function MetricTile({
   icon: typeof Package
   tone?: MetricTone
 }) {
+  // Mismo lenguaje de card que Dashboard y Reactivos: borde propio, acento
+  // izquierdo de 3px que codifica la severidad, label mono en mayúsculas (con el
+  // ícono a la derecha) y valor mono en peso regular, coloreado por tono.
+  const card =
+    tone === "error"
+      ? "bg-lab-critTint shadow-[inset_3px_0_0_var(--cds-support-error)]"
+      : tone === "warning"
+        ? "bg-lab-warmTint shadow-[inset_3px_0_0_var(--lab-warm)]"
+        : "bg-cds-layer01 shadow-[inset_3px_0_0_var(--lab-blue)]"
   return (
-    <article
-      className={cn(
-        "bg-cds-layer01 p-4",
-        tone === "error" && "bg-lab-critTint shadow-[inset_2px_0_0_var(--cds-support-error)]",
-        tone === "warning" && "bg-lab-warmTint shadow-[inset_2px_0_0_var(--cds-support-warning)]",
-      )}
-    >
-      <div
-        className={cn(
-          "mb-4 flex items-center justify-between text-cds-textSecondary",
-          tone === "error" && "text-cds-supportError",
-          tone === "warning" && "text-lab-warmFg",
-        )}
-      >
-        <span className="text-xs tracking-[0.32px]">{label}</span>
-        <Icon size={18} aria-hidden="true" />
+    <article className={cn("border border-cds-borderSubtle p-[18px_20px]", card)}>
+      <div className="flex items-center justify-between font-mono text-[10.5px] uppercase tracking-[0.09em] text-cds-textSecondary">
+        <span>{label}</span>
+        <Icon size={16} aria-hidden="true" />
       </div>
       <div
         className={cn(
-          "text-[24px] font-normal leading-[1.33]",
+          "mt-2.5 font-mono text-[34px] leading-none",
           tone === "error" && "text-cds-supportError",
           tone === "warning" && "text-lab-warmFg",
         )}
