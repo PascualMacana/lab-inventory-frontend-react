@@ -19,6 +19,7 @@ import {
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
+  Rocket,
   ScanLine,
   ScrollText,
   ShoppingCart,
@@ -40,8 +41,15 @@ import { Button } from "./ui/button"
 import { StatusDot } from "./ui/status-dot"
 import { cn } from "../lib/utils"
 
+// Command Center: dashboard interno de founders (estrategia/CRM/finanzas). Ahora
+// es React nativo con su propio shell (command-center/), abre en pestaña nueva
+// (como el cepario) y solo lo ven los co-dueños (owner_global). El export HTML
+// standalone queda como respaldo en public/command-center/Dashboard.html.
+const COMMAND_CENTER_PATH = "/command-center"
+
 const navItems = [
   { to: "/owner", labelKey: "nav.owner", icon: Building2, action: "ver_pagina_owner" },
+  { to: COMMAND_CENTER_PATH, labelKey: "nav.commandCenter", icon: Rocket, action: "ver_pagina_owner" },
   { to: "/", labelKey: "nav.dashboard", icon: Gauge, action: "ver_pagina_dashboard" },
   { to: "/reactivos", labelKey: "nav.reactivos", icon: FlaskConical, action: "ver_pagina_reactivos" },
   { to: "/consumo", labelKey: "nav.consumo", icon: ScanLine, action: "ver_pagina_consumo", desktopOnly: true },
@@ -68,7 +76,7 @@ const navGroups: { labelKey: string; items: string[] }[] = [
   { labelKey: "navGroup.inventario", items: ["/reactivos", "/cepario", "/equipamiento", "/proveedores"] },
   { labelKey: "navGroup.operacion", items: ["/consumo", "/mesada", "/protocolos", "/tareas", "/compras", "/movimientos"] },
   { labelKey: "navGroup.analisis", items: ["/auditoria", "/graphs", "/asistente"] },
-  { labelKey: "navGroup.admin", items: ["/owner", "/usuarios"] },
+  { labelKey: "navGroup.admin", items: ["/owner", COMMAND_CENTER_PATH, "/usuarios"] },
 ]
 
 // Build the visible groups for a viewport: keep each group's items in declared
@@ -134,7 +142,12 @@ export function AppShell() {
     enabled: mostrarApi,
   })
 
-  const visibleItems = navItems.filter((item) => puede(usuario, item.action))
+  // El Command Center es solo para los co-dueños: además del permiso, exige owner_global.
+  const visibleItems = navItems.filter(
+    (item) =>
+      puede(usuario, item.action) &&
+      (item.to !== COMMAND_CENTER_PATH || Boolean(usuario?.owner_global)),
+  )
   const desktopItems = visibleItems.filter((item) => !item.mobileOnly)
   const mobileItems = visibleItems.filter((item) => !item.desktopOnly)
   const desktopGroups = buildGroups(desktopItems)
@@ -166,6 +179,27 @@ export function AppShell() {
 
   function renderDesktopItem(item: NavItem) {
     const Icon = item.icon
+    if (item.to === COMMAND_CENTER_PATH) {
+      // Command Center (shell propio): abre en pestaña nueva, como el cepario.
+      return (
+        <a
+          key={item.to}
+          href={item.to}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={sidebarColapsado ? t(item.labelKey) : undefined}
+          className="grid h-12 grid-cols-[calc(4rem-2px)_1fr] items-center border-l-2 border-transparent text-sm tracking-[0.16px] transition-colors hover:bg-[var(--lab-sidebar-hover)] hover:text-white"
+        >
+          <Icon className="mx-auto shrink-0" size={18} aria-hidden="true" />
+          {!sidebarColapsado ? (
+            <span className="flex items-center gap-1.5 overflow-hidden whitespace-nowrap pr-3">
+              {t(item.labelKey)}
+              <ExternalLink className="shrink-0 text-[var(--lab-blue-40)]" size={12} aria-hidden="true" />
+            </span>
+          ) : null}
+        </a>
+      )
+    }
     if (item.to === "/cepario") {
       // Cepario abre en pestaña nueva con su propio shell (dominio aparte del almacén).
       return (
@@ -211,6 +245,22 @@ export function AppShell() {
 
   function renderMobileItem(item: NavItem) {
     const Icon = item.icon
+    if (item.to === COMMAND_CENTER_PATH) {
+      return (
+        <a
+          key={item.to}
+          href={item.to}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={() => setMenuAbierto(false)}
+          className="flex h-12 items-center gap-3 border-l-2 border-transparent px-4 text-sm tracking-[0.16px] transition-colors hover:bg-[var(--lab-sidebar-hover)] hover:text-white"
+        >
+          <Icon size={18} aria-hidden="true" />
+          {t(item.labelKey)}
+          <ExternalLink className="shrink-0 text-[var(--lab-blue-40)]" size={12} aria-hidden="true" />
+        </a>
+      )
+    }
     if (item.to === "/cepario") {
       return (
         <a

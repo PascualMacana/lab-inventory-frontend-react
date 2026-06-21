@@ -1481,6 +1481,69 @@ async function requestBlob(endpoint: string, options: ApiOptions = {}) {
   return response.blob()
 }
 
+// ── Command Center (dashboard interno de founders) ──────────────────────────
+// Estado singleton (ajustes) + leads del CRM. Espeja el contrato de datos del
+// export standalone (public/command-center/Dashboard.html). Todos los bloques
+// llegan parciales: el backend guarda solo lo editado, los defaults viven en el
+// front (command-center/data.ts).
+export interface CommandCenterFunnel {
+  contactos: number
+  entrevistas: number
+  demos: number
+  pilotos: number
+  cliente: number
+}
+
+export interface CommandCenterFin {
+  price: { starter: number; pro: number; ent: number }
+  clients: {
+    acad: { starter: number; pro: number; ent: number }
+    biotech: { starter: number; pro: number; ent: number }
+    ind: { starter: number; pro: number; ent: number }
+  }
+  varCost: number
+  feePct: number
+  fixed: number
+  hoursToClose: number
+  hourValue: number
+  lifetime: number
+  pilots: number
+  pilotPrice: number
+  cash: number
+}
+
+export interface CommandCenterLead {
+  id: number
+  nombre: string
+  empresa: string
+  cargo: string
+  pais: string
+  email: string
+  wa: string
+  li: string
+  pri: string
+  est: string
+  fecha: string
+  paso: string
+  notas: string
+}
+
+export type CommandCenterLeadCampos = Omit<CommandCenterLead, "id">
+
+export interface CommandCenterEstado {
+  funnel: Partial<CommandCenterFunnel>
+  panel: Record<string, string>
+  fin: Partial<CommandCenterFin>
+  okr: { target?: number }
+  weekly: Record<string, boolean>
+  dark: boolean
+  crm: CommandCenterLead[]
+}
+
+export type CommandCenterEstadoPatch = Partial<
+  Pick<CommandCenterEstado, "funnel" | "panel" | "fin" | "okr" | "weekly" | "dark">
+>
+
 export const api = {
   url: API_URL,
 
@@ -2355,5 +2418,43 @@ export const api = {
     request<{ id: number; estado: string }>(`/cepario/entidades/${entidadId}/reactivar`, {
       method: "POST",
       token,
+    }),
+
+  // ── Command Center ──
+  commandCenter: async (token: string) =>
+    request<CommandCenterEstado>("/command-center", { token }),
+
+  commandCenterGuardarEstado: async (token: string, data: CommandCenterEstadoPatch) =>
+    request<unknown>("/command-center/estado", {
+      method: "PATCH",
+      token,
+      body: JSON.stringify(data),
+    }),
+
+  commandCenterCrearLead: async (token: string, data: Partial<CommandCenterLeadCampos>) =>
+    request<CommandCenterLead>("/command-center/leads", {
+      method: "POST",
+      token,
+      body: JSON.stringify(data),
+    }),
+
+  commandCenterActualizarLead: async (token: string, id: number, data: Partial<CommandCenterLeadCampos>) =>
+    request<{ id: number; mensaje: string }>(`/command-center/leads/${id}`, {
+      method: "PATCH",
+      token,
+      body: JSON.stringify(data),
+    }),
+
+  commandCenterEliminarLead: async (token: string, id: number) =>
+    request<{ mensaje: string }>(`/command-center/leads/${id}`, {
+      method: "DELETE",
+      token,
+    }),
+
+  commandCenterResetLeads: async (token: string) =>
+    request<{ crm: CommandCenterLead[] }>("/command-center/leads/reset", {
+      method: "POST",
+      token,
+      body: JSON.stringify({}),
     }),
 }

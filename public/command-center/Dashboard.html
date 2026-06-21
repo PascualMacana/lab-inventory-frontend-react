@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LabInventory · Command Center</title>
+<!-- Recursos locales (sin CDN, funciona offline). Ver carpeta assets/ -->
+<link href="assets/fonts.css" rel="stylesheet">
+<script src="assets/chart.umd.js"></script>
+<!-- Backend de LabInventory: en local apunta a uvicorn (127.0.0.1:8000). En
+     producción, setear window.LABINV_API_URL a la URL pública de la API ANTES de
+     servir el dashboard (basta cambiar esta línea). El token de sesión se reusa del
+     login de la app React (misma origin → localStorage 'lab_inventory_session'). -->
+<script>window.LABINV_API_URL = window.LABINV_API_URL || 'http://127.0.0.1:8000';</script>
+<style>
+:root{
+  color-scheme: light;
+  --bg:#f7f8f8; --layer-01:#eef0f2; --layer-02:#d8dee3; --layer-hover:#e5e8eb;
+  --text:#1f2933; --text-sec:#5b6770; --text-help:#8b95a0;
+  --border:#d8dee3; --border-soft:#e5e8eb;
+  --blue:#2f6f88; --blue-hover:#24576b; --blue-10:#e6eef1; --blue-70:#1a4150; --blue-40:#5a96ad;
+  --green:#7aa874; --green-10:#e8efe5; --green-text:#33513a;
+  --red:#c25450; --red-10:#f6e3e2; --red-text:#7d2b27;
+  --yellow:#c99a2e; --yellow-10:#fbf3df; --yellow-text:#7a4f00;
+  --purple:#5a96ad; --purple-10:#e6eef1; --teal-10:#dceae6;
+  --nav:#1f2933; --nav-hover:#2a3540; --nav-line:#3b4651; --nav-text:#c9d1d8;
+}
+body.dark{
+  color-scheme: dark;
+  --bg:#28333e; --layer-01:#1f2933; --layer-02:#3b4651; --layer-hover:#3f4c5d;
+  --text:#f7f8f8; --text-sec:#c9d1d8; --text-help:#8b95a0;
+  --border:#3b4651; --border-soft:#344050;
+  --blue:#5a96ad; --blue-hover:#7eb3c6; --blue-10:#243743; --blue-70:#a8cad6; --blue-40:#7eb3c6;
+  --green:#97c191; --green-10:#28352c; --green-text:#c9e3c4;
+  --red:#d97670; --red-10:#3a2826; --red-text:#f0b3ae;
+  --yellow:#d9b25c; --yellow-10:#3a3222; --yellow-text:#e8cf94;
+  --purple:#7eb3c6; --purple-10:#243743; --teal-10:#243330;
+  --nav:#141a20; --nav-hover:#222c35; --nav-line:#2f3a44; --nav-text:#c9d1d8;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;font-weight:400;background:var(--layer-01);color:var(--text);font-size:14px;line-height:1.4;letter-spacing:0;display:flex;min-height:100vh;transition:background .2s,color .2s;}
+.mono{font-family:'IBM Plex Mono',monospace;}
+h1,h2,h3{font-weight:600;letter-spacing:0;}
+a{color:var(--blue);text-decoration:none;}
+/* ---------- Sidebar ---------- */
+.sidebar{width:230px;background:var(--nav);color:var(--nav-text);flex-shrink:0;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;}
+.brand{padding:20px 16px;border-bottom:1px solid var(--nav-line);}
+.brand b{color:#fff;font-size:17px;font-weight:600;display:block;letter-spacing:.2px;}
+.brand span{font-family:'IBM Plex Mono',monospace;font-size:11px;color:#8b95a0;letter-spacing:.3px;}
+.nav{flex:1;padding:8px 0;overflow-y:auto;}
+.nav a{display:flex;align-items:center;gap:10px;padding:11px 16px;color:var(--nav-text);font-size:14px;border-left:3px solid transparent;cursor:pointer;}
+.nav a .ico{width:18px;text-align:center;opacity:.8;}
+.nav a:hover{background:var(--nav-hover);color:#fff;}
+.nav a.active{background:var(--nav-hover);color:#fff;border-left:3px solid var(--blue);}
+.nav .grp{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:#8b95a0;padding:14px 16px 6px;}
+.side-foot{padding:14px 16px;border-top:1px solid var(--nav-line);font-size:12px;color:#8b95a0;}
+.side-foot b{color:#fff;font-weight:400;}
+/* ---------- Main ---------- */
+.main{flex:1;min-width:0;display:flex;flex-direction:column;}
+.topbar{height:auto;background:var(--bg);border-bottom:1px solid var(--border);padding:14px 28px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;position:sticky;top:0;z-index:20;}
+.topbar .obj{font-size:13px;color:var(--text-sec);}
+.topbar .obj b{color:var(--text);}
+.countdown{font-family:'IBM Plex Mono',monospace;background:var(--nav);color:#fff;padding:6px 12px;font-size:13px;}
+.countdown b{color:var(--yellow);}
+.content{padding:28px;max-width:1180px;}
+.view{display:none;}
+.view.active{display:block;animation:fade .2s ease;}
+@keyframes fade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+.eyebrow{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-sec);display:flex;align-items:center;gap:10px;margin-bottom:6px;}
+.eyebrow::after{content:'';flex:1;height:1px;background:var(--border);max-width:120px;}
+h2.title{font-size:26px;margin-bottom:4px;}
+.sub{color:var(--text-sec);font-size:14px;margin-bottom:22px;max-width:760px;}
+/* ---------- Cards ---------- */
+.card{background:var(--bg);border:1px solid var(--border-soft);padding:18px 20px;}
+.cards{display:grid;gap:1px;background:var(--border);border:1px solid var(--border);margin-bottom:22px;}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--border);border:1px solid var(--border);margin-bottom:24px;}
+.kpi{background:var(--bg);padding:16px;}
+.kpi .lbl{font-family:'IBM Plex Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-sec);}
+.kpi .num{font-family:'IBM Plex Mono',monospace;font-size:34px;font-weight:500;line-height:1.1;margin:6px 0 2px;}
+.kpi .goal{font-size:12px;color:var(--text-help);}
+.kpi .bar{height:5px;background:var(--layer-02);margin-top:10px;}
+.kpi .bar i{display:block;height:100%;background:var(--blue);}
+.kpi.done .num{color:var(--green);}
+/* ---------- Daily panel ---------- */
+.panel-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:24px;}
+.pcard{background:var(--bg);border:1px solid var(--border-soft);border-top:3px solid var(--blue);padding:14px 16px;}
+.pcard.warn{border-top-color:var(--red);}
+.pcard.metric{border-top-color:var(--green);}
+.pcard.deleg{border-top-color:var(--purple);}
+.pcard h4{font-family:'IBM Plex Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-sec);margin-bottom:8px;display:flex;align-items:center;gap:6px;}
+.pcard .editable{font-size:14px;line-height:1.5;color:var(--text);outline:none;min-height:22px;}
+.pcard .editable:focus{background:var(--blue-10);}
+.note{font-size:12px;color:var(--text-help);font-style:italic;}
+/* ---------- Funnel ---------- */
+.funnel-row{display:flex;align-items:center;gap:14px;margin-bottom:10px;}
+.funnel-row .fl{width:130px;font-size:14px;font-weight:600;}
+.funnel-track{flex:1;background:var(--layer-02);height:34px;position:relative;}
+.funnel-track i{display:block;height:100%;background:linear-gradient(90deg,var(--blue),var(--blue-70));transition:width .4s;}
+.funnel-track span{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#fff;font-family:'IBM Plex Mono',monospace;font-size:13px;mix-blend-mode:difference;}
+.funnel-row input{width:60px;padding:6px;border:1px solid var(--border);font-family:'IBM Plex Mono',monospace;text-align:center;}
+.funnel-row .meta{width:54px;color:var(--text-help);font-size:13px;font-family:'IBM Plex Mono',monospace;}
+/* ---------- Table ---------- */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--border);background:var(--bg);}
+table{border-collapse:collapse;width:100%;font-size:13px;}
+th{background:var(--nav);color:#fff;text-align:left;padding:10px 10px;font-weight:600;font-size:12px;white-space:nowrap;position:sticky;top:0;}
+td{padding:8px 10px;border-bottom:1px solid var(--border-soft);vertical-align:top;}
+tr:hover td{background:var(--layer-01);}
+td[contenteditable]:focus{outline:2px solid var(--blue);background:var(--blue-10);}
+.badge{display:inline-block;padding:2px 8px;font-size:11px;font-family:'IBM Plex Mono',monospace;border-radius:1px;}
+.b-alta{background:var(--red-10);color:var(--red-text);}
+.b-media{background:var(--yellow-10);color:var(--yellow-text);}
+.b-baja{background:var(--layer-02);color:var(--text-sec);}
+select.cell{border:1px solid var(--border);padding:4px;font-size:12px;font-family:inherit;background:var(--bg);}
+.toolbar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center;}
+/* ---------- Buttons ---------- */
+.btn{font-family:inherit;font-size:13px;padding:8px 14px;border:none;cursor:pointer;background:var(--blue);color:#fff;}
+.btn:hover{background:var(--blue-hover);}
+.btn.ghost{background:transparent;color:var(--text);border:1px solid var(--border);}
+.btn.ghost:hover{background:var(--layer-01);}
+.btn.sm{padding:5px 10px;font-size:12px;}
+.btn.danger{background:transparent;color:var(--red);border:1px solid var(--red);}
+.btn.danger:hover{background:var(--red-10);}
+input,select{font-family:inherit;}
+input.f{padding:8px;border:1px solid var(--border);font-size:13px;}
+/* ---------- Insights ---------- */
+.stat-row{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--border);border:1px solid var(--border);margin-bottom:24px;}
+.stat{background:var(--bg);padding:16px;}
+.stat .big{font-family:'IBM Plex Mono',monospace;font-size:30px;font-weight:500;}
+.stat .big.red{color:var(--red);}.stat .big.green{color:var(--green);}.stat .big.blue{color:var(--blue);}
+.stat .cap{font-size:12px;color:var(--text-sec);margin-top:4px;line-height:1.35;}
+.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;}
+.chart-box{background:var(--bg);border:1px solid var(--border-soft);padding:16px;}
+.chart-box h4{font-size:14px;margin-bottom:12px;}
+.chart-box .cwrap{position:relative;height:240px;}
+.insight-quote{background:var(--blue-10);border-left:3px solid var(--blue);padding:12px 16px;margin:6px 0;font-size:13px;}
+/* ---------- Pricing ---------- */
+.price-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
+.plan{background:var(--bg);border:1px solid var(--border);padding:18px;display:flex;flex-direction:column;}
+.plan.feat{border:2px solid var(--blue);}
+.plan h3{font-size:16px;margin-bottom:4px;}
+.plan .price{font-family:'IBM Plex Mono',monospace;font-size:22px;margin:8px 0;}
+.plan .price small{font-size:12px;color:var(--text-help);}
+.plan ul{list-style:none;margin-top:10px;font-size:13px;}
+.plan li{padding:5px 0;border-bottom:1px solid var(--layer-01);color:var(--text-sec);}
+.tag{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:10px;background:var(--blue);color:#fff;padding:2px 7px;align-self:flex-start;margin-bottom:6px;}
+/* ---------- Finance ---------- */
+.scn{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px;}
+.scn .s{background:var(--bg);border:1px solid var(--border);border-top:4px solid var(--border);padding:16px;}
+.scn .s.cons{border-top-color:var(--red);}
+.scn .s.prob{border-top-color:var(--yellow);}
+.scn .s.opt{border-top-color:var(--green);}
+.scn .s .h{font-weight:600;margin-bottom:8px;}
+.scn .s .v{font-family:'IBM Plex Mono',monospace;font-size:22px;margin:4px 0;}
+.calc{background:var(--layer-01);border:1px solid var(--border);padding:16px;display:flex;gap:18px;align-items:flex-end;flex-wrap:wrap;}
+.calc label{font-size:12px;color:var(--text-sec);display:block;margin-bottom:4px;}
+.calc .out{font-family:'IBM Plex Mono',monospace;font-size:24px;color:var(--blue);}
+/* ---------- Roadmap ---------- */
+.road{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
+.road col, .rcol{background:var(--bg);border:1px solid var(--border);padding:14px;}
+.rcol h4{font-size:14px;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid var(--blue);}
+.rcol.now h4{border-color:var(--blue);}
+.rcol ul{list-style:none;font-size:13px;}
+.rcol li{padding:6px 0;border-bottom:1px solid var(--layer-01);color:var(--text-sec);}
+/* ---------- Docs ---------- */
+.doc-list{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);border:1px solid var(--border);}
+.doc{background:var(--bg);padding:14px 16px;}
+.doc .n{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--blue);}
+.doc h4{font-size:14px;margin:3px 0;}
+.doc p{font-size:12px;color:var(--text-sec);}
+.saved-flash{position:fixed;bottom:20px;right:20px;background:var(--green);color:#fff;padding:10px 16px;font-size:13px;opacity:0;transition:opacity .3s;z-index:50;}
+.saved-flash.show{opacity:1;}
+hr.soft{border:none;border-top:1px solid var(--border);margin:24px 0;}
+.okr-obj{background:var(--nav);color:#fff;padding:14px 16px;margin-bottom:14px;}
+.okr-obj .q{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--yellow);text-transform:uppercase;letter-spacing:.4px;}
+.okr-obj .o{font-size:16px;font-weight:600;margin-top:4px;}
+.mini-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border:1px solid var(--border);margin-bottom:22px;}
+.mini{background:var(--bg);padding:14px;}
+.mini .k{font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;color:var(--text-sec);letter-spacing:.4px;}
+.mini .v{font-size:15px;font-weight:600;margin-top:4px;color:var(--blue);}
+.weekly-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);border:1px solid var(--border);}
+.wk{background:var(--bg);padding:10px 12px;display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;}
+.wk input{width:16px;height:16px;flex-shrink:0;}
+.wk .m{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--blue);}
+.wk.checked{background:var(--green-10);}
+.fin-assume{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:22px;}
+.fin-grp{background:var(--bg);border:1px solid var(--border-soft);padding:14px 16px;}
+.fin-grp h5{font-family:'IBM Plex Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-sec);margin-bottom:10px;}
+.fin-grp .row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:7px;font-size:13px;color:var(--text-sec);}
+.fin-grp input,#finMatrix input{padding:5px;border:1px solid var(--border);font-family:'IBM Plex Mono',monospace;background:var(--bg);color:var(--text);}
+.fin-grp input{width:84px;text-align:right;}
+#finMatrix input{width:56px;text-align:center;}
+#finMatrix td:first-child{text-align:left;}
+#finMatrix td{text-align:center;}
+.pl-sum{background:var(--bg);border:1px solid var(--border-soft);padding:12px 16px;}
+.pl-sum .l{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--layer-01);font-size:14px;}
+.pl-sum .l.total{font-weight:600;border-bottom:none;border-top:2px solid var(--border);margin-top:4px;padding-top:10px;}
+.pos{color:var(--green);}
+.neg{color:var(--red);}
+@media(max-width:880px){
+  .kpis,.stat-row{grid-template-columns:repeat(2,1fr);}
+  .chart-grid,.panel-grid,.price-grid,.scn,.road,.doc-list,.weekly-grid,.mini-cards,.fin-assume{grid-template-columns:1fr;}
+  .sidebar{width:64px;}.brand b,.brand span,.nav a span.t,.nav .grp,.side-foot{display:none;}
+}
+</style>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="brand"><b>LabInventory</b><span>COMMAND CENTER</span></div>
+  <nav class="nav" id="nav">
+    <div class="grp">Ejecución</div>
+    <a data-v="inicio" class="active"><span class="ico">◎</span><span class="t">Panel diario</span></a>
+    <a data-v="embudo"><span class="ico">▤</span><span class="t">Embudo</span></a>
+    <a data-v="crm"><span class="ico">☷</span><span class="t">CRM</span></a>
+    <a data-v="insights"><span class="ico">◔</span><span class="t">Insights encuesta</span></a>
+    <div class="grp">Estrategia</div>
+    <a data-v="pricing"><span class="ico">$</span><span class="t">Pricing</span></a>
+    <a data-v="finanzas"><span class="ico">▦</span><span class="t">Finanzas</span></a>
+    <a data-v="roadmap"><span class="ico">⊞</span><span class="t">Roadmap</span></a>
+    <div class="grp">Gobierno</div>
+    <a data-v="os"><span class="ico">◆</span><span class="t">OS / Estrategia</span></a>
+    <a data-v="docs"><span class="ico">▭</span><span class="t">Documentos</span></a>
+  </nav>
+  <div class="side-foot"><b>Uriel Miralles</b><br>CEO · support@labinventory.lat</div>
+</aside>
+
+<div class="main">
+  <div class="topbar">
+    <div class="obj">Objetivo 90 días: <b>1 piloto o cliente pago</b> que valide intención de pago</div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <button class="btn sm ghost" id="themeBtn" onclick="toggleTheme()">🌙 Oscuro</button>
+      <div class="countdown" id="cd">— días restantes</div>
+    </div>
+  </div>
+  <div class="content">
+
+  <!-- ===== INICIO ===== -->
+  <section class="view active" id="v-inicio">
+    <div class="eyebrow">Panel diario · <span id="today"></span></div>
+    <h2 class="title">Cuello de botella y plan de hoy</h2>
+    <p class="sub">Tu command center. Los números y notas se guardan en este navegador. Editá cualquier campo del panel y se persiste solo.</p>
+
+    <div class="kpis" id="kpiBar"></div>
+
+    <div class="panel-grid">
+      <div class="pcard warn"><h4>① Cuello de botella principal</h4><div class="editable" data-k="p1" contenteditable></div></div>
+      <div class="pcard"><h4>② Qué hacer hoy (30 min)</h4><div class="editable" data-k="p2" contenteditable></div></div>
+      <div class="pcard"><h4>③ Qué hacer esta semana</h4><div class="editable" data-k="p3" contenteditable></div></div>
+      <div class="pcard deleg"><h4>④ Qué delegar (Emiliano)</h4><div class="editable" data-k="p4" contenteditable></div></div>
+      <div class="pcard warn"><h4>⑤ Riesgos</h4><div class="editable" data-k="p5" contenteditable></div></div>
+      <div class="pcard"><h4>⑥ Próximo paso</h4><div class="editable" data-k="p6" contenteditable></div></div>
+      <div class="pcard metric" style="grid-column:1/-1"><h4>⑦ Métrica que debemos mover</h4><div class="editable" data-k="p7" contenteditable></div></div>
+    </div>
+    <p class="note">Tip: actualizá este panel cada mañana. Es tu brújula del día.</p>
+  </section>
+
+  <!-- ===== EMBUDO ===== -->
+  <section class="view" id="v-embudo">
+    <div class="eyebrow">Customer Discovery</div>
+    <h2 class="title">Embudo de validación</h2>
+    <p class="sub">Editá los números reales a medida que avanzás. OKR ratificado del trimestre (nivel Realista): 30 → 12 → 4 → 2 → 1.</p>
+    <div class="card" id="funnel"></div>
+    <p class="note" style="margin-top:10px">Estado actual: 11 leads de la encuesta cargados como contactos. 0 entrevistas hechas. La prioridad #1 es agendar conversaciones.</p>
+  </section>
+
+  <!-- ===== CRM ===== -->
+  <section class="view" id="v-crm">
+    <div class="eyebrow">Pipeline comercial</div>
+    <h2 class="title">CRM</h2>
+    <p class="sub">Sembrado con tus 11 respondentes reales de la encuesta. Editá cualquier celda; los cambios se guardan solos en este navegador.</p>
+    <div class="toolbar">
+      <button class="btn sm" onclick="addLead()">+ Nuevo lead</button>
+      <button class="btn sm ghost" onclick="exportCSV()">Exportar CSV</button>
+      <select id="filtPri" class="cell" onchange="renderCRM()"><option value="">Prioridad: todas</option><option>Alta</option><option>Media</option><option>Baja</option></select>
+      <select id="filtEst" class="cell" onchange="renderCRM()"><option value="">Estado: todos</option></select>
+      <button class="btn sm ghost" onclick="resetCRM()">Restaurar datos originales</button>
+      <span class="note" id="crmCount"></span>
+    </div>
+    <div class="tbl-wrap"><table id="crmTbl"></table></div>
+  </section>
+
+  <!-- ===== INSIGHTS ===== -->
+  <section class="view" id="v-insights">
+    <div class="eyebrow">Evidencia · n=11 respuestas</div>
+    <h2 class="title">Insights de la encuesta</h2>
+    <p class="sub">Lo que dijeron 11 laboratorios reales. Esto es lo que sustenta el pitch: el dolor es la <b>falta de dueño</b> y de trazabilidad, no la falta de planilla.</p>
+    <div class="stat-row" id="statRow"></div>
+    <div class="chart-grid">
+      <div class="chart-box"><h4>Tipo de laboratorio</h4><div class="cwrap"><canvas id="chLab"></canvas></div></div>
+      <div class="chart-box"><h4>Severidad del problema (1–5)</h4><div class="cwrap"><canvas id="chSev"></canvas></div></div>
+      <div class="chart-box"><h4>Funcionalidad más pedida</h4><div class="cwrap"><canvas id="chFeat"></canvas></div></div>
+      <div class="chart-box"><h4>Cómo gestionan hoy</h4><div class="cwrap"><canvas id="chMgmt"></canvas></div></div>
+    </div>
+    <div class="insight-quote">“No tener que ingresar manualmente los lotes… que pueda escanearlas y se cargue la información automáticamente.” — Milagros, DSM-Firmenich</div>
+    <div class="insight-quote">“Tener un droguero común de facultad con asistencia permanente.” — María Aída, UNSL</div>
+    <div class="insight-quote">“La automatización de pedidos de reactivos considerados críticos.” — Alfredo, Dharma Bioscience</div>
+  </section>
+
+  <!-- ===== PRICING ===== -->
+  <section class="view" id="v-pricing">
+    <div class="eyebrow">Hipótesis de precio</div>
+    <h2 class="title">Pricing</h2>
+    <p class="sub">Precios a validar, no verdades. Regla: cobramos una fracción del dolor que evitamos. El piloto siempre lleva un número.</p>
+    <div class="price-grid">
+      <div class="plan"><span class="tag">VALIDACIÓN</span><h3>🧪 Piloto</h3><div class="price">US$150–300<br><small>2–3 meses (one-time)</small></div><ul><li>Setup asistido</li><li>Carga inicial (foto/QR)</li><li>Capacitación al equipo</li><li>Soporte del fundador</li><li>Acreditable al plan anual</li></ul></div>
+      <div class="plan feat"><span class="tag">MÁS POPULAR (hip.)</span><h3>🟢 Starter</h3><div class="price">US$49<small>/mes</small></div><ul><li>Labs de 1–10 personas</li><li>Inventario + lotes + venc.</li><li>Alertas stock y vencimiento</li><li>Hasta 5 usuarios</li><li>Carga por foto/QR</li></ul></div>
+      <div class="plan"><h3>🔵 Pro</h3><div class="price">US$99–129<small>/mes</small></div><ul><li>Institutos 10–30 personas</li><li>Usuarios ilimitados</li><li>Roles y permisos</li><li>Proveedores + analytics</li><li>Asistente IA + protocolos</li></ul></div>
+      <div class="plan"><h3>🟣 Enterprise</h3><div class="price">desde US$250<small>/mes + setup</small></div><ul><li>Industrial / I+D / QC</li><li>Multi-sede + SSO</li><li>Exportes de compliance</li><li>Onboarding dedicado</li><li>SLA de soporte</li></ul></div>
+    </div>
+  </section>
+
+  <!-- ===== FINANZAS ===== -->
+  <section class="view" id="v-finanzas">
+    <div class="eyebrow">Finanzas del proyecto · P&amp;L · Unit economics</div>
+    <h2 class="title">Finanzas</h2>
+    <p class="sub">Modelo vivo basado en el marco de Augusto: P&amp;L por unidad de negocio (segmento × plan), unit economics y punto de equilibrio. Cargá los supuestos y todo se recalcula y se guarda solo.</p>
+    <div class="eyebrow">Supuestos</div>
+    <div class="fin-assume" id="finAssume"></div>
+    <div class="eyebrow">Clientes pagos por segmento × plan</div>
+    <div class="tbl-wrap"><table id="finMatrix"></table></div>
+    <div class="eyebrow" style="margin-top:22px">P&amp;L (económico)</div>
+    <div id="finPL"></div>
+    <div class="eyebrow" style="margin-top:22px">Unit economics — cuánto cuesta y cuánto deja un laboratorio</div>
+    <div class="mini-cards" id="finUE"></div>
+    <div class="eyebrow" style="margin-top:22px">Punto de equilibrio &amp; caja</div>
+    <div class="mini-cards" id="finCash" style="grid-template-columns:repeat(3,1fr)"></div>
+    <p class="note" style="margin-top:14px">Escenarios a 12 meses y detalle de costos fijos: ver <b>07 - Financial Model.md</b>.</p>
+  </section>
+
+  <!-- ===== ROADMAP ===== -->
+  <section class="view" id="v-roadmap">
+    <div class="eyebrow">Prioridad: venta antes que features</div>
+    <h2 class="title">Roadmap</h2>
+    <p class="sub">Nada entra sin pasar el filtro de producto. Si no destraba un piloto, no se hace ahora.</p>
+    <div class="road">
+      <div class="rcol now"><h4>🔵 Ahora</h4><ul><li>Embudo 11 → 30 compradores</li><li>12 entrevistas · 4 demos</li><li>2 pilotos → 1 cliente pago</li><li><b>Prod:</b> importar Excel/Sheets</li><li><b>Prod:</b> pulir alertas venc/stock</li><li><b>Prod:</b> estabilidad para demos</li></ul></div>
+      <div class="rcol"><h4>🟢 3 meses</h4><ul><li>Roles y permisos</li><li>Proveedores + historial</li><li>Reporte para subsidios/auditoría</li><li>Onboarding estandarizado</li></ul></div>
+      <div class="rcol"><h4>🟡 6 meses</h4><ul><li>Analytics de consumo/gasto</li><li>Asistente IA conversacional</li><li>Madurar OCR foto/QR</li><li>Programa de referidos</li></ul></div>
+      <div class="rcol"><h4>🟣 12 meses</h4><ul><li>Predicción + auto-compras</li><li>Compliance / trazabilidad</li><li>Multi-sede + SSO</li><li>Integración con instrumentos</li></ul></div>
+    </div>
+  </section>
+
+  <!-- ===== OS / ESTRATEGIA ===== -->
+  <section class="view" id="v-os">
+    <div class="eyebrow">Gobierno · LabInventory OS v1.0</div>
+    <h2 class="title">OS / Estrategia</h2>
+    <p class="sub">El sistema operativo del proyecto, vivo. El documento maestro completo (Golden Circle, visión, valores, áreas, roadmap, riesgos) está en tu carpeta: <b>LABINVENTORY OS v1.0.docx</b>.</p>
+
+    <div class="okr-obj"><div class="q">OKR · T3 2026 (jun–ago)</div><div class="o">Objetivo: validar que existe intención de pago</div></div>
+    <div class="card" id="okrBox" style="margin-bottom:24px"></div>
+
+    <div class="eyebrow">Métrica North Star + la que más importa por área</div>
+    <div class="mini-cards">
+      <div class="mini"><div class="k">North Star (90 días)</div><div class="v" id="nsVal">0 / 1 pago</div></div>
+      <div class="mini"><div class="k">Comercial</div><div class="v">Clientes pagos</div></div>
+      <div class="mini"><div class="k">Producto</div><div class="v">Activación</div></div>
+      <div class="mini"><div class="k">Financiera</div><div class="v">MRR vs burn</div></div>
+    </div>
+
+    <div class="eyebrow">Dashboard del fundador · ritual de los viernes (30 min)</div>
+    <div class="weekly-grid" id="weeklyBox"></div>
+    <p class="note" style="margin-top:8px">Tildá lo cumplido cada semana y fijá tu prioridad #1. <a onclick="resetWeekly()" style="cursor:pointer">Reiniciar semana</a></p>
+
+    <hr class="soft">
+    <div class="panel-grid">
+      <div class="pcard warn"><h4>Riesgos principales</h4><div style="font-size:13px;line-height:1.5">1) Interés sin intención de pago → todo piloto lleva número. 2) Académico sin presupuesto propio → atacar biotech + venta institucional. 3) Founder-sales no escala → sistematizar. 4) Hacer todo a la vez → 1 prioridad/semana.</div></div>
+      <div class="pcard"><h4>Cómo priorizar</h4><div style="font-size:13px;line-height:1.5"><b>La pregunta única:</b> ¿esto acerca el próximo cliente pago? Sí → candidato; No → backlog. Entre candidatos: ICE (Impacto × Confianza × Facilidad). <b>Una prioridad #1 por semana.</b></div></div>
+    </div>
+  </section>
+
+  <!-- ===== DOCS ===== -->
+  <section class="view" id="v-docs">
+    <div class="eyebrow">Carpeta · LabInventory OS</div>
+    <h2 class="title">Documentos fundacionales</h2>
+    <p class="sub">Los 10 documentos del sistema operativo de la empresa, más el documento maestro. Están como archivos en tu carpeta, junto a este dashboard.</p>
+    <div class="doc-list" id="docList"></div>
+  </section>
+
+  </div>
+</div>
+<div class="saved-flash" id="flash">Guardado ✓</div>
+
+<script>
+/* ================= DATA ================= */
+const LS='labinv_v1';
+const DEFAULT_FUNNEL={contactos:11,entrevistas:0,demos:0,pilotos:0,cliente:0};
+const META={contactos:30,entrevistas:12,demos:4,pilotos:2,cliente:1};
+const KPI_LABELS={contactos:'Contactos',entrevistas:'Entrevistas',demos:'Demos',pilotos:'Pilotos',cliente:'Cliente pago'};
+const DEFAULT_PANEL={
+ p1:"0 entrevistas hechas. Hay 11 leads tibios sin agendar. El problema NO es el producto: es el volumen de conversaciones.",
+ p2:"Mandá 5 WhatsApps a los leads de prioridad Alta (Alfredo, Valentina, Anahi, Fermín, María Aída) pidiendo 15 min esta semana. Guion en Sales Playbook.",
+ p3:"Bloque sagrado de ~2h: mandar 5 mensajes a leads Alta + hacer 1 entrevista. Sumar 5 compradores a la Target 30 (red + directorios IHEM/UNSL).",
+ p4:"Emiliano: importar desde Excel/Sheets (73% viene de ahí) + datos de demo realistas para no romper en vivo.",
+ p5:"Confundir interés de encuesta con intención de pago. El cluster IHEM/UNSL puede no tener presupuesto propio: validar quién firma.",
+ p6:"Tener la primera entrevista AGENDADA con fecha concreta en el CRM.",
+ p7:"Métrica de la semana (con 3h): 1 entrevista hecha + 5 compradores nuevos en la lista."
+};
+const SEED_CRM=[
+ {nombre:"Rocío Coronel",empresa:"Lab de Biotecnología Molecular",cargo:"Becaria",pais:"Chile",email:"rocicoronel99@gmail.com",wa:"",li:"",pri:"Baja",est:"Lead - encuesta",fecha:"2026-05-04",paso:"Agendar entrevista (email)",notas:"Académico. Nadie controla el stock; quiere autonomía. Sin quiebre. Sev 3/5."},
+ {nombre:"Julián Berca Espinosa",empresa:"Lab Bacterias Prom. Crecimiento Vegetal",cargo:"Becario",pais:"Argentina",email:"julianberca@gmail.com",wa:"",li:"",pri:"Baja",est:"Lead - encuesta",fecha:"2026-05-04",paso:"Agendar entrevista",notas:"Instituto. Nadie controla; quiere digitalizar stock. Sin quiebre."},
+ {nombre:"Alfredo García",empresa:"Dharma Bioscience",cargo:"Investigador",pais:"Argentina",email:"alfrega@gmail.com",wa:"",li:"",pri:"Alta",est:"Lead - encuesta",fecha:"2026-05-04",paso:"Llamada discovery (decisor biotech)",notas:"Startup biotech. Perdió por vencimiento. Sev 4/5. Quiere automatizar pedidos críticos."},
+ {nombre:"Milagros Castroman",empresa:"DSM-Firmenich",cargo:"Técnica",pais:"Argentina",email:"mimilicas.mm@gmail.com",wa:"+54 11 6447-0699",li:"",pri:"Media",est:"Lead - encuesta",fecha:"2026-05-04",paso:"Entrevista; ver proceso de compras",notas:"Industrial I+D. Quiebre + venc. Quiere OCR foto/QR. Ciclo largo (ticket alto)."},
+ {nombre:"Emilia Celayes",empresa:"IHEM",cargo:"Becaria",pais:"Argentina",email:"emiliacelayes@gmail.com",wa:"",li:"",pri:"Media",est:"Lead - encuesta",fecha:"2026-05-04",paso:"Entrevista (cluster IHEM)",notas:"Instituto. Quiebre reciente. Sev 1. Reposición >3 meses."},
+ {nombre:"Jonathan Aguilera",empresa:"Integración de Señales Celulares - IHEM Mza",cargo:"Becario",pais:"Argentina",email:"jn.aguilera.10@gmail.com",wa:"",li:"",pri:"Media",est:"Lead - encuesta",fecha:"2026-05-04",paso:"Entrevista (cluster IHEM)",notas:"Quiebre + compra urgente. Sev 4. Quiere historial de consumo."},
+ {nombre:"Valentina Aguirre",empresa:"Bioeutectics",cargo:"Investigadora",pais:"Argentina / EE.UU.",email:"valeaguirre94@gmail.com",wa:"",li:"",pri:"Alta",est:"Lead - encuesta",fecha:"2026-05-04",paso:"Llamada discovery (decisor biotech)",notas:"Startup biotech. Nunca registra consumo; perdió por venc. Quiere registro venc + IA."},
+ {nombre:"Emilia Zanni",empresa:"Lab 104 - IHEM Mendoza",cargo:"Becaria",pais:"Argentina",email:"emiliazanni09@gmail.com",wa:"",li:"",pri:"Baja",est:"Lead - encuesta",fecha:"2026-05-04",paso:"Nurturing (interés 'tal vez')",notas:"Quiebre pero sev 2 e interés tibio."},
+ {nombre:"Anahi Nájera Romano",empresa:"Lab Internacional EPIGEN",cargo:"Investigadora",pais:"México",email:"anahi.najerar@gmail.com",wa:"",li:"",pri:"Alta",est:"Lead - encuesta",fecha:"2026-05-04",paso:"Llamada discovery (máximo dolor)",notas:"Académico. Sev 5/5 (máxima). Registra siempre. Quiere priorizar por agotarse."},
+ {nombre:"Fermín Vicente Climent",empresa:"IMIBIO-SL, FQByF - UNSL",cargo:"Becario",pais:"Argentina",email:"fermincliment53@gmail.com",wa:"+54 2664 86-4639",li:"",pri:"Alta",est:"Lead - encuesta",fecha:"2026-05-07",paso:"Entrevista (lab grande; cluster UNSL)",notas:"Lab grande 21-50. Quiebre+urgente+pérdida tiempo. Pidió casi todo. Posible piloto ancla."},
+ {nombre:"María Aída Mattar Domínguez",empresa:"Microbiología e Inmunología - UNSL",cargo:"Investigadora",pais:"Argentina",email:"mattardominguezmariaaida@gmail.com",wa:"+54 2664 20-2779",li:"",pri:"Alta",est:"Lead - encuesta",fecha:"2026-05-15",paso:"Llamada discovery (decisora; UNSL)",notas:"Lab grande 11-20. Perdió por venc. Sev 4. Quiere 'droguero común de facultad'."}
+];
+const SURVEY={
+ labTypes:{"Académico / Universidad":4,"Instituto investigación":4,"Startup biotech":2,"Industrial / I+D":1},
+ severity:[3,3,4,3,1,4,3,2,5,3,4],
+ features:{"Stock en tiempo real":9,"Alertas stock bajo":8,"Alertas vencimiento":6,"Gestión proveedores":5,"Registro foto/QR":4,"Protocolos":4,"Historial consumo":3,"Asistente IA":2},
+ mgmt:{"Cuaderno / manual":7,"Excel":5,"Google Sheets":3,"Memoria del equipo":2,"AppSheet":1}
+};
+const ESTADOS=["Lead - encuesta","Por contactar","Contactado","Entrevista agendada","Entrevistado","Demo","Piloto","Cliente pago","Descartado"];
+const DOCS=[
+ ["01","Vision","Qué hacemos, para quién, qué problema, qué nos diferencia."],
+ ["02","Customer Discovery","Hipótesis, problemas a validar, guion y aprendizajes."],
+ ["03","CRM (.xlsx)","Pipeline con tus 11 leads + embudo automático."],
+ ["04","Entrevistas","Plantilla y registro de las 20 entrevistas."],
+ ["05","ICP","Quién tiene dolor, presupuesto y compra más rápido."],
+ ["06","Pricing","Piloto, Starter, Pro, Enterprise + cómo testear."],
+ ["07","Financial Model","Costos, impuestos y 3 escenarios a 12 meses."],
+ ["08","Roadmap","Ahora / 3 / 6 / 12 meses."],
+ ["09","Feature Requests","Tablero priorizado desde la encuesta."],
+ ["10","Sales Playbook","LinkedIn, WhatsApp, email, llamada y demo."],
+ ["OS","LabInventory OS v1.0","Documento maestro: Golden Circle, OKRs, métricas, gobierno."],
+ ["T3","Plan T3 2026","Cascada del OS: proyectos, iniciativas y ritmo semanal (3h)."]
+];
+
+/* ============== STATE / PERSIST ============== */
+// ---- Persistencia vía backend de LabInventory (reemplaza el localStorage del export) ----
+// El estado vive server-side y compartido por organización: los dos owners ven los
+// mismos números. El token de sesión se reusa del login de la app (misma origin).
+const API_URL=window.LABINV_API_URL;
+function sessionToken(){try{return (JSON.parse(localStorage.getItem('lab_inventory_session')||'{}')).token||null;}catch(e){return null;}}
+async function apiFetch(path,opts){
+  opts=opts||{};
+  const token=sessionToken();
+  if(!token){location.href='/login';throw new Error('sin sesión');}
+  const res=await fetch(API_URL+path,Object.assign({},opts,{
+    headers:Object.assign({'Content-Type':'application/json','X-Session-Token':token},opts.headers||{})
+  }));
+  if(res.status===401){location.href='/login';throw new Error('401');}     // sesión vencida → al login
+  if(res.status===403){document.body.innerHTML='<div style="padding:40px;font-family:sans-serif">No tenés acceso al Command Center. Pedile a un owner que te habilite.</div>';throw new Error('403');}
+  if(!res.ok){throw new Error('API '+res.status);}
+  return res.status===204?null:res.json();
+}
+let state={};
+async function loadState(){return (await apiFetch('/command-center'))||{};}  // {funnel,panel,fin,okr,weekly,dark,crm}
+// save() persiste el estado singleton (ajustes) con debounce: se llama en cada
+// oninput/blur, así que esperamos 600ms antes de mandar el PATCH. El CRM NO pasa por
+// acá; sus handlers (updCell/addLead/delLead/resetCRM) pegan a sus endpoints.
+let _saveTimer;
+function save(){
+  flash();
+  clearTimeout(_saveTimer);
+  _saveTimer=setTimeout(()=>{
+    apiFetch('/command-center/estado',{method:'PATCH',body:JSON.stringify({
+      funnel:state.funnel,panel:state.panel,fin:state.fin,okr:state.okr,weekly:state.weekly,dark:state.dark
+    })}).catch(e=>console.error('No se pudo guardar el estado',e));
+  },600);
+}
+// --- Versión original (localStorage, respaldo) ---
+// La const LS='labinv_v1' sigue declarada arriba (sin uso ya; se deja como estaba).
+// let state=load();
+// function load(){try{return JSON.parse(localStorage.getItem(LS))||{}}catch(e){return {}}}
+// function save(){localStorage.setItem(LS,JSON.stringify(state));flash();}
+function flash(){const f=document.getElementById('flash');f.classList.add('show');clearTimeout(window._ft);window._ft=setTimeout(()=>f.classList.remove('show'),900);}
+function getFunnel(){return Object.assign({},DEFAULT_FUNNEL,state.funnel||{});}
+function getPanel(){return Object.assign({},DEFAULT_PANEL,state.panel||{});}
+function getCRM(){return state.crm||[];}
+// function getCRM(){return state.crm||JSON.parse(JSON.stringify(SEED_CRM));}  // original: sembraba en cliente; ahora el backend siembra
+
+/* ============== NAV ============== */
+document.querySelectorAll('#nav a').forEach(a=>a.onclick=()=>{
+  document.querySelectorAll('#nav a').forEach(x=>x.classList.remove('active'));
+  a.classList.add('active');
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('v-'+a.dataset.v).classList.add('active');
+  if(a.dataset.v==='insights')drawCharts();
+  if(a.dataset.v==='os')renderOS();
+  if(a.dataset.v==='finanzas')renderFinance();
+});
+
+/* ============== COUNTDOWN ============== */
+(function(){
+  const target=new Date('2026-08-28');
+  const days=Math.max(0,Math.ceil((target-new Date())/864e5));
+  document.getElementById('cd').innerHTML='<b>'+days+'</b> días restantes';
+  document.getElementById('today').textContent=new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'});
+})();
+
+/* ============== KPI BAR ============== */
+function renderKPIs(){
+  const f=getFunnel(),bar=document.getElementById('kpiBar');bar.innerHTML='';
+  Object.keys(META).forEach(k=>{
+    const pct=Math.min(100,Math.round(f[k]/META[k]*100));
+    const done=f[k]>=META[k];
+    bar.innerHTML+=`<div class="kpi ${done?'done':''}"><div class="lbl">${KPI_LABELS[k]}</div><div class="num">${f[k]}</div><div class="goal">meta ${META[k]}</div><div class="bar"><i style="width:${pct}%;${done?'background:var(--green)':''}"></i></div></div>`;
+  });
+}
+
+/* ============== PANEL ============== */
+function renderPanel(){
+  const p=getPanel();
+  document.querySelectorAll('.pcard .editable').forEach(el=>{el.textContent=p[el.dataset.k]||'';});
+}
+document.querySelectorAll('.pcard .editable').forEach(el=>{
+  el.addEventListener('blur',()=>{state.panel=state.panel||{};state.panel[el.dataset.k]=el.textContent.trim();save();});
+});
+
+/* ============== FUNNEL ============== */
+function renderFunnel(){
+  const f=getFunnel(),wrap=document.getElementById('funnel');wrap.innerHTML='';
+  Object.keys(META).forEach(k=>{
+    const pct=Math.min(100,Math.round(f[k]/META[k]*100));
+    const row=document.createElement('div');row.className='funnel-row';
+    row.innerHTML=`<div class="fl">${KPI_LABELS[k]}</div><div class="funnel-track"><i style="width:${pct}%"></i><span>${pct}%</span></div><input type="number" min="0" value="${f[k]}" data-k="${k}"><div class="meta">/ ${META[k]}</div>`;
+    wrap.appendChild(row);
+  });
+  wrap.querySelectorAll('input').forEach(inp=>inp.oninput=()=>{
+    state.funnel=getFunnel();state.funnel[inp.dataset.k]=parseInt(inp.value)||0;save();renderFunnel();renderKPIs();renderOS();
+  });
+}
+
+/* ============== CRM ============== */
+function fillEstFilter(){const s=document.getElementById('filtEst');ESTADOS.forEach(e=>s.innerHTML+=`<option>${e}</option>`);}
+function renderCRM(){
+  const data=getCRM();const fp=document.getElementById('filtPri').value,fe=document.getElementById('filtEst').value;
+  const tbl=document.getElementById('crmTbl');
+  const cols=[['nombre','Nombre'],['empresa','Empresa'],['cargo','Cargo'],['pais','País'],['email','Email'],['wa','WhatsApp'],['li','LinkedIn'],['pri','Prioridad'],['est','Estado'],['fecha','Fecha'],['paso','Próximo paso'],['notas','Notas']];
+  let html='<tr>'+cols.map(c=>`<th>${c[1]}</th>`).join('')+'<th></th></tr>';
+  data.forEach((r,i)=>{
+    if(fp&&r.pri!==fp)return; if(fe&&r.est!==fe)return;
+    html+='<tr>';
+    cols.forEach(c=>{
+      const k=c[0];
+      if(k==='pri'){html+=`<td><select class="cell" data-id="${r.id}" data-k="pri"><option ${r.pri=='Alta'?'selected':''}>Alta</option><option ${r.pri=='Media'?'selected':''}>Media</option><option ${r.pri=='Baja'?'selected':''}>Baja</option></select></td>`;}
+      else if(k==='est'){html+=`<td><select class="cell" data-id="${r.id}" data-k="est">`+ESTADOS.map(e=>`<option ${r.est==e?'selected':''}>${e}</option>`).join('')+`</select></td>`;}
+      else{html+=`<td contenteditable data-id="${r.id}" data-k="${k}">${r[k]||''}</td>`;}
+    });
+    html+=`<td><button class="btn sm danger" onclick="delLead(${r.id})">✕</button></td></tr>`;
+  });
+  tbl.innerHTML=html;
+  tbl.querySelectorAll('[contenteditable]').forEach(td=>td.addEventListener('blur',()=>updCell(td.dataset.id,td.dataset.k,td.textContent.trim())));
+  tbl.querySelectorAll('select.cell').forEach(s=>s.addEventListener('change',()=>updCell(s.dataset.id,s.dataset.k,s.value)));
+  document.getElementById('crmCount').textContent=data.length+' leads';
+}
+// CRM contra la API por id de lead (antes era por índice del array + localStorage).
+function leadPorId(id){return (state.crm||[]).find(l=>String(l.id)===String(id));}
+async function updCell(id,k,v){
+  const lead=leadPorId(id);if(!lead)return;
+  lead[k]=v;flash();                                   // update optimista local
+  try{await apiFetch('/command-center/leads/'+id,{method:'PATCH',body:JSON.stringify({[k]:v})});}
+  catch(e){console.error('No se pudo actualizar el lead',e);}
+  if(k==='pri')renderCRM();
+}
+async function addLead(){
+  try{
+    const lead=await apiFetch('/command-center/leads',{method:'POST',body:JSON.stringify({fecha:new Date().toISOString().slice(0,10)})});
+    state.crm=state.crm||[];state.crm.unshift(lead);flash();renderCRM();
+  }catch(e){console.error('No se pudo crear el lead',e);}
+}
+async function delLead(id){
+  const lead=leadPorId(id);if(!lead)return;
+  if(!confirm('¿Eliminar '+lead.nombre+'?'))return;
+  try{
+    await apiFetch('/command-center/leads/'+id,{method:'DELETE'});
+    state.crm=state.crm.filter(l=>String(l.id)!==String(id));flash();renderCRM();
+  }catch(e){console.error('No se pudo eliminar el lead',e);}
+}
+async function resetCRM(){
+  if(!confirm('¿Restaurar los 11 leads originales? Se pierden tus cambios del CRM.'))return;
+  try{
+    const res=await apiFetch('/command-center/leads/reset',{method:'POST',body:JSON.stringify({})});
+    state.crm=res.crm||[];flash();renderCRM();
+  }catch(e){console.error('No se pudo resetear el CRM',e);}
+}
+// --- Versión original (índice de array + localStorage, respaldo) ---
+// function updCell(i,k,v){const d=getCRM();d[i][k]=v;state.crm=d;save();if(k==='pri')renderCRM();}
+// function addLead(){const d=getCRM();d.unshift({nombre:"Nuevo lead",empresa:"",cargo:"",pais:"",email:"",wa:"",li:"",pri:"Media",est:"Por contactar",fecha:new Date().toISOString().slice(0,10),paso:"",notas:""});state.crm=d;save();renderCRM();}
+// function delLead(i){const d=getCRM();if(confirm('¿Eliminar '+d[i].nombre+'?')){d.splice(i,1);state.crm=d;save();renderCRM();}}
+// function resetCRM(){if(confirm('¿Restaurar los 11 leads originales? Se pierden tus cambios del CRM.')){state.crm=JSON.parse(JSON.stringify(SEED_CRM));save();renderCRM();}}
+function exportCSV(){
+  const d=getCRM();const cols=['nombre','empresa','cargo','pais','email','wa','li','pri','est','fecha','paso','notas'];
+  const head=['Nombre','Empresa','Cargo','Pais','Email','WhatsApp','LinkedIn','Prioridad','Estado','Fecha','Proximo paso','Notas'];
+  let csv=head.join(',')+'\n'+d.map(r=>cols.map(c=>'"'+String(r[c]||'').replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='CRM_LabInventory.csv';a.click();
+}
+
+/* ============== INSIGHTS ============== */
+function renderStats(){
+  const stats=[
+   ['55%','red','de los labs: <b>nadie</b> controla el stock'],
+   ['91%','blue','no registra el consumo de forma confiable'],
+   ['64%','red','tuvo un quiebre crítico en 6 meses'],
+   ['36%','blue','perdió reactivos por vencimiento (+18% no sabe)'],
+   ['91%','green','quiere probar la herramienta']
+  ];
+  document.getElementById('statRow').innerHTML=stats.map(s=>`<div class="stat"><div class="big ${s[1]}">${s[0]}</div><div class="cap">${s[2]}</div></div>`).join('');
+}
+let charted=false;
+function drawCharts(){
+  if(charted||typeof Chart==='undefined')return;charted=true;
+  const C={blue:'#2f6f88',blue2:'#5a96ad',green:'#7aa874',red:'#c25450',yel:'#c99a2e',teal:'#3a7d8a',gray:'#5b6770'};
+  Chart.defaults.font.family="'IBM Plex Sans',sans-serif";Chart.defaults.font.size=11;Chart.defaults.color='#8b95a0';
+  new Chart(chLab,{type:'doughnut',data:{labels:Object.keys(SURVEY.labTypes),datasets:[{data:Object.values(SURVEY.labTypes),backgroundColor:[C.blue,C.blue2,C.green,C.yel]}]},options:{plugins:{legend:{position:'right'}},maintainAspectRatio:false}});
+  const sevCount=[0,0,0,0,0];SURVEY.severity.forEach(v=>sevCount[v-1]++);
+  new Chart(chSev,{type:'bar',data:{labels:['1','2','3','4','5'],datasets:[{label:'labs',data:sevCount,backgroundColor:[C.green,C.green,C.yel,C.red,C.red]}]},options:{plugins:{legend:{display:false}},scales:{y:{ticks:{precision:0}}},maintainAspectRatio:false}});
+  new Chart(chFeat,{type:'bar',data:{labels:Object.keys(SURVEY.features),datasets:[{data:Object.values(SURVEY.features),backgroundColor:C.blue}]},options:{indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{ticks:{precision:0}}},maintainAspectRatio:false}});
+  new Chart(chMgmt,{type:'bar',data:{labels:Object.keys(SURVEY.mgmt),datasets:[{data:Object.values(SURVEY.mgmt),backgroundColor:C.teal}]},options:{indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{ticks:{precision:0}}},maintainAspectRatio:false}});
+}
+
+/* ============== FINANZAS (P&L · unit economics · break-even · caja) ============== */
+const FIN_SEG=[['acad','Académico'],['biotech','Biotech / Startup'],['ind','Industrial / CRO']];
+const FIN_PLAN=[['starter','Starter'],['pro','Pro'],['ent','Enterprise']];
+const DEFAULT_FIN={price:{starter:49,pro:110,ent:250},
+ clients:{acad:{starter:3,pro:1,ent:0},biotech:{starter:0,pro:2,ent:0},ind:{starter:0,pro:0,ent:1}},
+ varCost:6,feePct:4,fixed:130,hoursToClose:12,hourValue:15,lifetime:18,pilots:0,pilotPrice:200,cash:0};
+function getFin(){const f=state.fin||{};const d=JSON.parse(JSON.stringify(DEFAULT_FIN));
+ const o=Object.assign({},d,f);o.price=Object.assign({},d.price,f.price||{});
+ o.clients=JSON.parse(JSON.stringify(d.clients));
+ if(f.clients)for(const s in o.clients)o.clients[s]=Object.assign({},o.clients[s],f.clients[s]||{});
+ return o;}
+function money(n){return 'US$'+Math.round(n).toLocaleString('en-US');}
+function renderFinance(){
+ const f=getFin();
+ document.getElementById('finAssume').innerHTML=`
+  <div class="fin-grp"><h5>Precios (US$/mes)</h5>
+   <div class="row"><span>Starter</span><input data-fin="price.starter" type="number" value="${f.price.starter}"></div>
+   <div class="row"><span>Pro</span><input data-fin="price.pro" type="number" value="${f.price.pro}"></div>
+   <div class="row"><span>Enterprise</span><input data-fin="price.ent" type="number" value="${f.price.ent}"></div></div>
+  <div class="fin-grp"><h5>Costos</h5>
+   <div class="row"><span>Costo variable / cliente (US$/mes)</span><input data-fin="varCost" type="number" value="${f.varCost}"></div>
+   <div class="row"><span>Comisión de pago (%)</span><input data-fin="feePct" type="number" value="${f.feePct}"></div>
+   <div class="row"><span>Costos fijos (US$/mes)</span><input data-fin="fixed" type="number" value="${f.fixed}"></div></div>
+  <div class="fin-grp"><h5>Unit economics</h5>
+   <div class="row"><span>Horas para cerrar 1 cliente</span><input data-fin="hoursToClose" type="number" value="${f.hoursToClose}"></div>
+   <div class="row"><span>Valor de tu hora (US$)</span><input data-fin="hourValue" type="number" value="${f.hourValue}"></div>
+   <div class="row"><span>Vida del cliente (meses)</span><input data-fin="lifetime" type="number" value="${f.lifetime}"></div></div>
+  <div class="fin-grp"><h5>Caja</h5>
+   <div class="row"><span>Pilotos one-time (este mes)</span><input data-fin="pilots" type="number" value="${f.pilots}"></div>
+   <div class="row"><span>Precio del piloto (US$)</span><input data-fin="pilotPrice" type="number" value="${f.pilotPrice}"></div>
+   <div class="row"><span>Caja actual (US$)</span><input data-fin="cash" type="number" value="${f.cash}"></div></div>`;
+ let h='<tr><th>Segmento \\ Plan</th>'+FIN_PLAN.map(p=>`<th>${p[1]}<br><span style="font-weight:400;color:var(--text-help)">US$${f.price[p[0]]}</span></th>`).join('')+'<th>Total</th></tr>';
+ FIN_SEG.forEach(s=>{h+=`<tr><td><b>${s[1]}</b></td>`+FIN_PLAN.map(p=>`<td><input data-fin="clients.${s[0]}.${p[0]}" type="number" min="0" value="${f.clients[s[0]][p[0]]}"></td>`).join('')+`<td class="mono" id="rowtot-${s[0]}">—</td></tr>`;});
+ h+='<tr style="font-weight:600"><td>Total</td>'+FIN_PLAN.map(p=>`<td class="mono" id="coltot-${p[0]}">—</td>`).join('')+'<td class="mono" id="gtot">—</td></tr>';
+ document.getElementById('finMatrix').innerHTML=h;
+ document.querySelectorAll('#v-finanzas [data-fin]').forEach(inp=>inp.oninput=updateFin);
+ computeFin();
+}
+function updateFin(){
+ const f=getFin();
+ document.querySelectorAll('#v-finanzas [data-fin]').forEach(inp=>{
+  const path=inp.dataset.fin.split('.');const v=parseFloat(inp.value)||0;
+  if(path.length===1)f[path[0]]=v; else if(path.length===2)f[path[0]][path[1]]=v; else f[path[0]][path[1]][path[2]]=v;
+ });
+ state.fin=f;save();computeFin();
+}
+function plLine(l,v){return `<div class="l"><span>${l}</span><span>${v}</span></div>`;}
+function computeFin(){
+ const f=getFin();const rev={},nseg={};let revTotal=0,nTotal=0;const colRev={starter:0,pro:0,ent:0};
+ FIN_SEG.forEach(s=>{rev[s[0]]=0;nseg[s[0]]=0;FIN_PLAN.forEach(p=>{const c=f.clients[s[0]][p[0]]||0;const r=c*f.price[p[0]];rev[s[0]]+=r;nseg[s[0]]+=c;colRev[p[0]]+=r;revTotal+=r;nTotal+=c;});});
+ FIN_SEG.forEach(s=>{const e=document.getElementById('rowtot-'+s[0]);if(e)e.textContent=money(rev[s[0]]);});
+ FIN_PLAN.forEach(p=>{const e=document.getElementById('coltot-'+p[0]);if(e)e.textContent=money(colRev[p[0]]);});
+ const g=document.getElementById('gtot');if(g)g.textContent=money(revTotal);
+ const variable=nTotal*f.varCost+revTotal*f.feePct/100;const contrib=revTotal-variable;const net=contrib-f.fixed;
+ let pl='<div class="pl-sum">';
+ pl+=plLine('Ingresos (MRR)',money(revTotal));
+ pl+=plLine('− Costo variable (IA/OCR/infra + pago)',money(variable));
+ pl+=plLine('= Margen de contribución'+(revTotal?` (${Math.round(contrib/revTotal*100)}%)`:''),money(contrib));
+ pl+=plLine('− Costos fijos',money(f.fixed));
+ pl+=`<div class="l total"><span>= Resultado mensual</span><span class="${net>=0?'pos':'neg'}">${money(net)}</span></div></div>`;
+ pl+='<div class="pl-sum" style="margin-top:12px"><div class="l" style="border:none;color:var(--text-sec);font-size:12px"><span>Margen de contribución por segmento</span><span></span></div>';
+ FIN_SEG.forEach(s=>{const rv=rev[s[0]];const vv=nseg[s[0]]*f.varCost+rv*f.feePct/100;const cm=rv-vv;const mp=rv?Math.round(cm/rv*100):0;pl+=`<div class="l"><span>${s[1]} · ${money(rv)} ingresos</span><span class="${cm>=0?'pos':'neg'}">${money(cm)}${rv?` (${mp}%)`:''}</span></div>`;});
+ pl+='</div>';
+ document.getElementById('finPL').innerHTML=pl;
+ const ARPA=nTotal?revTotal/nTotal:0;const varPer=nTotal?variable/nTotal:0;const cPer=ARPA-varPer;
+ const gm=ARPA?cPer/ARPA:0;const CAC=f.hoursToClose*f.hourValue;const LTV=cPer*f.lifetime;
+ const payback=cPer>0?CAC/cPer:0;const ltvcac=CAC>0?LTV/CAC:0;
+ const ue=[
+  ['ARPA (US$/mes)',nTotal?money(ARPA):'—',''],
+  ['Costo var / cliente',nTotal?money(varPer):'—',''],
+  ['Margen contrib / cliente',nTotal?money(cPer):'—',cPer>=0?'pos':'neg'],
+  ['Margen bruto',nTotal?Math.round(gm*100)+'%':'—',''],
+  ['LTV',nTotal?money(LTV):'—',''],
+  ['CAC (tu tiempo)',money(CAC),''],
+  ['LTV / CAC',ltvcac?ltvcac.toFixed(1)+'x':'—',ltvcac>=3?'pos':(ltvcac?'neg':'')],
+  ['Payback',payback?payback.toFixed(1)+' meses':'—','']
+ ];
+ document.getElementById('finUE').innerHTML=ue.map(u=>`<div class="mini"><div class="k">${u[0]}</div><div class="v ${u[2]}">${u[1]}</div></div>`).join('');
+ const BE=cPer>0?Math.ceil(f.fixed/cPer):0;const oneTime=f.pilots*f.pilotPrice;const cashMonth=net+oneTime;
+ const runway=(net<0&&f.cash>0)?(f.cash/(-net)):null;
+ const cash=[
+  ['Punto de equilibrio',cPer>0?BE+' clientes':'—',(cPer>0&&nTotal>=BE)?'pos':''],
+  ['Hoy vas',nTotal+' clientes',(cPer>0&&nTotal>=BE)?'pos':''],
+  ['Neto recurrente / mes',money(net),net>=0?'pos':'neg'],
+  ['+ Pilotos one-time',money(oneTime),''],
+  ['= Caja del mes',money(cashMonth),cashMonth>=0?'pos':'neg'],
+  ['Runway',runway!==null?runway.toFixed(1)+' meses':(net>=0?'sin burn':'—'),(runway!==null&&runway<6)?'neg':'']
+ ];
+ document.getElementById('finCash').innerHTML=cash.map(u=>`<div class="mini"><div class="k">${u[0]}</div><div class="v ${u[2]}">${u[1]}</div></div>`).join('');
+}
+
+/* ============== DOCS ============== */
+function renderDocs(){document.getElementById('docList').innerHTML=DOCS.map(d=>`<div class="doc"><div class="n">${d[0]}</div><h4>${d[1]}</h4><p>${d[2]}</p></div>`).join('');}
+
+/* ============== OS / ESTRATEGIA ============== */
+const OKR_KRS=[
+ {k:'KR1 · Compradores identificados (Target 30)',src:'target',meta:30},
+ {k:'KR2 · Entrevistas de discovery',src:'entrevistas',meta:12},
+ {k:'KR3 · Demos',src:'demos',meta:4},
+ {k:'KR4 · Pilotos firmados',src:'pilotos',meta:2},
+ {k:'KR5 · Piloto / cliente PAGO',src:'cliente',meta:1}
+];
+const WEEKLY=[
+ ['Entrevistas agendadas','≥5'],['Entrevistas hechas','≥3'],['Demos','≥1'],['Pilotos firmados','progresar'],
+ ['Clientes pagos','0→1'],['Leads nuevos contactados','≥10'],['MRR','crecer'],['Burn / runway','controlado'],
+ ['Activación (1 lab carga inventario)','≥1'],['1 aprendizaje clave','1']
+];
+function getOKRtarget(){return (state.okr&&state.okr.target!=null)?state.okr.target:11;}
+function renderOS(){
+  const f=getFunnel();const box=document.getElementById('okrBox');if(!box)return;box.innerHTML='';
+  OKR_KRS.forEach(kr=>{
+    const val= kr.src==='target'?getOKRtarget():f[kr.src];
+    const pct=Math.min(100,Math.round(val/kr.meta*100));
+    const row=document.createElement('div');row.className='funnel-row';
+    const input= kr.src==='target'?`<input type="number" min="0" value="${val}" id="okrTarget">`:`<div class="meta" style="width:60px;text-align:center">${val}</div>`;
+    row.innerHTML=`<div class="fl" style="width:250px;font-weight:400;font-size:13px">${kr.k}</div><div class="funnel-track"><i style="width:${pct}%"></i><span>${pct}%</span></div>${input}<div class="meta">/ ${kr.meta}</div>`;
+    box.appendChild(row);
+  });
+  const ti=document.getElementById('okrTarget');
+  if(ti)ti.oninput=()=>{state.okr=state.okr||{};state.okr.target=parseInt(ti.value)||0;save();renderOS();};
+  const wb=document.getElementById('weeklyBox');
+  if(wb){wb.innerHTML='';const wk=state.weekly||{};
+    WEEKLY.forEach((it,i)=>{const ck=!!wk[i];const d=document.createElement('label');d.className='wk'+(ck?' checked':'');
+      d.innerHTML=`<input type="checkbox" ${ck?'checked':''} data-i="${i}"><span>${it[0]}</span><span class="m">${it[1]}</span>`;wb.appendChild(d);});
+    wb.querySelectorAll('input').forEach(c=>c.onchange=()=>{state.weekly=state.weekly||{};state.weekly[c.dataset.i]=c.checked;save();renderOS();});
+  }
+  const ns=document.getElementById('nsVal');if(ns)ns.textContent=f.cliente+' / 1 pago';
+}
+function resetWeekly(){state.weekly={};save();renderOS();}
+
+/* ============== THEME ============== */
+function applyTheme(){const d=!!state.dark;document.body.classList.toggle('dark',d);const b=document.getElementById('themeBtn');if(b)b.textContent=d?'☀ Claro':'🌙 Oscuro';}
+function toggleTheme(){state.dark=!state.dark;save();applyTheme();}
+
+/* ============== INIT ============== */
+// Hidrata el estado desde la API y recién ahí renderiza. Si no hay sesión (401) o
+// no hay acceso (403), apiFetch ya redirige/avisa y abortamos el render.
+async function init(){
+  try{state=await loadState();}
+  catch(e){return;}
+  applyTheme();renderKPIs();renderPanel();renderFunnel();fillEstFilter();renderCRM();renderStats();renderDocs();renderFinance();renderOS();
+}
+init();
+// --- INIT original (síncrono, leía localStorage; respaldo) ---
+// applyTheme();renderKPIs();renderPanel();renderFunnel();fillEstFilter();renderCRM();renderStats();renderDocs();renderFinance();renderOS();
+</script>
+</body>
+</html>

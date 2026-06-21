@@ -1,6 +1,7 @@
 {
   "nav": {
     "owner": "Owner",
+    "commandCenter": "Command Center",
     "dashboard": "Dashboard",
     "reactivos": "Reagents",
     "consumo": "Consumption",

@@ -3,6 +3,19 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom"
 
 import { AppShell } from "./components/AppShell"
 import { CeparioShell } from "./components/CeparioShell"
+import { CommandCenterShell } from "./command-center/CommandCenterShell"
+import { CrmView } from "./command-center/views/CrmView"
+import { DocsView } from "./command-center/views/DocsView"
+import { EmbudoView } from "./command-center/views/EmbudoView"
+import { FinanzasView } from "./command-center/views/FinanzasView"
+import { OsView } from "./command-center/views/OsView"
+import { PanelView } from "./command-center/views/PanelView"
+import { PricingView } from "./command-center/views/PricingView"
+import { RoadmapView } from "./command-center/views/RoadmapView"
+
+// Insights trae ApexCharts (bundle pesado): se carga lazy para no engordar el
+// bundle principal de toda la app (igual que GraphsPage). Solo pesa al abrir la vista.
+const InsightsView = lazy(() => import("./command-center/views/InsightsView").then((m) => ({ default: m.InsightsView })))
 import { LandingShell } from "./components/LandingShell"
 import { ChangePasswordPage } from "./components/LoginPage"
 import { LandingPage } from "./pages/LandingPage"
@@ -101,6 +114,30 @@ export function App() {
         element={puede(usuario, "ver_pagina_cepario") ? <CeparioShell /> : fallbackElement}
       >
         <Route index element={<CeparioPage />} />
+      </Route>
+
+      {/* Command Center: marco propio, solo co-dueños (owner_global). Antes era un
+          HTML standalone en public/; ahora es React nativo (visual 1:1 con la app). */}
+      <Route
+        path="command-center"
+        element={puede(usuario, "ver_pagina_owner") ? <CommandCenterShell /> : fallbackElement}
+      >
+        <Route index element={<PanelView />} />
+        <Route path="crm" element={<CrmView />} />
+        <Route path="embudo" element={<EmbudoView />} />
+        <Route
+          path="insights"
+          element={
+            <Suspense fallback={<div className="p-4 text-sm text-cds-textSecondary">Cargando insights...</div>}>
+              <InsightsView />
+            </Suspense>
+          }
+        />
+        <Route path="pricing" element={<PricingView />} />
+        <Route path="finanzas" element={<FinanzasView />} />
+        <Route path="roadmap" element={<RoadmapView />} />
+        <Route path="os" element={<OsView />} />
+        <Route path="docs" element={<DocsView />} />
       </Route>
 
       <Route element={<AppShell />}>
