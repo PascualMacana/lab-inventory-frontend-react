@@ -7,11 +7,11 @@
 <!-- Recursos locales (sin CDN, funciona offline). Ver carpeta assets/ -->
 <link href="assets/fonts.css" rel="stylesheet">
 <script src="assets/chart.umd.js"></script>
-<!-- Backend de LabInventory: en local apunta a uvicorn (127.0.0.1:8000). En
-     producción, setear window.LABINV_API_URL a la URL pública de la API ANTES de
-     servir el dashboard (basta cambiar esta línea). El token de sesión se reusa del
-     login de la app React (misma origin → localStorage 'lab_inventory_session'). -->
-<script>window.LABINV_API_URL = window.LABINV_API_URL || 'http://127.0.0.1:8000';</script>
+<!-- Backend de LabInventory: usa el proxy same-origin de producción. Para ejecutar
+     este archivo fuera de la app se puede definir window.LABINV_API_URL antes de
+     cargarlo. El token de sesión se reusa del login de la app React (misma origin →
+     localStorage 'lab_inventory_session'). -->
+<script>window.LABINV_API_URL = window.LABINV_API_URL || '/api';</script>
 <style>
 :root{
   color-scheme: light;
