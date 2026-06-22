@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Check, ClipboardCheck, Copy, Download, Eye, FileText, PackageCheck, Plus, RefreshCw, Save, Send, Trash2, Truck, X } from "lucide-react"
+import { Check, ClipboardCheck, Clock, Copy, Download, FileText, PackageCheck, Plus, RefreshCw, Save, Search, Send, SlidersHorizontal, Trash2, Truck, X } from "lucide-react"
 
 import { PageHeader } from "../components/PageHeader"
 import { Button } from "../components/ui/button"
@@ -9,6 +9,7 @@ import { Label } from "../components/ui/label"
 import { api, type CompraComunicacion, type CompraComunicacionVersion, type CompraItem, type CompraItemCrear, type CompraPrioridad, type CompraSolicitud, type Lote, type Proveedor, type Reactivo, type ReposicionRecomendacion, type Usuario } from "../lib/api"
 import { useAuth } from "../lib/auth"
 import { cn } from "../lib/utils"
+import type { LucideIcon } from "lucide-react"
 
 type CompraDraftItem = CompraItemCrear & {
   key: string
@@ -29,6 +30,8 @@ type RecepcionDraft = {
 }
 
 const prioridades: CompraPrioridad[] = ["baja", "media", "alta", "urgente"]
+// Unidades canónicas, mismo set que el form de Reactivos (ReactivosPage.tsx).
+const unidadesOpciones = ["ml", "L", "g", "kg", "mg", "ug", "unidad"]
 const estadosFiltro = ["", "borrador", "pendiente_aprobacion", "cambios_solicitados", "aprobada", "recibida_parcial", "recibida", "rechazada", "cancelada"] as const
 const emptySolicitudes: CompraSolicitud[] = []
 const emptyRecomendaciones: ReposicionRecomendacion[] = []
@@ -255,6 +258,56 @@ function upsertComunicacion(solicitud: CompraSolicitud, comunicacion: CompraComu
   }
 }
 
+// Pasos del workflow para el timeline del detalle.
+const WORKFLOW_STEPS = ["Borrador", "Aprobación", "Pedido", "En camino", "Recibida"] as const
+
+// Índice del último paso COMPLETADO del flujo (−1 = ninguno). El paso "actual"
+// es completedThrough + 1. Mapea estado + estado_entrega del modelo de compras.
+function workflowCompletedThrough(estado: string, entrega?: string | null): number {
+  const e = entrega ?? "no_pedido"
+  switch (estado) {
+    case "borrador":
+    case "cambios_solicitados":
+      return -1
+    case "pendiente_aprobacion":
+      return 0
+    case "aprobada":
+    case "recibida_parcial":
+      if (e === "en_camino") return 3
+      if (e === "pedido") return 2
+      return 1
+    case "recibida":
+      return 4
+    default:
+      // rechazada / cancelada: flujo cortado.
+      return -1
+  }
+}
+
+type AccionSiguiente = {
+  label: string
+  // "recepcion" no es una acción de workflowMutation: abre el formulario de recepción.
+  accion: "enviar" | "aprobar" | "pedido" | "en_camino" | "recepcion"
+  icon: LucideIcon
+}
+
+// Acción primaria que corresponde al estado actual (la que muestra el timeline).
+function accionSiguiente(estado: string, entrega?: string | null): AccionSiguiente | null {
+  const e = entrega ?? "no_pedido"
+  if (estado === "borrador" || estado === "cambios_solicitados") {
+    return { label: "Enviar a aprobación", accion: "enviar", icon: Send }
+  }
+  if (estado === "pendiente_aprobacion") {
+    return { label: "Aprobar", accion: "aprobar", icon: Check }
+  }
+  if (estado === "aprobada" || estado === "recibida_parcial") {
+    if (e === "no_pedido") return { label: "Marcar pedido", accion: "pedido", icon: PackageCheck }
+    if (e === "pedido") return { label: "Marcar en camino", accion: "en_camino", icon: Truck }
+    return { label: "Registrar recepción", accion: "recepcion", icon: Check }
+  }
+  return null
+}
+
 export function ComprasPage() {
   const { token } = useAuth()
   const queryClient = useQueryClient()
@@ -298,6 +351,10 @@ export function ComprasPage() {
   const [mensaje, setMensaje] = useState<string | null>(null)
   const [errorLocal, setErrorLocal] = useState<string | null>(null)
   const [revalidacion, setRevalidacion] = useState<string | null>(null)
+  // Filtros avanzados colapsables (solo Buscar/Estado/Prioridad quedan siempre visibles).
+  const [filtrosAbiertos, setFiltrosAbiertos] = useState(false)
+  // Modo constructor: la columna derecha muestra el constructor en vez del detalle.
+  const [creando, setCreando] = useState(false)
 
   const sugerenciasQuery = useQuery({
     queryKey: ["compras", "sugerencias", dias],
@@ -339,6 +396,40 @@ export function ComprasPage() {
     enabled: Boolean(token),
   })
 
+  // Resumen del pipeline para los tiles: mismos filtros que la lista pero SIN
+  // estado, para que los conteos no se vacíen al clickear un tile.
+  const resumenQuery = useQuery({
+    queryKey: [
+      "compras",
+      "resumen",
+      prioridadFiltro,
+      proveedorFiltro,
+      reactivoFiltro,
+      solicitadoPorFiltro,
+      aprobadoPorFiltro,
+      desdeFiltro,
+      hastaFiltro,
+      fechaNecesariaDesdeFiltro,
+      fechaNecesariaHastaFiltro,
+      busquedaSolicitudFiltro,
+    ],
+    queryFn: () =>
+      api.comprasSolicitudes(token!, {
+        prioridad: prioridadFiltro || undefined,
+        proveedor_id: proveedorFiltro ? Number(proveedorFiltro) : undefined,
+        reactivo_id: reactivoFiltro ? Number(reactivoFiltro) : undefined,
+        solicitado_por: solicitadoPorFiltro ? Number(solicitadoPorFiltro) : undefined,
+        aprobado_por: aprobadoPorFiltro ? Number(aprobadoPorFiltro) : undefined,
+        desde: desdeFiltro || undefined,
+        hasta: hastaFiltro || undefined,
+        fecha_necesaria_desde: fechaNecesariaDesdeFiltro || undefined,
+        fecha_necesaria_hasta: fechaNecesariaHastaFiltro || undefined,
+        q: busquedaSolicitudFiltro || undefined,
+        limite: 500,
+      }),
+    enabled: Boolean(token),
+  })
+
   const detalleSolicitudQuery = useQuery({
     queryKey: ["compras", "solicitud", solicitudSeleccionadaId],
     queryFn: () => api.compraSolicitud(token!, solicitudSeleccionadaId!),
@@ -365,6 +456,7 @@ export function ComprasPage() {
 
   const recomendaciones = sugerenciasQuery.data?.recomendaciones ?? emptyRecomendaciones
   const solicitudes = solicitudesQuery.data ?? emptySolicitudes
+  const solicitudesResumen = resumenQuery.data ?? emptySolicitudes
   const solicitudSeleccionada = detalleSolicitudQuery.data ?? null
   const comunicaciones = solicitudSeleccionada?.comunicaciones ?? []
   const comunicacionActiva = comunicaciones.find((comunicacion) => comunicacion.id === comunicacionActivaId) ?? comunicaciones[0] ?? null
@@ -443,6 +535,40 @@ export function ComprasPage() {
   const loteReferencia = lotesReferencia.find((lote) => String(lote.id) === manual.loteReferenciaId) ?? null
   const totalEstimado = useMemo(() => items.reduce((acc, item) => acc + itemTotal(item), 0), [items])
 
+  // Conteos del pipeline para los tiles (sobre el resumen sin filtro de estado).
+  const pipeline = useMemo(() => {
+    const inMonth = (value?: string | null) => {
+      if (!value) {
+        return false
+      }
+      const date = parseDateLike(value)
+      const now = new Date()
+      return !Number.isNaN(date.getTime()) && date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth()
+    }
+    let borradores = 0
+    let pendientes = 0
+    let porPedir = 0
+    let enCamino = 0
+    let recibidasMes = 0
+    for (const solicitud of solicitudesResumen) {
+      const entrega = solicitud.estado_entrega ?? "no_pedido"
+      if (solicitud.estado === "borrador") {
+        borradores += 1
+      } else if (solicitud.estado === "pendiente_aprobacion") {
+        pendientes += 1
+      } else if (solicitud.estado === "aprobada" && entrega !== "en_camino") {
+        porPedir += 1
+      }
+      if (["aprobada", "recibida_parcial"].includes(solicitud.estado) && entrega === "en_camino") {
+        enCamino += 1
+      }
+      if (solicitud.estado === "recibida" && inMonth(solicitud.fecha_actualizacion)) {
+        recibidasMes += 1
+      }
+    }
+    return { borradores, pendientes, porPedir, enCamino, recibidasMes }
+  }, [solicitudesResumen])
+
   useEffect(() => {
     if (comunicacionActivaIdValor != null) {
       setComunicacionActivaId(comunicacionActivaIdValor)
@@ -477,8 +603,10 @@ export function ComprasPage() {
       setMensaje(`Solicitud ${solicitud.codigo} creada.`)
       setErrorLocal(null)
       setItems([])
+      setCreando(false)
       setSolicitudSeleccionadaId(solicitud.id)
       await queryClient.invalidateQueries({ queryKey: ["compras", "solicitudes"] })
+      await queryClient.invalidateQueries({ queryKey: ["compras", "resumen"] })
     },
     onError: (error) => {
       setMensaje(null)
@@ -502,8 +630,10 @@ export function ComprasPage() {
       setEditandoId(null)
       setEditandoFecha(null)
       setItems([])
+      setCreando(false)
       setSolicitudSeleccionadaId(solicitud.id)
       await queryClient.invalidateQueries({ queryKey: ["compras", "solicitudes"] })
+      await queryClient.invalidateQueries({ queryKey: ["compras", "resumen"] })
       await queryClient.invalidateQueries({ queryKey: ["compras", "solicitud", solicitud.id] })
     },
     onError: (error) => {
@@ -554,6 +684,7 @@ export function ComprasPage() {
       setFechaPedidoWorkflow(dateKey(solicitud.fecha_pedido))
       setSolicitudSeleccionadaId(solicitud.id)
       await queryClient.invalidateQueries({ queryKey: ["compras", "solicitudes"] })
+      await queryClient.invalidateQueries({ queryKey: ["compras", "resumen"] })
       await queryClient.invalidateQueries({ queryKey: ["compras", "solicitud", solicitud.id] })
     },
     onError: (error) => {
@@ -670,6 +801,7 @@ export function ComprasPage() {
       setSolicitudSeleccionadaId(solicitud.id)
       queryClient.setQueryData<CompraSolicitud | undefined>(["compras", "solicitud", solicitud.id], solicitud)
       await queryClient.invalidateQueries({ queryKey: ["compras", "solicitudes"] })
+      await queryClient.invalidateQueries({ queryKey: ["compras", "resumen"] })
       await queryClient.invalidateQueries({ queryKey: ["compras", "solicitud", solicitud.id] })
     },
     onError: (error) => {
@@ -694,6 +826,7 @@ export function ComprasPage() {
       setMensaje(`Ya existe una compra activa para ${recomendacion.reactivo_nombre}: ${recomendacion.compra_activa.codigo}.`)
       return
     }
+    setCreando(true)
     setItems((current) => {
       if (current.some((item) => item.origen === "reposicion" && item.reactivo_id === recomendacion.reactivo_id)) {
         return current
@@ -757,6 +890,7 @@ export function ComprasPage() {
     const notaReferencia = loteReferencia
       ? `Precio de referencia: ${loteReferencia.codigo_interno}, ingreso ${formatDate(loteReferencia.fecha_ingreso)}, ${formatMoney(loteReferencia.costo_total)} total.`
       : ""
+    setCreando(true)
     setItems((current) => [
       ...current,
       {
@@ -864,6 +998,27 @@ export function ComprasPage() {
     setPrioridad("alta")
     setFechaNecesaria("")
     setNotas("")
+    setCreando(false)
+  }
+
+  // Abre el constructor (columna derecha) con un draft limpio.
+  function iniciarNuevaSolicitud() {
+    setEditandoId(null)
+    setEditandoFecha(null)
+    setItems([])
+    setTitulo("Reposicion de inventario")
+    setPrioridad("alta")
+    setFechaNecesaria("")
+    setNotas("")
+    setErrorLocal(null)
+    setMensaje(null)
+    setCreando(true)
+  }
+
+  // Selecciona una solicitud y sale del modo constructor para mostrar su detalle.
+  function seleccionarSolicitud(id: number) {
+    setSolicitudSeleccionadaId(id)
+    setCreando(false)
   }
 
   function ejecutarWorkflow(accion: "enviar" | "aprobar" | "rechazar" | "cambios" | "cancelar" | "pedido" | "en_camino") {
@@ -913,16 +1068,206 @@ export function ComprasPage() {
       <PageHeader
         title="Compras"
         description="Solicitudes internas creadas desde reposicion sugerida o necesidades manuales."
-        count={`${items.length} item(s) seleccionados`}
         plain
+        action={
+          <Button type="button" onClick={iniciarNuevaSolicitud}>
+            <Plus size={18} aria-hidden="true" />
+            Nueva solicitud
+          </Button>
+        }
       />
 
       {mensaje ? <div className="mb-6 border-l-4 border-cds-supportSuccess bg-cds-layer01 px-4 py-3 text-sm">{mensaje}</div> : null}
       {errorLocal ? <div className="mb-6 border-l-4 border-cds-supportError bg-cds-layer01 px-4 py-3 text-sm">{errorLocal}</div> : null}
       {revalidacion ? <div className="mb-6 border-l-4 border-cds-focus bg-cds-layer01 px-4 py-3 text-sm">{revalidacion}</div> : null}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(440px,0.95fr)]">
+      {/* Tira de métricas del pipeline — clicables: setean el filtro de estado */}
+      <div className="mb-7 grid grid-cols-2 gap-3.5 sm:grid-cols-3 xl:grid-cols-5">
+        <PipelineTile label="Borradores" value={pipeline.borradores} icon={FileText} onClick={() => setEstadoFiltro("borrador")} active={estadoFiltro === "borrador"} />
+        <PipelineTile label="Pend. aprobación" value={pipeline.pendientes} icon={Clock} tone="warning" onClick={() => setEstadoFiltro("pendiente_aprobacion")} active={estadoFiltro === "pendiente_aprobacion"} />
+        <PipelineTile label="Aprobadas · por pedir" value={pipeline.porPedir} icon={ClipboardCheck} onClick={() => setEstadoFiltro("aprobada")} active={estadoFiltro === "aprobada"} />
+        <PipelineTile label="En camino" value={pipeline.enCamino} icon={Truck} tone="petrol" onClick={() => setEstadoFiltro("aprobada")} />
+        <PipelineTile label="Recibidas (mes)" value={pipeline.recibidasMes} icon={Check} onClick={() => setEstadoFiltro("recibida")} active={estadoFiltro === "recibida"} />
+      </div>
+
+      {/* Maestro-detalle: lista a la izquierda (fluida), detalle/constructor a la derecha (430px, sticky) */}
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_430px]">
+        {/* ===== IZQUIERDA: filtros + lista + reposición ===== */}
         <div className="space-y-6">
+          {/* Filtros: esenciales + "Más filtros" */}
+          <section className="border border-cds-borderSubtle bg-cds-layer01">
+            <div className="flex flex-col gap-3 border-b border-cds-borderSubtle p-4 md:flex-row md:items-end">
+              <label className="md:flex-1">
+                <span className="mb-1 block text-xs tracking-[0.32px] text-cds-textSecondary">Buscar</span>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-cds-textSecondary" size={17} aria-hidden="true" />
+                  <Input className="pl-11" value={busquedaSolicitudFiltro} onChange={(event) => setBusquedaSolicitudFiltro(event.target.value)} placeholder="Código, título, reactivo o proveedor" />
+                </div>
+              </label>
+              <label className="md:w-[180px]">
+                <span className="mb-1 block text-xs tracking-[0.32px] text-cds-textSecondary">Estado</span>
+                <select
+                  className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-3 text-sm focus:border-b-cds-focus focus:outline-none"
+                  value={estadoFiltro}
+                  onChange={(event) => setEstadoFiltro(event.target.value)}
+                >
+                  {estadosFiltro.map((estado) => (
+                    <option key={estado || "todos"} value={estado}>{estado ? estadoSolicitudLabel(estado) : "Todos"}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="md:w-[150px]">
+                <span className="mb-1 block text-xs tracking-[0.32px] text-cds-textSecondary">Prioridad</span>
+                <select
+                  className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-3 text-sm focus:border-b-cds-focus focus:outline-none"
+                  value={prioridadFiltro}
+                  onChange={(event) => setPrioridadFiltro(event.target.value)}
+                >
+                  <option value="">Todas</option>
+                  {prioridades.map((value) => (
+                    <option key={value} value={value}>{value}</option>
+                  ))}
+                </select>
+              </label>
+              <Button type="button" size="compact" variant="secondary" onClick={() => setFiltrosAbiertos((value) => !value)}>
+                <SlidersHorizontal size={15} aria-hidden="true" />
+                Más filtros
+              </Button>
+            </div>
+
+            {filtrosAbiertos ? (
+              <div className="grid gap-3 border-b border-cds-borderSubtle p-4 md:grid-cols-2 xl:grid-cols-3">
+                <label>
+                  <span className="mb-1 block text-xs tracking-[0.32px] text-cds-textSecondary">Proveedor</span>
+                  <select
+                    className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-3 text-sm focus:border-b-cds-focus focus:outline-none"
+                    value={proveedorFiltro}
+                    onChange={(event) => setProveedorFiltro(event.target.value)}
+                  >
+                    <option value="">Todos</option>
+                    {proveedores.map((proveedor) => (
+                      <option key={proveedor.id} value={proveedor.id}>{proveedor.nombre}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span className="mb-1 block text-xs tracking-[0.32px] text-cds-textSecondary">Reactivo</span>
+                  <select
+                    className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-3 text-sm focus:border-b-cds-focus focus:outline-none"
+                    value={reactivoFiltro}
+                    onChange={(event) => setReactivoFiltro(event.target.value)}
+                  >
+                    <option value="">Todos</option>
+                    {reactivos.map((reactivo) => (
+                      <option key={reactivo.id} value={reactivo.id}>{reactivo.nombre}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span className="mb-1 block text-xs tracking-[0.32px] text-cds-textSecondary">Solicitante</span>
+                  <select
+                    className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-3 text-sm focus:border-b-cds-focus focus:outline-none"
+                    value={solicitadoPorFiltro}
+                    onChange={(event) => setSolicitadoPorFiltro(event.target.value)}
+                  >
+                    <option value="">Todos</option>
+                    {usuarios.map((usuario) => (
+                      <option key={usuario.id} value={usuario.id}>{usuario.nombre}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span className="mb-1 block text-xs tracking-[0.32px] text-cds-textSecondary">Aprobador</span>
+                  <select
+                    className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-3 text-sm focus:border-b-cds-focus focus:outline-none"
+                    value={aprobadoPorFiltro}
+                    onChange={(event) => setAprobadoPorFiltro(event.target.value)}
+                  >
+                    <option value="">Todos</option>
+                    {usuarios.map((usuario) => (
+                      <option key={usuario.id} value={usuario.id}>{usuario.nombre}</option>
+                    ))}
+                  </select>
+                </label>
+                <div>
+                  <Label htmlFor="compras-filtro-desde">Creada desde</Label>
+                  <Input id="compras-filtro-desde" type="date" value={desdeFiltro} onChange={(event) => setDesdeFiltro(event.target.value)} />
+                </div>
+                <div>
+                  <Label htmlFor="compras-filtro-hasta">Creada hasta</Label>
+                  <Input id="compras-filtro-hasta" type="date" value={hastaFiltro} onChange={(event) => setHastaFiltro(event.target.value)} />
+                </div>
+                <div>
+                  <Label htmlFor="compras-filtro-necesaria-desde">Necesario desde</Label>
+                  <Input id="compras-filtro-necesaria-desde" type="date" value={fechaNecesariaDesdeFiltro} onChange={(event) => setFechaNecesariaDesdeFiltro(event.target.value)} />
+                </div>
+                <div>
+                  <Label htmlFor="compras-filtro-necesaria-hasta">Necesario hasta</Label>
+                  <Input id="compras-filtro-necesaria-hasta" type="date" value={fechaNecesariaHastaFiltro} onChange={(event) => setFechaNecesariaHastaFiltro(event.target.value)} />
+                </div>
+              </div>
+            ) : null}
+
+            <div className="flex items-center justify-between px-4 py-3 text-xs tracking-[0.16px] text-cds-textSecondary">
+              <span>Mostrando {solicitudes.length} solicitud{solicitudes.length === 1 ? "" : "es"}</span>
+              <button type="button" onClick={limpiarFiltrosSolicitudes} className="underline underline-offset-2 hover:text-cds-textPrimary">
+                Limpiar filtros
+              </button>
+            </div>
+          </section>
+
+          {/* Lista de solicitudes */}
+          <section className="border border-cds-borderSubtle bg-cds-layer01">
+            {solicitudesQuery.isLoading ? (
+              <div className="p-4 text-sm text-cds-textSecondary">Cargando solicitudes...</div>
+            ) : solicitudes.length ? (
+              <div className="divide-y divide-cds-borderSubtle">
+                {solicitudes.map((solicitud) => {
+                  const seleccionada = solicitudSeleccionadaId === solicitud.id && !creando
+                  const prioridadAlta = solicitud.prioridad === "alta" || solicitud.prioridad === "urgente"
+                  const submeta = [
+                    `Creada ${formatDate(solicitud.fecha_creacion)}`,
+                    solicitud.fecha_necesaria ? `necesaria ${formatDate(solicitud.fecha_necesaria)}` : null,
+                    solicitud.fecha_pedido ? `pedido ${formatDate(solicitud.fecha_pedido)}` : null,
+                  ].filter(Boolean).join(" · ")
+                  return (
+                    <button
+                      key={solicitud.id}
+                      type="button"
+                      onClick={() => seleccionarSolicitud(solicitud.id)}
+                      className={cn(
+                        "grid w-full grid-cols-[1fr_auto] items-center gap-3 px-[18px] py-[15px] text-left transition-colors hover:bg-[var(--cds-layer-hover-01)]",
+                        seleccionada && "bg-lab-blueTint shadow-[inset_3px_0_0_var(--lab-blue)]",
+                      )}
+                    >
+                      <div className="min-w-0">
+                        <div className="mb-1 flex flex-wrap items-center gap-2.5">
+                          <span className="font-mono text-[12.5px] text-cds-textSecondary">{solicitud.codigo}</span>
+                          <span className={cn("inline-flex min-h-[22px] items-center rounded-3xl px-2.5 text-[11.5px] tracking-[0.16px] ring-1 ring-inset", estadoClasses(solicitud.estado))}>{estadoSolicitudLabel(solicitud.estado)}</span>
+                          {prioridadAlta ? (
+                            <span className="inline-flex items-center gap-1.5 text-[11.5px] text-cds-supportError">
+                              <span className="h-1.5 w-1.5 rounded-full bg-cds-supportError" aria-hidden="true" />
+                              {solicitud.prioridad}
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="truncate text-[15px] font-semibold tracking-[0.16px]">{solicitud.titulo}</div>
+                        <div className="mt-1 text-[12.5px] text-cds-textPlaceholder">{submeta}</div>
+                      </div>
+                      <div className="whitespace-nowrap text-right">
+                        <div className="font-mono text-[15px]">{formatMoney(solicitud.costo_total_estimado, "ARS")}</div>
+                        <div className="mt-1 text-[12px] text-cds-textPlaceholder">{solicitud.items_count ?? 0} item(s)</div>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="p-4 text-sm text-cds-textSecondary">Todavia no hay solicitudes.</div>
+            )}
+          </section>
+
+          {/* Reposición sugerida */}
           <section className="border border-cds-borderSubtle bg-cds-layer01">
             <div className="flex flex-col gap-3 border-b border-cds-borderSubtle p-4 md:flex-row md:items-end md:justify-between">
               <div>
@@ -932,7 +1277,7 @@ export function ComprasPage() {
               <label className="w-full max-w-[180px]">
                 <span className="mb-1 block text-xs text-cds-textSecondary">Ventana</span>
                 <select
-                  className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-3 text-sm focus:border-b-cds-focus focus:outline-none"
+                  className="h-9 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-3 text-sm focus:border-b-cds-focus focus:outline-none"
                   value={dias}
                   onChange={(event) => setDias(Number(event.target.value))}
                 >
@@ -942,36 +1287,33 @@ export function ComprasPage() {
                 </select>
               </label>
             </div>
-
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-sm">
-                <thead className="border-b border-cds-borderSubtle text-xs uppercase tracking-[0.32px] text-cds-textSecondary">
+                <thead className="border-b border-cds-borderSubtle bg-cds-layer01 text-xs uppercase tracking-[0.32px] text-cds-textSecondary">
                   <tr>
-                    <th className="px-4 py-3 font-medium">Reactivo</th>
-                    <th className="px-4 py-3 font-medium">Nivel</th>
-                    <th className="px-4 py-3 font-medium">Stock</th>
-                    <th className="px-4 py-3 font-medium">Sugerido</th>
-                    <th className="px-4 py-3 font-medium">Proveedor</th>
-                    <th className="px-4 py-3 font-medium">Costo ult.</th>
-                    <th className="px-4 py-3 font-medium"></th>
+                    <th className="px-4 py-3 font-normal">Reactivo</th>
+                    <th className="px-3 py-3 font-normal">Nivel</th>
+                    <th className="px-3 py-3 text-right font-normal">Stock</th>
+                    <th className="px-3 py-3 text-right font-normal">Sugerido</th>
+                    <th className="px-4 py-3 font-normal"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-cds-borderSubtle">
                   {sugerenciasQuery.isLoading ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-6 text-cds-textSecondary">Cargando sugerencias...</td>
+                      <td colSpan={5} className="px-4 py-6 text-cds-textSecondary">Cargando sugerencias...</td>
                     </tr>
                   ) : recomendaciones.length ? (
                     recomendaciones.map((recomendacion) => {
                       const selected = items.some((item) => item.origen === "reposicion" && item.reactivo_id === recomendacion.reactivo_id)
-                      const bloqueadaPorCompraActiva = Boolean(recomendacion.compra_activa)
+                      const bloqueada = Boolean(recomendacion.compra_activa)
                       return (
                         <tr key={recomendacion.reactivo_id} className="align-top">
                           <td className="px-4 py-3">
                             <div className="font-medium">{recomendacion.reactivo_nombre}</div>
-                            <div className="mt-1 text-xs text-cds-textSecondary">{recomendacion.motivos.join(" · ") || "Sin motivo"}</div>
+                            <div className="mt-1 text-xs text-cds-textPlaceholder">{recomendacion.motivos.join(" · ") || "Sin motivo"}</div>
                             {recomendacion.compra_activa ? (
-                              <div className="mt-2 inline-flex bg-lab-warmTint px-2 py-1 text-xs text-lab-warmFg ring-1 ring-lab-warm/40">
+                              <div className="mt-2 inline-flex bg-lab-warmTint px-2 py-1 text-xs text-lab-warmFg ring-1 ring-inset ring-lab-warm/40">
                                 {estadoCompraActivaLabel(recomendacion.compra_activa.estado)} · {recomendacion.compra_activa.codigo}
                                 {recomendacion.compra_activa.cantidad_pendiente > 0
                                   ? ` · pendiente ${formatNumber(recomendacion.compra_activa.cantidad_pendiente)} ${recomendacion.compra_activa.unidad}`
@@ -979,38 +1321,23 @@ export function ComprasPage() {
                               </div>
                             ) : null}
                           </td>
-                          <td className="px-4 py-3">
-                            <span className={cn("inline-flex px-2 py-1 text-xs ring-1", nivelClasses(recomendacion.nivel))}>
-                              {recomendacion.nivel}
-                            </span>
+                          <td className="px-3 py-3">
+                            <span className={cn("inline-flex px-2 py-1 text-xs ring-1 ring-inset", nivelClasses(recomendacion.nivel))}>{recomendacion.nivel}</span>
                           </td>
-                          <td className="px-4 py-3">{formatNumber(recomendacion.stock_actual)} {recomendacion.unidad}</td>
-                          <td className="px-4 py-3">{formatNumber(recomendacion.cantidad_sugerida)} {recomendacion.unidad}</td>
-                          <td className="px-4 py-3">{recomendacion.proveedor_reciente || "-"}</td>
-                          <td className="px-4 py-3">
-                            {recomendacion.costo_reciente == null ? (
-                              "-"
-                            ) : (
-                              <>
-                                <div>{formatMoney(recomendacion.costo_reciente)}</div>
-                                {recomendacion.costo_unitario_reciente != null ? (
-                                  <div className="mt-1 text-xs text-cds-textSecondary">
-                                    {formatMoney(recomendacion.costo_unitario_reciente)} / {recomendacion.unidad}
-                                  </div>
-                                ) : null}
-                              </>
-                            )}
+                          <td className={cn("px-3 py-3 text-right font-mono", Number(recomendacion.stock_actual) <= 0 && "text-cds-supportError")}>
+                            {formatNumber(recomendacion.stock_actual)} {recomendacion.unidad}
                           </td>
+                          <td className="px-3 py-3 text-right font-mono">{formatNumber(recomendacion.cantidad_sugerida)} {recomendacion.unidad}</td>
                           <td className="px-4 py-3 text-right">
                             <Button
                               type="button"
                               size="compact"
-                              variant={selected || bloqueadaPorCompraActiva ? "secondary" : "primary"}
+                              variant={selected || bloqueada ? "secondary" : "primary"}
                               onClick={() => agregarRecomendacion(recomendacion)}
-                              disabled={selected || bloqueadaPorCompraActiva}
+                              disabled={selected || bloqueada}
                             >
-                              <Plus size={16} aria-hidden="true" />
-                              {selected ? "Agregado" : bloqueadaPorCompraActiva ? "En curso" : "Agregar"}
+                              {selected ? <Check size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}
+                              {selected ? "Agregado" : bloqueada ? "En curso" : "Agregar"}
                             </Button>
                           </td>
                         </tr>
@@ -1018,212 +1345,348 @@ export function ComprasPage() {
                     })
                   ) : (
                     <tr>
-                      <td colSpan={7} className="px-4 py-6 text-cds-textSecondary">No hay recomendaciones activas.</td>
+                      <td colSpan={5} className="px-4 py-6 text-cds-textSecondary">No hay recomendaciones activas.</td>
                     </tr>
                   )}
                 </tbody>
               </table>
             </div>
           </section>
+        </div>
 
-          <section className="border border-cds-borderSubtle bg-cds-layer01 p-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-              <h2 className="text-base font-semibold">Solicitudes recientes</h2>
-              <Button type="button" size="compact" variant="secondary" onClick={limpiarFiltrosSolicitudes}>
-                Limpiar filtros
-              </Button>
-            </div>
-
-            <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-4">
-              <div>
-                <Label htmlFor="compras-filtro-q">Buscar</Label>
-                <Input
-                  id="compras-filtro-q"
-                  value={busquedaSolicitudFiltro}
-                  onChange={(event) => setBusquedaSolicitudFiltro(event.target.value)}
-                  placeholder="Código, título, reactivo o proveedor"
-                />
-              </div>
-              <label>
-                <span className="mb-1 block text-xs text-cds-textSecondary">Estado</span>
-                <select
-                  className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-3 text-sm focus:border-b-cds-focus focus:outline-none"
-                  value={estadoFiltro}
-                  onChange={(event) => setEstadoFiltro(event.target.value)}
-                >
-                  {estadosFiltro.map((estado) => (
-                    <option key={estado || "todos"} value={estado}>
-                      {estado ? estadoSolicitudLabel(estado) : "Todos"}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span className="mb-1 block text-xs text-cds-textSecondary">Prioridad</span>
-                <select
-                  className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-3 text-sm focus:border-b-cds-focus focus:outline-none"
-                  value={prioridadFiltro}
-                  onChange={(event) => setPrioridadFiltro(event.target.value)}
-                >
-                  <option value="">Todas</option>
-                  {prioridades.map((prioridad) => (
-                    <option key={prioridad} value={prioridad}>{prioridad}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span className="mb-1 block text-xs text-cds-textSecondary">Proveedor</span>
-                <select
-                  className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-3 text-sm focus:border-b-cds-focus focus:outline-none"
-                  value={proveedorFiltro}
-                  onChange={(event) => setProveedorFiltro(event.target.value)}
-                >
-                  <option value="">Todos</option>
-                  {proveedores.map((proveedor) => (
-                    <option key={proveedor.id} value={proveedor.id}>{proveedor.nombre}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span className="mb-1 block text-xs text-cds-textSecondary">Reactivo</span>
-                <select
-                  className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-3 text-sm focus:border-b-cds-focus focus:outline-none"
-                  value={reactivoFiltro}
-                  onChange={(event) => setReactivoFiltro(event.target.value)}
-                >
-                  <option value="">Todos</option>
-                  {reactivos.map((reactivo) => (
-                    <option key={reactivo.id} value={reactivo.id}>{reactivo.nombre}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span className="mb-1 block text-xs text-cds-textSecondary">Solicitante</span>
-                <select
-                  className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-3 text-sm focus:border-b-cds-focus focus:outline-none"
-                  value={solicitadoPorFiltro}
-                  onChange={(event) => setSolicitadoPorFiltro(event.target.value)}
-                >
-                  <option value="">Todos</option>
-                  {usuarios.map((usuario) => (
-                    <option key={usuario.id} value={usuario.id}>{usuario.nombre}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span className="mb-1 block text-xs text-cds-textSecondary">Aprobador</span>
-                <select
-                  className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-3 text-sm focus:border-b-cds-focus focus:outline-none"
-                  value={aprobadoPorFiltro}
-                  onChange={(event) => setAprobadoPorFiltro(event.target.value)}
-                >
-                  <option value="">Todos</option>
-                  {usuarios.map((usuario) => (
-                    <option key={usuario.id} value={usuario.id}>{usuario.nombre}</option>
-                  ))}
-                </select>
-              </label>
-              <div>
-                <Label htmlFor="compras-filtro-desde">Creada desde</Label>
-                <Input id="compras-filtro-desde" type="date" value={desdeFiltro} onChange={(event) => setDesdeFiltro(event.target.value)} />
-              </div>
-              <div>
-                <Label htmlFor="compras-filtro-hasta">Creada hasta</Label>
-                <Input id="compras-filtro-hasta" type="date" value={hastaFiltro} onChange={(event) => setHastaFiltro(event.target.value)} />
-              </div>
-              <div>
-                <Label htmlFor="compras-filtro-necesaria-desde">Necesario desde</Label>
-                <Input
-                  id="compras-filtro-necesaria-desde"
-                  type="date"
-                  value={fechaNecesariaDesdeFiltro}
-                  onChange={(event) => setFechaNecesariaDesdeFiltro(event.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="compras-filtro-necesaria-hasta">Necesario hasta</Label>
-                <Input
-                  id="compras-filtro-necesaria-hasta"
-                  type="date"
-                  value={fechaNecesariaHastaFiltro}
-                  onChange={(event) => setFechaNecesariaHastaFiltro(event.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="mt-4 divide-y divide-cds-borderSubtle border-y border-cds-borderSubtle">
-              {solicitudesQuery.isLoading ? (
-                <div className="py-4 text-sm text-cds-textSecondary">Cargando solicitudes...</div>
-              ) : solicitudes.length ? (
-                solicitudes.map((solicitud) => (
-                  <div key={solicitud.id} className={cn("grid gap-2 py-3 md:grid-cols-[1fr_auto_auto_auto] md:items-center", solicitudSeleccionadaId === solicitud.id && "bg-cds-layer02 px-3")}>
+        {/* ===== DERECHA: detalle / constructor (sticky) ===== */}
+        <div className="space-y-6 xl:sticky xl:top-6">
+          {creando || editandoId != null ? (
+            <form className="space-y-6" onSubmit={submit}>
+              <section className="border border-cds-borderSubtle bg-cds-layer01">
+                <div className="flex items-center justify-between border-b border-cds-borderSubtle p-4">
+                  <div className="flex items-center gap-2">
+                    <ClipboardCheck size={18} aria-hidden="true" />
+                    <h2 className="text-base font-semibold">{editandoId == null ? "Nueva solicitud" : "Editar solicitud"}</h2>
+                  </div>
+                  <Button type="button" size="compact" variant="secondary" onClick={cancelarEdicion}>Cancelar</Button>
+                </div>
+                <div className="grid gap-4 p-4">
+                  <div>
+                    <Label htmlFor="compra-titulo">Titulo</Label>
+                    <Input id="compra-titulo" value={titulo} onChange={(event) => setTitulo(event.target.value)} required />
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label>
+                      <span className="mb-1 block text-xs text-cds-textSecondary">Prioridad</span>
+                      <select
+                        className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-3 text-sm focus:border-b-cds-focus focus:outline-none"
+                        value={prioridad}
+                        onChange={(event) => setPrioridad(event.target.value as CompraPrioridad)}
+                      >
+                        {prioridades.map((value) => <option key={value} value={value}>{value}</option>)}
+                      </select>
+                    </label>
                     <div>
-                      <div className="font-medium">{solicitud.codigo} · {solicitud.titulo}</div>
-                      <div className="mt-1 text-xs text-cds-textSecondary">
-                        <span className={cn("mr-2 inline-flex px-2 py-0.5 ring-1", estadoClasses(solicitud.estado))}>{estadoSolicitudLabel(solicitud.estado)}</span>
-                        {["aprobada", "recibida_parcial"].includes(solicitud.estado) ? (
-                          <span className="mr-2 inline-flex bg-cds-layer02 px-2 py-0.5 ring-1 ring-cds-borderSubtle">{estadoEntregaLabel(solicitud.estado_entrega)}</span>
-                        ) : null}
-                        {solicitud.fecha_pedido ? (
-                          <span className="mr-2 inline-flex bg-cds-layer02 px-2 py-0.5 ring-1 ring-cds-borderSubtle">Pedido enviado {formatDate(solicitud.fecha_pedido)}</span>
-                        ) : null}
-                        {solicitud.fecha_necesaria ? (
-                          <span className="mr-2 inline-flex bg-cds-layer02 px-2 py-0.5 ring-1 ring-cds-borderSubtle">Necesario {formatDate(solicitud.fecha_necesaria)}</span>
-                        ) : null}
-                        {solicitud.items_count ?? 0} item(s) · {formatDate(solicitud.fecha_creacion)}
+                      <Label htmlFor="compra-fecha">Necesario para</Label>
+                      <Input id="compra-fecha" type="date" value={fechaNecesaria} onChange={(event) => setFechaNecesaria(event.target.value)} />
+                    </div>
+                  </div>
+                  <div>
+                    <Label htmlFor="compra-notas">Notas</Label>
+                    <Input id="compra-notas" value={notas} onChange={(event) => setNotas(event.target.value)} placeholder="Validar proveedor y disponibilidad antes de comprar" />
+                  </div>
+                </div>
+              </section>
+
+              <section className="border border-cds-borderSubtle bg-cds-layer01">
+                <div className="flex items-center justify-between border-b border-cds-borderSubtle p-4">
+                  <h2 className="text-base font-semibold">Items seleccionados</h2>
+                  <div className="text-sm text-cds-textSecondary">Total: {formatMoney(totalEstimado)}</div>
+                </div>
+                <div className="space-y-3 p-4">
+                  {items.length ? (
+                    items.map((item) => (
+                      <div key={item.key} className="border border-cds-borderSubtle bg-cds-layer02 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate font-medium">{item.nombre}</div>
+                            <div className="mt-1 text-xs text-cds-textSecondary">
+                              {item.origen === "reposicion" ? `Reposicion · stock ${formatNumber(item.stock_actual)} · sugerido ${formatNumber(item.cantidad_sugerida)} ${item.unidad}` : "Manual"}
+                            </div>
+                          </div>
+                          <Button type="button" size="icon" variant="ghost" onClick={() => removeItem(item.key)}>
+                            <Trash2 size={16} aria-hidden="true" />
+                            <span className="sr-only">Quitar</span>
+                          </Button>
+                        </div>
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                          <div>
+                            <Label htmlFor={`${item.key}-cantidad`}>Cantidad</Label>
+                            <Input id={`${item.key}-cantidad`} type="number" min="0" step="any" value={item.cantidad_solicitada} onChange={(event) => updateItem(item.key, { cantidad_solicitada: Number(event.target.value) })} />
+                          </div>
+                          <div>
+                            <Label htmlFor={`${item.key}-unidad`}>Unidad</Label>
+                            <select
+                              id={`${item.key}-unidad`}
+                              className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-3 text-sm focus:border-b-cds-focus focus:outline-none"
+                              value={item.unidad ?? ""}
+                              onChange={(event) => updateItem(item.key, { unidad: event.target.value })}
+                            >
+                              {item.unidad && !unidadesOpciones.includes(item.unidad) ? (
+                                <option value={item.unidad}>{item.unidad}</option>
+                              ) : null}
+                              {unidadesOpciones.map((unidad) => (
+                                <option key={unidad} value={unidad}>{unidad}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <Label htmlFor={`${item.key}-costo`}>Costo unitario</Label>
+                            <Input id={`${item.key}-costo`} type="number" min="0" step="any" value={item.costo_unitario_estimado ?? 0} onChange={(event) => updateItem(item.key, { costo_unitario_estimado: Number(event.target.value) })} />
+                          </div>
+                          <div>
+                            <Label htmlFor={`${item.key}-proveedor`}>Proveedor</Label>
+                            <Input id={`${item.key}-proveedor`} value={item.proveedor_nombre ?? ""} onChange={(event) => updateItem(item.key, { proveedor_nombre: event.target.value })} />
+                          </div>
+                          <div className="sm:col-span-2">
+                            <Label htmlFor={`${item.key}-presentacion`}>Presentacion</Label>
+                            <Input id={`${item.key}-presentacion`} value={item.presentacion ?? ""} onChange={(event) => updateItem(item.key, { presentacion: event.target.value })} />
+                          </div>
+                          <div className="sm:col-span-2">
+                            <Label htmlFor={`${item.key}-notas`}>Notas</Label>
+                            <Input id={`${item.key}-notas`} value={item.notas ?? ""} onChange={(event) => updateItem(item.key, { notas: event.target.value })} />
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="border border-dashed border-cds-borderSubtle p-6 text-sm text-cds-textSecondary">Agrega recomendaciones o items manuales para crear la solicitud.</div>
+                  )}
+                </div>
+              </section>
+
+              <section className="border border-cds-borderSubtle bg-cds-layer01 p-4">
+                <h2 className="text-base font-semibold">Compra manual</h2>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <Label htmlFor="manual-busqueda">Reactivo o insumo</Label>
+                    <Input
+                      id="manual-busqueda"
+                      value={manual.busqueda}
+                      onChange={(event) => setManual((current) => ({ ...current, busqueda: event.target.value, reactivoId: "", loteReferenciaId: "" }))}
+                      placeholder="Buscar en catalogo o escribir libre"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="manual-cantidad">Cantidad</Label>
+                    <Input id="manual-cantidad" type="number" min="0" step="any" value={manual.cantidad} onChange={(event) => setManual((current) => ({ ...current, cantidad: event.target.value }))} />
+                  </div>
+                  <div>
+                    <Label htmlFor="manual-unidad">Unidad</Label>
+                    <select
+                      id="manual-unidad"
+                      className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-3 text-sm focus:border-b-cds-focus focus:outline-none"
+                      value={manual.unidad}
+                      onChange={(event) => setManual((current) => ({ ...current, unidad: event.target.value }))}
+                    >
+                      {!unidadesOpciones.includes(manual.unidad) && manual.unidad ? (
+                        <option value={manual.unidad}>{manual.unidad}</option>
+                      ) : null}
+                      {unidadesOpciones.map((unidad) => (
+                        <option key={unidad} value={unidad}>{unidad}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <Label htmlFor="manual-costo">Costo unitario</Label>
+                    <Input id="manual-costo" type="number" min="0" step="any" value={manual.costo} onChange={(event) => setManual((current) => ({ ...current, costo: event.target.value }))} />
+                  </div>
+                  <div>
+                    <Label htmlFor="manual-presentacion">Presentacion</Label>
+                    <Input id="manual-presentacion" value={manual.presentacion} onChange={(event) => setManual((current) => ({ ...current, presentacion: event.target.value }))} />
+                  </div>
+                </div>
+
+                {manual.busqueda.trim() ? (
+                  <div className="mt-4 space-y-3">
+                    <div className="border border-cds-borderSubtle bg-cds-layer02 p-3">
+                      <div className="text-xs font-medium uppercase tracking-[0.32px] text-cds-textSecondary">Catalogo</div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {reactivosManual.length ? (
+                          reactivosManual.map((reactivo) => (
+                            <Button
+                              key={reactivo.id}
+                              type="button"
+                              size="compact"
+                              variant={manual.reactivoId === String(reactivo.id) ? "primary" : "secondary"}
+                              onClick={() => seleccionarReactivoManual(reactivo)}
+                              className="h-auto min-h-10 max-w-full whitespace-normal text-left"
+                            >
+                              <span className="min-w-0">
+                                <span className="block truncate">{reactivo.nombre}</span>
+                                <span className="block text-xs opacity-80">{formatNumber(reactivo.stock_total)} {reactivo.unidad}</span>
+                              </span>
+                            </Button>
+                          ))
+                        ) : (
+                          <div className="text-sm text-cds-textSecondary">Sin coincidencias de catalogo.</div>
+                        )}
                       </div>
                     </div>
-                    <div className="text-sm text-cds-textSecondary">{formatMoney(solicitud.costo_total_estimado, "ARS")}</div>
-                    <Button type="button" size="compact" variant="secondary" onClick={() => setSolicitudSeleccionadaId(solicitud.id)}>
-                      <Eye size={16} aria-hidden="true" />
-                      Ver
-                    </Button>
-                    <Button type="button" size="compact" variant="secondary" onClick={() => revalidarMutation.mutate(solicitud.id)}>
-                      <RefreshCw size={16} aria-hidden="true" />
-                      Revalidar
-                    </Button>
-                  </div>
-                ))
-              ) : (
-                <div className="py-4 text-sm text-cds-textSecondary">Todavia no hay solicitudes.</div>
-              )}
-            </div>
-
-            {solicitudSeleccionada ? (
-              <div className="mt-4 border border-cds-borderSubtle bg-cds-layer02 p-4">
-                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <div className="text-xs text-cds-textSecondary">{solicitudSeleccionada.codigo}</div>
-                    <h3 className="mt-1 text-base font-semibold">{solicitudSeleccionada.titulo}</h3>
-                    <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                      <span className={cn("inline-flex px-2 py-1 ring-1", estadoClasses(solicitudSeleccionada.estado))}>{estadoSolicitudLabel(solicitudSeleccionada.estado)}</span>
-                      {["aprobada", "recibida_parcial"].includes(solicitudSeleccionada.estado) ? (
-                        <span className="inline-flex bg-cds-layer01 px-2 py-1 text-cds-textSecondary ring-1 ring-cds-borderSubtle">
-                          {estadoEntregaLabel(solicitudSeleccionada.estado_entrega)}
-                        </span>
-                      ) : null}
-                      {solicitudSeleccionada.fecha_pedido ? (
-                        <span className="inline-flex bg-cds-layer01 px-2 py-1 text-cds-textSecondary ring-1 ring-cds-borderSubtle">
-                          Pedido enviado {formatDate(solicitudSeleccionada.fecha_pedido)}
-                        </span>
-                      ) : null}
-                      {solicitudSeleccionada.fecha_necesaria ? (
-                        <span className="inline-flex bg-cds-layer01 px-2 py-1 text-cds-textSecondary ring-1 ring-cds-borderSubtle">
-                          Necesario {formatDate(solicitudSeleccionada.fecha_necesaria)}
-                        </span>
-                      ) : null}
-                      <span className="inline-flex bg-cds-layer01 px-2 py-1 text-cds-textSecondary ring-1 ring-cds-borderSubtle">{solicitudSeleccionada.prioridad}</span>
-                      <span className="inline-flex bg-cds-layer01 px-2 py-1 text-cds-textSecondary ring-1 ring-cds-borderSubtle">{formatMoney(solicitudSeleccionada.costo_total_estimado, "ARS")}</span>
+                    <div className="border border-cds-borderSubtle bg-cds-layer02 p-3">
+                      <div className="text-xs font-medium uppercase tracking-[0.32px] text-cds-textSecondary">Precios historicos</div>
+                      <div className="mt-2 space-y-2">
+                        {lotesReferencia.length ? (
+                          lotesReferencia.map((lote) => {
+                            const unitario = costoUnitarioLote(lote)
+                            return (
+                              <button
+                                key={lote.id}
+                                type="button"
+                                onClick={() => seleccionarLoteReferencia(lote)}
+                                className={cn(
+                                  "w-full border p-2 text-left text-sm transition-colors hover:bg-cds-layer01",
+                                  manual.loteReferenciaId === String(lote.id) ? "border-cds-buttonPrimary bg-cds-layer01" : "border-cds-borderSubtle bg-cds-layer02",
+                                )}
+                              >
+                                <span className="flex flex-wrap items-center justify-between gap-2">
+                                  <span className="font-medium">{lote.codigo_interno}</span>
+                                  <span>{formatMoney(lote.costo_total)}</span>
+                                </span>
+                                <span className="mt-1 block text-xs text-cds-textSecondary">
+                                  {lote.reactivo_nombre} · {lote.proveedor || "Sin proveedor"} · {formatMoney(unitario)} / {lote.unidad}
+                                </span>
+                              </button>
+                            )
+                          })
+                        ) : (
+                          <div className="text-sm text-cds-textSecondary">Sin lotes con costo cargado.</div>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  {["borrador", "cambios_solicitados"].includes(solicitudSeleccionada.estado) ? (
-                    <Button type="button" size="compact" variant="secondary" onClick={() => cargarSolicitudParaEditar(solicitudSeleccionada)}>
-                      Editar
+                ) : null}
+
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <Label htmlFor="manual-proveedor">Proveedor</Label>
+                    <Input id="manual-proveedor" value={manual.proveedor} onChange={(event) => setManual((current) => ({ ...current, proveedor: event.target.value }))} />
+                  </div>
+                  <div className="flex items-end">
+                    <Button type="button" size="compact" variant="secondary" className="w-full" onClick={agregarManual}>
+                      <Plus size={16} aria-hidden="true" />
+                      Agregar
                     </Button>
+                  </div>
+                </div>
+              </section>
+
+              <div className="flex justify-end">
+                <Button type="submit" disabled={crearMutation.isPending || actualizarMutation.isPending || !items.length}>
+                  <Save size={18} aria-hidden="true" />
+                  {editandoId == null
+                    ? crearMutation.isPending ? "Creando..." : "Crear solicitud"
+                    : actualizarMutation.isPending ? "Guardando..." : "Guardar cambios"}
+                </Button>
+              </div>
+            </form>
+          ) : solicitudSeleccionada ? (
+            <>
+              <section className="border border-cds-borderSubtle bg-cds-layer01">
+                <div className="border-b border-cds-borderSubtle px-[18px] py-4">
+                  <div className="flex items-center justify-between gap-2.5">
+                    <span className="font-mono text-[12.5px] text-cds-textSecondary">{solicitudSeleccionada.codigo}</span>
+                    <span className={cn("inline-flex min-h-[22px] items-center rounded-3xl px-2.5 text-[11.5px] tracking-[0.16px] ring-1 ring-inset", estadoClasses(solicitudSeleccionada.estado))}>{estadoSolicitudLabel(solicitudSeleccionada.estado)}</span>
+                  </div>
+                  <div className="mt-2 text-[18px] font-semibold">{solicitudSeleccionada.titulo}</div>
+                  <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-1 text-[12.5px] text-cds-textPlaceholder">
+                    <span>{solicitudSeleccionada.prioridad}</span>
+                    {solicitudSeleccionada.fecha_necesaria ? <span>· necesaria {formatDate(solicitudSeleccionada.fecha_necesaria)}</span> : null}
+                    {solicitudSeleccionada.fecha_pedido ? <span>· pedido {formatDate(solicitudSeleccionada.fecha_pedido)}</span> : null}
+                  </div>
+                  {["borrador", "cambios_solicitados"].includes(solicitudSeleccionada.estado) ? (
+                    <Button type="button" size="compact" variant="secondary" className="mt-3" onClick={() => cargarSolicitudParaEditar(solicitudSeleccionada)}>Editar</Button>
                   ) : null}
                 </div>
 
-                <div className="mt-4 grid gap-3 text-sm">
+                <div className="border-b border-cds-borderSubtle p-[18px]">
+                  <div className="mb-3.5 text-[11.5px] uppercase tracking-[0.32px] text-cds-textSecondary">Estado del flujo</div>
+                  <WorkflowTimeline estado={solicitudSeleccionada.estado} entrega={solicitudSeleccionada.estado_entrega} />
+                </div>
+
+                <div className="px-[18px] py-4">
+                  {(() => {
+                    const next = accionSiguiente(solicitudSeleccionada.estado, solicitudSeleccionada.estado_entrega)
+                    if (!next) {
+                      return <div className="text-[13px] text-cds-textSecondary">Sin acciones pendientes para esta solicitud.</div>
+                    }
+                    const NextIcon = next.icon
+                    const requiereFecha = next.accion === "pedido" || next.accion === "en_camino"
+                    const ejecutar = () => {
+                      if (next.accion === "recepcion") {
+                        const item = (solicitudSeleccionada.items ?? []).find((it) => ["aprobado", "recibido_parcial"].includes(it.estado) && cantidadPendienteItem(it) > 0)
+                        if (item) {
+                          abrirRecepcion(item)
+                        } else {
+                          setErrorLocal("No hay items pendientes de recepción.")
+                        }
+                        return
+                      }
+                      ejecutarWorkflow(next.accion)
+                    }
+                    return (
+                      <>
+                        <div className="mb-2.5 text-[13px] text-cds-textSecondary">Acción siguiente</div>
+                        {requiereFecha ? (
+                          <div className="mb-3">
+                            <Label htmlFor="compra-fecha-pedido">Pedido enviado el</Label>
+                            <Input id="compra-fecha-pedido" type="date" max={todayKey()} value={fechaPedidoWorkflow} onChange={(event) => setFechaPedidoWorkflow(event.target.value)} />
+                          </div>
+                        ) : null}
+                        <div className="flex gap-2">
+                          <Button type="button" className="flex-1" onClick={ejecutar} disabled={workflowMutation.isPending || (requiereFecha && !fechaPedidoWorkflow)}>
+                            <NextIcon size={16} aria-hidden="true" />
+                            {next.label}
+                          </Button>
+                          <Button type="button" size="icon" variant="secondary" onClick={() => revalidarMutation.mutate(solicitudSeleccionada.id)} disabled={revalidarMutation.isPending} title="Revalidar">
+                            <RefreshCw size={17} aria-hidden="true" />
+                            <span className="sr-only">Revalidar</span>
+                          </Button>
+                        </div>
+                      </>
+                    )
+                  })()}
+
+                  {["borrador", "pendiente_aprobacion", "cambios_solicitados", "aprobada", "recibida_parcial"].includes(solicitudSeleccionada.estado) ? (
+                    <details className="mt-3 border-t border-cds-borderSubtle pt-3">
+                      <summary className="cursor-pointer text-[13px] text-cds-textSecondary">Más acciones</summary>
+                      <div className="mt-3 space-y-3">
+                        {solicitudSeleccionada.estado === "pendiente_aprobacion" ? (
+                          <div>
+                            <Label htmlFor="compra-workflow-motivo">Motivo</Label>
+                            <Input id="compra-workflow-motivo" value={motivoWorkflow} onChange={(event) => setMotivoWorkflow(event.target.value)} placeholder="Requerido para rechazar o pedir cambios" />
+                          </div>
+                        ) : null}
+                        <div className="flex flex-wrap gap-2">
+                          {solicitudSeleccionada.estado === "pendiente_aprobacion" ? (
+                            <>
+                              <Button type="button" size="compact" variant="secondary" onClick={() => ejecutarWorkflow("cambios")} disabled={workflowMutation.isPending}>Pedir cambios</Button>
+                              <Button type="button" size="compact" variant="danger" onClick={() => ejecutarWorkflow("rechazar")} disabled={workflowMutation.isPending}>
+                                <X size={16} aria-hidden="true" />
+                                Rechazar
+                              </Button>
+                            </>
+                          ) : null}
+                          <Button type="button" size="compact" variant="secondary" onClick={() => ejecutarWorkflow("cancelar")} disabled={workflowMutation.isPending}>Cancelar solicitud</Button>
+                        </div>
+                      </div>
+                    </details>
+                  ) : null}
+                </div>
+              </section>
+
+              <section className="border border-cds-borderSubtle bg-cds-layer01">
+                <div className="flex items-center justify-between border-b border-cds-borderSubtle px-[18px] py-[15px]">
+                  <h2 className="text-[15px] font-semibold">Ítems de la solicitud</h2>
+                  <span className="text-[12.5px] text-cds-textPlaceholder">{(solicitudSeleccionada.items ?? []).length} ítems</span>
+                </div>
+                <div>
                   {(solicitudSeleccionada.items ?? []).map((item) => {
                     const pendiente = cantidadPendienteItem(item)
                     const recibido = Number(item.cantidad_recibida ?? 0)
@@ -1233,65 +1696,62 @@ export function ComprasPage() {
                       ["aprobado", "recibido_parcial"].includes(item.estado) &&
                       pendiente > 0
                     return (
-                      <div key={item.id} className="border border-cds-borderSubtle bg-cds-layer01 p-3">
-                        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                          <div>
-                            <div className="font-medium">{item.reactivo_nombre ?? item.descripcion_manual}</div>
-                            <div className="mt-1 text-xs text-cds-textSecondary">
-                              {estadoItemLabel(item.estado)} · solicitado {formatNumber(item.cantidad_solicitada)} {item.unidad}
+                      <div key={item.id} className="border-b border-cds-borderSubtle">
+                        <div className="grid grid-cols-[1fr_auto] items-start gap-3 px-[18px] py-[13px]">
+                          <div className="min-w-0">
+                            <div className="truncate text-[14px] font-medium">{item.reactivo_nombre ?? item.descripcion_manual}</div>
+                            <div className="mt-1 text-[12px] text-cds-textPlaceholder">
+                              {estadoItemLabel(item.estado)}
                               {item.cantidad_aprobada != null ? ` · aprobado ${formatNumber(item.cantidad_aprobada)} ${item.unidad}` : ""}
-                              {recibido > 0 ? ` · recibido acumulado ${formatNumber(recibido)} ${item.unidad}` : ""}
+                              {recibido > 0 ? ` · recibido ${formatNumber(recibido)} ${item.unidad}` : ""}
                               {pendiente > 0 && item.cantidad_aprobada != null ? ` · pendiente ${formatNumber(pendiente)} ${item.unidad}` : ""}
                               {item.proveedor_nombre_snapshot ? ` · ${item.proveedor_nombre_snapshot}` : ""}
                             </div>
                           </div>
-                          {puedeRecibir ? (
-                            <Button type="button" size="compact" variant="secondary" onClick={() => abrirRecepcion(item)}>
-                              <Check size={16} aria-hidden="true" />
-                              Vincular lote
-                            </Button>
-                          ) : null}
+                          <div className="whitespace-nowrap text-right">
+                            <div className="font-mono text-[13.5px]">{formatNumber(item.cantidad_solicitada)} {item.unidad}</div>
+                            <div className="mt-1 font-mono text-[12px] text-cds-textPlaceholder">{formatMoney(Number(item.cantidad_solicitada) * Number(item.costo_unitario_estimado), item.moneda ?? "ARS")}</div>
+                            {puedeRecibir && !recepcionActiva ? (
+                              <Button type="button" size="compact" variant="secondary" className="mt-1.5" onClick={() => abrirRecepcion(item)}>
+                                <Check size={14} aria-hidden="true" />
+                                Vincular lote
+                              </Button>
+                            ) : null}
+                          </div>
                         </div>
-
                         {recepcionActiva ? (
-                          <div className="mt-3 border-t border-cds-borderSubtle pt-3">
-                            <div className="grid gap-3 md:grid-cols-[minmax(180px,1fr)_110px_100px]">
-                              <div>
+                          <div className="border-t border-cds-borderSubtle bg-cds-layer02 p-3">
+                            <div className="grid gap-3 sm:grid-cols-3">
+                              <div className="sm:col-span-3">
                                 <Label htmlFor={`recepcion-lote-${item.id}`}>Buscar lote recibido</Label>
                                 <Input
                                   id={`recepcion-lote-${item.id}`}
                                   value={recepcionDraft.busqueda}
-                                  onChange={(event) =>
-                                    setRecepcionDraft((current) => ({
-                                      ...current,
-                                      busqueda: event.target.value,
-                                      loteId: "",
-                                    }))
-                                  }
+                                  onChange={(event) => setRecepcionDraft((current) => ({ ...current, busqueda: event.target.value, loteId: "" }))}
                                   placeholder="Código interno, lote o reactivo"
                                 />
                               </div>
                               <div>
                                 <Label htmlFor={`recepcion-cantidad-${item.id}`}>Cantidad</Label>
-                                <Input
-                                  id={`recepcion-cantidad-${item.id}`}
-                                  type="number"
-                                  min="0"
-                                  step="any"
-                                  value={recepcionDraft.cantidad}
-                                  onChange={(event) => setRecepcionDraft((current) => ({ ...current, cantidad: event.target.value }))}
-                                />
+                                <Input id={`recepcion-cantidad-${item.id}`} type="number" min="0" step="any" value={recepcionDraft.cantidad} onChange={(event) => setRecepcionDraft((current) => ({ ...current, cantidad: event.target.value }))} />
                               </div>
                               <div>
                                 <Label htmlFor={`recepcion-unidad-${item.id}`}>Unidad</Label>
-                                <Input
+                                <select
                                   id={`recepcion-unidad-${item.id}`}
+                                  className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-3 text-sm focus:border-b-cds-focus focus:outline-none"
                                   value={recepcionDraft.unidad}
                                   onChange={(event) => setRecepcionDraft((current) => ({ ...current, unidad: event.target.value }))}
-                                />
+                                >
+                                  {recepcionDraft.unidad && !unidadesOpciones.includes(recepcionDraft.unidad) ? (
+                                    <option value={recepcionDraft.unidad}>{recepcionDraft.unidad}</option>
+                                  ) : null}
+                                  {unidadesOpciones.map((unidad) => (
+                                    <option key={unidad} value={unidad}>{unidad}</option>
+                                  ))}
+                                </select>
                               </div>
                             </div>
-
                             <div className="mt-2 flex flex-wrap gap-2">
                               {lotesRecepcionQuery.isFetching ? (
                                 <span className="text-xs text-cds-textSecondary">Buscando lotes...</span>
@@ -1302,46 +1762,29 @@ export function ComprasPage() {
                                     type="button"
                                     size="compact"
                                     variant={recepcionDraft.loteId === String(lote.id) ? "primary" : "secondary"}
-                                    onClick={() =>
-                                      setRecepcionDraft((current) => ({
-                                        ...current,
-                                        loteId: String(lote.id),
-                                        cantidad: cantidadSugeridaRecepcion(item, lote),
-                                      }))
-                                    }
+                                    onClick={() => setRecepcionDraft((current) => ({ ...current, loteId: String(lote.id), cantidad: cantidadSugeridaRecepcion(item, lote), unidad: lote.unidad }))}
                                   >
-                                    {lote.codigo_interno} · ingreso {formatNumber(cantidadInicialLote(lote))} {lote.unidad}
-                                    {Number(lote.cantidad_actual) !== cantidadInicialLote(lote)
-                                      ? ` · stock ${formatNumber(lote.cantidad_actual)} ${lote.unidad}`
-                                      : ""}
+                                    {lote.codigo_interno} · {formatNumber(cantidadInicialLote(lote))} {lote.unidad}
                                   </Button>
                                 ))
                               ) : busquedaRecepcionApi.length >= 2 ? (
-                                <span className="text-xs text-cds-textSecondary">No hay lotes compatibles ingresados desde la fecha de pedido o aprobación de esta compra.</span>
+                                <span className="text-xs text-cds-textSecondary">No hay lotes compatibles ingresados desde la fecha de pedido o aprobación.</span>
                               ) : (
                                 <span className="text-xs text-cds-textSecondary">Escribí al menos 2 caracteres para buscar lotes.</span>
                               )}
                             </div>
-
-                            <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto_auto] md:items-end">
-                              <div>
-                                <Label htmlFor={`recepcion-observacion-${item.id}`}>Observación</Label>
-                                <Input
-                                  id={`recepcion-observacion-${item.id}`}
-                                  value={recepcionDraft.observacion}
-                                  onChange={(event) => setRecepcionDraft((current) => ({ ...current, observacion: event.target.value }))}
-                                  placeholder={loteRecepcion ? `Lote ${loteRecepcion.codigo_interno} seleccionado` : "Opcional"}
-                                />
-                              </div>
-                              <Button type="button" size="compact" variant="secondary" onClick={() => setRecepcionDraft({ ...emptyRecepcionDraft })}>
-                                Cancelar
-                              </Button>
-                              <Button
-                                type="button"
-                                size="compact"
-                                onClick={registrarRecepcion}
-                                disabled={registrarRecepcionMutation.isPending || !recepcionDraft.loteId || !recepcionDraft.cantidad}
-                              >
+                            <div className="mt-3">
+                              <Label htmlFor={`recepcion-observacion-${item.id}`}>Observación</Label>
+                              <Input
+                                id={`recepcion-observacion-${item.id}`}
+                                value={recepcionDraft.observacion}
+                                onChange={(event) => setRecepcionDraft((current) => ({ ...current, observacion: event.target.value }))}
+                                placeholder={loteRecepcion ? `Lote ${loteRecepcion.codigo_interno} seleccionado` : "Opcional"}
+                              />
+                            </div>
+                            <div className="mt-3 flex justify-end gap-2">
+                              <Button type="button" size="compact" variant="secondary" onClick={() => setRecepcionDraft({ ...emptyRecepcionDraft })}>Cancelar</Button>
+                              <Button type="button" size="compact" onClick={registrarRecepcion} disabled={registrarRecepcionMutation.isPending || !recepcionDraft.loteId || !recepcionDraft.cantidad}>
                                 <Check size={16} aria-hidden="true" />
                                 Guardar recepción
                               </Button>
@@ -1352,109 +1795,51 @@ export function ComprasPage() {
                     )
                   })}
                 </div>
-
-                <div className="mt-4 grid gap-3">
-                  <div className={cn("grid gap-3", ["aprobada", "recibida_parcial"].includes(solicitudSeleccionada.estado) && "md:grid-cols-[1fr_180px]")}>
-                    <div>
-                      <Label htmlFor="compra-workflow-motivo">Comentario o motivo</Label>
-                      <Input
-                        id="compra-workflow-motivo"
-                        value={motivoWorkflow}
-                        onChange={(event) => setMotivoWorkflow(event.target.value)}
-                        placeholder="Requerido para rechazar o pedir cambios"
-                      />
-                    </div>
-                    {["aprobada", "recibida_parcial"].includes(solicitudSeleccionada.estado) ? (
-                      <div>
-                        <Label htmlFor="compra-fecha-pedido">Pedido enviado el</Label>
-                        <Input
-                          id="compra-fecha-pedido"
-                          type="date"
-                          max={todayKey()}
-                          value={fechaPedidoWorkflow}
-                          onChange={(event) => setFechaPedidoWorkflow(event.target.value)}
-                        />
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {["borrador", "cambios_solicitados"].includes(solicitudSeleccionada.estado) ? (
-                      <Button type="button" size="compact" onClick={() => ejecutarWorkflow("enviar")} disabled={workflowMutation.isPending}>
-                        <Send size={16} aria-hidden="true" />
-                        Enviar a aprobación
-                      </Button>
-                    ) : null}
-                    {solicitudSeleccionada.estado === "pendiente_aprobacion" ? (
-                      <>
-                        <Button type="button" size="compact" onClick={() => ejecutarWorkflow("aprobar")} disabled={workflowMutation.isPending}>
-                          <Check size={16} aria-hidden="true" />
-                          Aprobar
-                        </Button>
-                        <Button type="button" size="compact" variant="secondary" onClick={() => ejecutarWorkflow("cambios")} disabled={workflowMutation.isPending}>
-                          Pedir cambios
-                        </Button>
-                        <Button type="button" size="compact" variant="danger" onClick={() => ejecutarWorkflow("rechazar")} disabled={workflowMutation.isPending}>
-                          <X size={16} aria-hidden="true" />
-                          Rechazar
-                        </Button>
-                      </>
-                    ) : null}
-                    {["borrador", "pendiente_aprobacion", "cambios_solicitados", "aprobada", "recibida_parcial"].includes(solicitudSeleccionada.estado) ? (
-                      <Button type="button" size="compact" variant="secondary" onClick={() => ejecutarWorkflow("cancelar")} disabled={workflowMutation.isPending}>
-                        Cancelar
-                      </Button>
-                    ) : null}
-                    {["aprobada", "recibida_parcial"].includes(solicitudSeleccionada.estado) && (solicitudSeleccionada.estado_entrega ?? "no_pedido") === "no_pedido" ? (
-                      <Button type="button" size="compact" variant="secondary" onClick={() => ejecutarWorkflow("pedido")} disabled={workflowMutation.isPending}>
-                        <PackageCheck size={16} aria-hidden="true" />
-                        Marcar pedido
-                      </Button>
-                    ) : null}
-                    {["aprobada", "recibida_parcial"].includes(solicitudSeleccionada.estado) && (solicitudSeleccionada.estado_entrega ?? "no_pedido") !== "no_pedido" ? (
-                      <Button
-                        type="button"
-                        size="compact"
-                        variant="secondary"
-                        onClick={() => ejecutarWorkflow((solicitudSeleccionada.estado_entrega ?? "pedido") === "en_camino" ? "en_camino" : "pedido")}
-                        disabled={workflowMutation.isPending || !fechaPedidoWorkflow}
-                      >
-                        <Save size={16} aria-hidden="true" />
-                        Guardar fecha
-                      </Button>
-                    ) : null}
-                    {["aprobada", "recibida_parcial"].includes(solicitudSeleccionada.estado) && (solicitudSeleccionada.estado_entrega ?? "no_pedido") !== "en_camino" ? (
-                      <Button type="button" size="compact" variant="secondary" onClick={() => ejecutarWorkflow("en_camino")} disabled={workflowMutation.isPending}>
-                        <Truck size={16} aria-hidden="true" />
-                        Marcar en camino
-                      </Button>
-                    ) : null}
-                  </div>
+                <div className="flex items-center justify-between bg-cds-layer01 px-[18px] py-[15px]">
+                  <span className="text-[13px] tracking-[0.16px] text-cds-textSecondary">Total estimado</span>
+                  <span className="font-mono text-[18px] font-semibold">{formatMoney(solicitudSeleccionada.costo_total_estimado, "ARS")}</span>
                 </div>
+              </section>
 
-                {["aprobada", "recibida_parcial"].includes(solicitudSeleccionada.estado) || comunicaciones.length ? (
-                  <div className="mt-4 border-t border-cds-borderSubtle pt-4">
-                    <div className="flex items-center gap-2">
-                      <FileText size={16} aria-hidden="true" />
-                      <h4 className="text-sm font-semibold">Borrador para proveedor</h4>
-                    </div>
+              {["aprobada", "recibida_parcial"].includes(solicitudSeleccionada.estado) || comunicaciones.length ? (
+                <section className="border border-cds-borderSubtle bg-cds-layer01 px-[18px] py-4">
+                  <div className="mb-2.5 flex items-center justify-between">
+                    <h2 className="text-[15px] font-semibold">Comunicación al proveedor</h2>
+                    {comunicacionActiva ? (
+                      <span className="inline-flex items-center gap-1.5 text-[11.5px] text-cds-supportSuccess">
+                        <Check size={13} aria-hidden="true" />
+                        Borrador listo
+                      </span>
+                    ) : null}
+                  </div>
+                  {comunicacionActiva ? (
+                    <>
+                      <div className="max-h-24 overflow-hidden whitespace-pre-wrap border border-cds-borderSubtle bg-cds-layer02 p-3 font-mono text-[11.5px] leading-[1.55] text-cds-textSecondary">
+                        {contenidoComunicacion || comunicacionActiva.contenido}
+                      </div>
+                      <div className="mt-3 flex gap-2">
+                        <Button type="button" variant="secondary" className="flex-1" onClick={copiarComunicacion} disabled={marcarComunicacionCopiadaMutation.isPending}>
+                          <Copy size={15} aria-hidden="true" />
+                          Copiar
+                        </Button>
+                        <Button type="button" variant="secondary" className="flex-1" onClick={() => descargarComunicacionMutation.mutate()} disabled={descargarComunicacionMutation.isPending}>
+                          <Download size={15} aria-hidden="true" />
+                          Descargar
+                        </Button>
+                      </div>
+                    </>
+                  ) : null}
 
-                    <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
+                  <details className="mt-3 border-t border-cds-borderSubtle pt-3">
+                    <summary className="cursor-pointer text-[13px] text-cds-textSecondary">{comunicacionActiva ? "Editar / versiones" : "Generar borrador"}</summary>
+                    <div className="mt-3 space-y-3">
                       <div>
                         <Label htmlFor="compra-com-titulo">Titulo</Label>
-                        <Input
-                          id="compra-com-titulo"
-                          value={comunicacionTitulo}
-                          onChange={(event) => setComunicacionTitulo(event.target.value)}
-                        />
+                        <Input id="compra-com-titulo" value={comunicacionTitulo} onChange={(event) => setComunicacionTitulo(event.target.value)} />
                       </div>
                       <div>
                         <Label htmlFor="compra-com-obs">Observaciones</Label>
-                        <Input
-                          id="compra-com-obs"
-                          value={comunicacionObservaciones}
-                          onChange={(event) => setComunicacionObservaciones(event.target.value)}
-                          placeholder="Confirmar disponibilidad, precio y entrega"
-                        />
+                        <Input id="compra-com-obs" value={comunicacionObservaciones} onChange={(event) => setComunicacionObservaciones(event.target.value)} placeholder="Confirmar disponibilidad, precio y entrega" />
                       </div>
                       <Button
                         type="button"
@@ -1465,359 +1850,200 @@ export function ComprasPage() {
                         <FileText size={16} aria-hidden="true" />
                         Generar
                       </Button>
-                    </div>
 
-                    {comunicaciones.length ? (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {comunicaciones.map((comunicacion) => (
+                      {comunicaciones.length ? (
+                        <div className="flex flex-wrap gap-2">
+                          {comunicaciones.map((comunicacion) => (
+                            <Button
+                              key={comunicacion.id}
+                              type="button"
+                              size="compact"
+                              variant={comunicacionActiva?.id === comunicacion.id ? "primary" : "secondary"}
+                              onClick={() => {
+                                setComunicacionActivaId(comunicacion.id)
+                                setContenidoComunicacion(comunicacion.contenido)
+                              }}
+                            >
+                              {comunicacion.estado} · v{comunicacion.version_actual ?? 1}
+                            </Button>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {comunicacionActiva ? (
+                        <>
+                          <div>
+                            <Label htmlFor="compra-com-contenido">Contenido revisable</Label>
+                            <textarea
+                              id="compra-com-contenido"
+                              className="mt-1 min-h-[200px] w-full border-b border-cds-borderStrong bg-cds-field px-4 py-3 font-mono text-sm outline-none focus:ring-2 focus:ring-cds-focus"
+                              value={contenidoComunicacion}
+                              onChange={(event) => setContenidoComunicacion(event.target.value)}
+                              placeholder="Generá un borrador para poder editarlo."
+                            />
+                          </div>
                           <Button
-                            key={comunicacion.id}
                             type="button"
                             size="compact"
-                            variant={comunicacionActiva?.id === comunicacion.id ? "primary" : "secondary"}
-                            onClick={() => {
-                              setComunicacionActivaId(comunicacion.id)
-                              setContenidoComunicacion(comunicacion.contenido)
-                            }}
+                            variant="secondary"
+                            onClick={() => actualizarComunicacionMutation.mutate()}
+                            disabled={!comunicacionActiva || !contenidoComunicacion.trim() || actualizarComunicacionMutation.isPending}
                           >
-                            {comunicacion.estado} · v{comunicacion.version_actual ?? 1} · {formatDate(comunicacion.fecha_creacion)}
+                            <Save size={16} aria-hidden="true" />
+                            Guardar texto
                           </Button>
-                        ))}
-                      </div>
-                    ) : null}
 
-                    <div className="mt-3">
-                      <Label htmlFor="compra-com-contenido">Contenido revisable</Label>
-                      <textarea
-                        id="compra-com-contenido"
-                        className="mt-1 min-h-[240px] w-full border-b border-cds-borderStrong bg-cds-field px-4 py-3 font-mono text-sm outline-none focus:ring-2 focus:ring-cds-focus"
-                        value={contenidoComunicacion}
-                        onChange={(event) => setContenidoComunicacion(event.target.value)}
-                        placeholder="Generá un borrador para poder editarlo."
-                      />
+                          <div className="border-t border-cds-borderSubtle pt-3">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="font-medium">Versiones</span>
+                              <span className="text-xs text-cds-textSecondary">{versionesComunicacionQuery.isFetching ? "Actualizando..." : `${versionesComunicacion.length} guardado(s)`}</span>
+                            </div>
+                            <div className="mt-2 divide-y divide-cds-borderSubtle">
+                              {versionesComunicacion.length ? (
+                                versionesComunicacion.map((version) => (
+                                  <div key={version.id} className="flex items-center justify-between gap-2 py-2">
+                                    <div className="text-sm">
+                                      <span className="font-medium">v{version.version_numero}</span>
+                                      {version.version_numero === comunicacionActiva.version_actual ? (
+                                        <span className="ml-2 bg-cds-layer02 px-2 py-0.5 text-xs text-cds-textSecondary ring-1 ring-inset ring-cds-borderSubtle">actual</span>
+                                      ) : null}
+                                      <div className="mt-1 text-xs text-cds-textSecondary">{version.origen} · {formatDateTime(version.fecha)}</div>
+                                    </div>
+                                    <Button
+                                      type="button"
+                                      size="compact"
+                                      variant="secondary"
+                                      onClick={() => {
+                                        setContenidoComunicacion(version.contenido)
+                                        setMensaje(`Versión ${version.version_numero} cargada en el editor. Guardá texto para dejarla como versión actual.`)
+                                        setErrorLocal(null)
+                                      }}
+                                    >
+                                      Cargar
+                                    </Button>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="py-2 text-sm text-cds-textSecondary">Todavia no hay versiones guardadas.</div>
+                              )}
+                            </div>
+                          </div>
+                        </>
+                      ) : null}
                     </div>
+                  </details>
+                </section>
+              ) : null}
 
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        size="compact"
-                        variant="secondary"
-                        onClick={() => actualizarComunicacionMutation.mutate()}
-                        disabled={!comunicacionActiva || !contenidoComunicacion.trim() || actualizarComunicacionMutation.isPending}
-                      >
-                        <Save size={16} aria-hidden="true" />
-                        Guardar texto
-                      </Button>
-                      <Button
-                        type="button"
-                        size="compact"
-                        variant="secondary"
-                        onClick={copiarComunicacion}
-                        disabled={!comunicacionActiva || marcarComunicacionCopiadaMutation.isPending}
-                      >
-                        <Copy size={16} aria-hidden="true" />
-                        Copiar
-                      </Button>
-                      <Button
-                        type="button"
-                        size="compact"
-                        variant="secondary"
-                        onClick={() => descargarComunicacionMutation.mutate()}
-                        disabled={!comunicacionActiva || descargarComunicacionMutation.isPending}
-                      >
-                        <Download size={16} aria-hidden="true" />
-                        Descargar
-                      </Button>
-                    </div>
-
-                    {comunicacionActiva ? (
-                      <div className="mt-3 border-t border-cds-borderSubtle pt-3">
-                        <div className="flex flex-col gap-1 text-sm md:flex-row md:items-center md:justify-between">
-                          <div className="font-medium">Versiones guardadas</div>
+              {(solicitudSeleccionada.eventos ?? []).length ? (
+                <section className="border border-cds-borderSubtle bg-cds-layer01 px-[18px] py-4">
+                  <details>
+                    <summary className="cursor-pointer text-[15px] font-semibold">Historial</summary>
+                    <div className="mt-3 space-y-2">
+                      {(solicitudSeleccionada.eventos ?? []).map((evento) => (
+                        <div key={evento.id} className="text-sm">
+                          <div className="font-medium">{evento.tipo} · {formatDate(evento.fecha)}</div>
                           <div className="text-xs text-cds-textSecondary">
-                            {versionesComunicacionQuery.isFetching ? "Actualizando..." : `${versionesComunicacion.length} guardado(s)`}
+                            {evento.usuario_nombre || `Usuario ${evento.usuario_id}`}
+                            {evento.estado_nuevo ? ` · ${evento.estado_anterior || "-"} -> ${evento.estado_nuevo}` : ""}
+                            {evento.comentario ? ` · ${evento.comentario}` : ""}
                           </div>
                         </div>
-                        <div className="mt-2 divide-y divide-cds-borderSubtle">
-                          {versionesComunicacionQuery.isLoading ? (
-                            <div className="py-2 text-sm text-cds-textSecondary">Cargando versiones...</div>
-                          ) : versionesComunicacion.length ? (
-                            versionesComunicacion.map((version) => (
-                              <div key={version.id} className="flex flex-col gap-2 py-2 md:flex-row md:items-center md:justify-between">
-                                <div className="text-sm">
-                                  <span className="font-medium">v{version.version_numero}</span>
-                                  {version.version_numero === comunicacionActiva.version_actual ? (
-                                    <span className="ml-2 bg-cds-layer02 px-2 py-0.5 text-xs text-cds-textSecondary ring-1 ring-cds-borderSubtle">actual</span>
-                                  ) : null}
-                                  <div className="mt-1 text-xs text-cds-textSecondary">
-                                    {version.origen} · {version.usuario_nombre || `Usuario ${version.usuario_id}`} · {formatDateTime(version.fecha)}
-                                  </div>
-                                </div>
-                                <Button
-                                  type="button"
-                                  size="compact"
-                                  variant="secondary"
-                                  onClick={() => {
-                                    setContenidoComunicacion(version.contenido)
-                                    setMensaje(`Versión ${version.version_numero} cargada en el editor. Guardá texto para dejarla como versión actual.`)
-                                    setErrorLocal(null)
-                                  }}
-                                >
-                                  Cargar
-                                </Button>
-                              </div>
-                            ))
-                          ) : (
-                            <div className="py-2 text-sm text-cds-textSecondary">Todavia no hay versiones guardadas.</div>
-                          )}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                <div className="mt-4 border-t border-cds-borderSubtle pt-4">
-                  <h4 className="text-sm font-semibold">Historial</h4>
-                  <div className="mt-3 space-y-2">
-                    {(solicitudSeleccionada.eventos ?? []).map((evento) => (
-                      <div key={evento.id} className="text-sm">
-                        <div className="font-medium">{evento.tipo} · {formatDate(evento.fecha)}</div>
-                        <div className="text-xs text-cds-textSecondary">
-                          {evento.usuario_nombre || `Usuario ${evento.usuario_id}`}
-                          {evento.estado_nuevo ? ` · ${evento.estado_anterior || "-"} -> ${evento.estado_nuevo}` : ""}
-                          {evento.comentario ? ` · ${evento.comentario}` : ""}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ) : detalleSolicitudQuery.isLoading ? (
-              <div className="mt-4 border border-cds-borderSubtle bg-cds-layer02 p-4 text-sm text-cds-textSecondary">Cargando detalle...</div>
-            ) : null}
-          </section>
-        </div>
-
-        <form className="space-y-6" onSubmit={submit}>
-          <section className="border border-cds-borderSubtle bg-cds-layer01 p-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="flex items-center gap-2">
-                <ClipboardCheck size={18} aria-hidden="true" />
-                <h2 className="text-base font-semibold">{editandoId == null ? "Nueva solicitud" : "Editar solicitud"}</h2>
-              </div>
-              {editandoId != null ? (
-                <Button type="button" size="compact" variant="secondary" onClick={cancelarEdicion}>
-                  Cancelar edición
-                </Button>
+                      ))}
+                    </div>
+                  </details>
+                </section>
               ) : null}
+            </>
+          ) : detalleSolicitudQuery.isLoading ? (
+            <div className="border border-cds-borderSubtle bg-cds-layer01 p-4 text-sm text-cds-textSecondary">Cargando detalle...</div>
+          ) : (
+            <div className="border border-dashed border-cds-borderSubtle bg-cds-layer01 p-8 text-center text-sm text-cds-textSecondary">
+              Seleccioná una solicitud de la lista para ver su detalle, o creá una nueva con “Nueva solicitud”.
             </div>
-
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <div className="md:col-span-2">
-                <Label htmlFor="compra-titulo">Titulo</Label>
-                <Input id="compra-titulo" value={titulo} onChange={(event) => setTitulo(event.target.value)} required />
-              </div>
-              <label>
-                <span className="mb-1 block text-xs text-cds-textSecondary">Prioridad</span>
-                <select
-                  className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-3 text-sm focus:border-b-cds-focus focus:outline-none"
-                  value={prioridad}
-                  onChange={(event) => setPrioridad(event.target.value as CompraPrioridad)}
-                >
-                  {prioridades.map((value) => <option key={value} value={value}>{value}</option>)}
-                </select>
-              </label>
-              <div>
-                <Label htmlFor="compra-fecha">Necesario para</Label>
-                <Input id="compra-fecha" type="date" value={fechaNecesaria} onChange={(event) => setFechaNecesaria(event.target.value)} />
-              </div>
-              <div className="md:col-span-2">
-                <Label htmlFor="compra-notas">Notas</Label>
-                <Input id="compra-notas" value={notas} onChange={(event) => setNotas(event.target.value)} placeholder="Validar proveedor y disponibilidad antes de comprar" />
-              </div>
-            </div>
-          </section>
-
-          <section className="border border-cds-borderSubtle bg-cds-layer01 p-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <h2 className="text-base font-semibold">Items seleccionados</h2>
-              <div className="text-sm text-cds-textSecondary">Total estimado: {formatMoney(totalEstimado)}</div>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              {items.length ? (
-                items.map((item) => (
-                  <div key={item.key} className="border border-cds-borderSubtle bg-cds-layer02 p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="font-medium">{item.nombre}</div>
-                        <div className="mt-1 text-xs text-cds-textSecondary">
-                          {item.origen === "reposicion" ? `Reposicion · stock ${formatNumber(item.stock_actual)} · sugerido ${formatNumber(item.cantidad_sugerida)} ${item.unidad}` : "Manual"}
-                        </div>
-                      </div>
-                      <Button type="button" size="icon" variant="ghost" onClick={() => removeItem(item.key)}>
-                        <Trash2 size={16} aria-hidden="true" />
-                        <span className="sr-only">Quitar</span>
-                      </Button>
-                    </div>
-                    <div className="mt-3 grid gap-3 md:grid-cols-4">
-                      <div>
-                        <Label htmlFor={`${item.key}-cantidad`}>Cantidad</Label>
-                        <Input id={`${item.key}-cantidad`} type="number" min="0" step="any" value={item.cantidad_solicitada} onChange={(event) => updateItem(item.key, { cantidad_solicitada: Number(event.target.value) })} />
-                      </div>
-                      <div>
-                        <Label htmlFor={`${item.key}-unidad`}>Unidad</Label>
-                        <Input id={`${item.key}-unidad`} value={item.unidad ?? ""} onChange={(event) => updateItem(item.key, { unidad: event.target.value })} />
-                      </div>
-                      <div>
-                        <Label htmlFor={`${item.key}-costo`}>Costo unitario</Label>
-                        <Input id={`${item.key}-costo`} type="number" min="0" step="any" value={item.costo_unitario_estimado ?? 0} onChange={(event) => updateItem(item.key, { costo_unitario_estimado: Number(event.target.value) })} />
-                      </div>
-                      <div>
-                        <Label htmlFor={`${item.key}-proveedor`}>Proveedor</Label>
-                        <Input id={`${item.key}-proveedor`} value={item.proveedor_nombre ?? ""} onChange={(event) => updateItem(item.key, { proveedor_nombre: event.target.value })} />
-                      </div>
-                      <div className="md:col-span-2">
-                        <Label htmlFor={`${item.key}-presentacion`}>Presentacion</Label>
-                        <Input id={`${item.key}-presentacion`} value={item.presentacion ?? ""} onChange={(event) => updateItem(item.key, { presentacion: event.target.value })} />
-                      </div>
-                      <div className="md:col-span-2">
-                        <Label htmlFor={`${item.key}-notas`}>Notas</Label>
-                        <Input id={`${item.key}-notas`} value={item.notas ?? ""} onChange={(event) => updateItem(item.key, { notas: event.target.value })} />
-                      </div>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="border border-dashed border-cds-borderSubtle p-6 text-sm text-cds-textSecondary">
-                  Agrega recomendaciones o items manuales para crear la solicitud.
-                </div>
-              )}
-            </div>
-          </section>
-
-          <section className="border border-cds-borderSubtle bg-cds-layer01 p-4">
-            <h2 className="text-base font-semibold">Compra manual</h2>
-            <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(240px,1fr)_120px_120px_150px_auto] lg:items-end">
-              <div>
-                <Label htmlFor="manual-busqueda">Reactivo o insumo</Label>
-                <Input
-                  id="manual-busqueda"
-                  value={manual.busqueda}
-                  onChange={(event) =>
-                    setManual((current) => ({
-                      ...current,
-                      busqueda: event.target.value,
-                      reactivoId: "",
-                      loteReferenciaId: "",
-                    }))
-                  }
-                  placeholder="Buscar en catalogo o escribir libre"
-                />
-              </div>
-              <div>
-                <Label htmlFor="manual-cantidad">Cantidad</Label>
-                <Input id="manual-cantidad" type="number" min="0" step="any" value={manual.cantidad} onChange={(event) => setManual((current) => ({ ...current, cantidad: event.target.value }))} />
-              </div>
-              <div>
-                <Label htmlFor="manual-unidad">Unidad</Label>
-                <Input id="manual-unidad" value={manual.unidad} onChange={(event) => setManual((current) => ({ ...current, unidad: event.target.value }))} />
-              </div>
-              <div>
-                <Label htmlFor="manual-costo">Costo unitario</Label>
-                <Input id="manual-costo" type="number" min="0" step="any" value={manual.costo} onChange={(event) => setManual((current) => ({ ...current, costo: event.target.value }))} />
-              </div>
-              <Button type="button" variant="secondary" onClick={agregarManual}>
-                <Plus size={16} aria-hidden="true" />
-                Agregar
-              </Button>
-            </div>
-
-            {manual.busqueda.trim() ? (
-              <div className="mt-4 grid gap-3 xl:grid-cols-2">
-                <div className="border border-cds-borderSubtle bg-cds-layer02 p-3">
-                  <div className="text-xs font-medium uppercase tracking-[0.32px] text-cds-textSecondary">Catalogo</div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {reactivosManual.length ? (
-                      reactivosManual.map((reactivo) => (
-                        <Button
-                          key={reactivo.id}
-                          type="button"
-                          size="compact"
-                          variant={manual.reactivoId === String(reactivo.id) ? "primary" : "secondary"}
-                          onClick={() => seleccionarReactivoManual(reactivo)}
-                          className="h-auto min-h-10 max-w-full whitespace-normal text-left"
-                        >
-                          <span className="min-w-0">
-                            <span className="block truncate">{reactivo.nombre}</span>
-                            <span className="block text-xs opacity-80">{formatNumber(reactivo.stock_total)} {reactivo.unidad}</span>
-                          </span>
-                        </Button>
-                      ))
-                    ) : (
-                      <div className="text-sm text-cds-textSecondary">Sin coincidencias de catalogo.</div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="border border-cds-borderSubtle bg-cds-layer02 p-3">
-                  <div className="text-xs font-medium uppercase tracking-[0.32px] text-cds-textSecondary">Precios historicos</div>
-                  <div className="mt-2 space-y-2">
-                    {lotesReferencia.length ? (
-                      lotesReferencia.map((lote) => {
-                        const unitario = costoUnitarioLote(lote)
-                        return (
-                          <button
-                            key={lote.id}
-                            type="button"
-                            onClick={() => seleccionarLoteReferencia(lote)}
-                            className={cn(
-                              "w-full border p-2 text-left text-sm transition-colors hover:bg-cds-layer01",
-                              manual.loteReferenciaId === String(lote.id)
-                                ? "border-cds-buttonPrimary bg-cds-layer01"
-                                : "border-cds-borderSubtle bg-cds-layer02",
-                            )}
-                          >
-                            <span className="flex flex-wrap items-center justify-between gap-2">
-                              <span className="font-medium">{lote.codigo_interno}</span>
-                              <span>{formatMoney(lote.costo_total)}</span>
-                            </span>
-                            <span className="mt-1 block text-xs text-cds-textSecondary">
-                              {lote.reactivo_nombre} · {lote.proveedor || "Sin proveedor"} · {formatMoney(unitario)} / {lote.unidad}
-                            </span>
-                          </button>
-                        )
-                      })
-                    ) : (
-                      <div className="text-sm text-cds-textSecondary">Sin lotes con costo cargado.</div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <div>
-                <Label htmlFor="manual-proveedor">Proveedor</Label>
-                <Input id="manual-proveedor" value={manual.proveedor} onChange={(event) => setManual((current) => ({ ...current, proveedor: event.target.value }))} />
-              </div>
-              <div>
-                <Label htmlFor="manual-presentacion">Presentacion</Label>
-                <Input id="manual-presentacion" value={manual.presentacion} onChange={(event) => setManual((current) => ({ ...current, presentacion: event.target.value }))} />
-              </div>
-            </div>
-          </section>
-
-          <div className="flex justify-end">
-            <Button type="submit" disabled={crearMutation.isPending || actualizarMutation.isPending || !items.length}>
-              <Save size={18} aria-hidden="true" />
-              {editandoId == null
-                ? crearMutation.isPending ? "Creando..." : "Crear solicitud"
-                : actualizarMutation.isPending ? "Guardando..." : "Guardar cambios"}
-            </Button>
-          </div>
-        </form>
+          )}
+        </div>
       </div>
     </section>
+  )
+}
+
+// Tile del pipeline de compras (mismo lenguaje que los KPI del proyecto): valor
+// en peso regular, icono arriba a la derecha, acento inset 2px para warning/petróleo.
+// Clicable para filtrar la lista por estado.
+function PipelineTile({
+  label,
+  value,
+  icon: Icon,
+  tone = "neutral",
+  active = false,
+  onClick,
+}: {
+  label: string
+  value: number
+  icon: LucideIcon
+  tone?: "neutral" | "warning" | "petrol"
+  active?: boolean
+  onClick?: () => void
+}) {
+  const toneClasses =
+    tone === "warning"
+      ? "bg-lab-warmTint shadow-[inset_2px_0_0_var(--lab-warm)]"
+      : tone === "petrol"
+        ? "bg-lab-blueTint shadow-[inset_2px_0_0_var(--lab-blue)]"
+        : "bg-cds-layer01"
+  const valueColor = tone === "warning" ? "text-lab-warmFg" : tone === "petrol" ? "text-lab-blue" : "text-cds-textPrimary"
+  const accentColor = tone === "warning" ? "text-lab-warmFg" : tone === "petrol" ? "text-lab-blue" : "text-cds-textSecondary"
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex flex-col gap-3.5 border border-cds-borderSubtle p-4 text-left transition-[filter] hover:brightness-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-cds-focus",
+        toneClasses,
+        active && "ring-2 ring-inset ring-cds-focus",
+      )}
+    >
+      <div className={cn("flex items-center justify-between gap-2", accentColor)}>
+        <span className="text-[11.5px] leading-tight tracking-[0.32px]">{label}</span>
+        <Icon size={17} aria-hidden="true" />
+      </div>
+      <div className={cn("text-[30px] font-light leading-none", valueColor)}>{formatNumber(value)}</div>
+    </button>
+  )
+}
+
+// Línea de tiempo del workflow: Borrador → Aprobación → Pedido → En camino → Recibida.
+function WorkflowTimeline({ estado, entrega }: { estado: string; entrega?: string | null }) {
+  const completed = workflowCompletedThrough(estado, entrega)
+  return (
+    <div className="flex items-start">
+      {WORKFLOW_STEPS.map((label, index) => {
+        const done = index <= completed
+        const current = index === completed + 1
+        const reached = done || current
+        return (
+          <div key={label} className="relative flex flex-1 flex-col items-center text-center">
+            {index > 0 ? (
+              <span
+                className="absolute left-[-50%] top-[9px] h-0.5 w-full"
+                style={{ background: reached ? "var(--lab-blue)" : "var(--cds-border-subtle)" }}
+                aria-hidden="true"
+              />
+            ) : null}
+            <span
+              className="relative z-[1] flex h-5 w-5 items-center justify-center rounded-full"
+              style={{
+                background: done ? "var(--lab-blue)" : "var(--cds-layer-01)",
+                boxShadow: `inset 0 0 0 2px ${done || current ? "var(--lab-blue)" : "var(--cds-border-subtle)"}`,
+              }}
+            >
+              {done ? <Check size={11} className="text-white" aria-hidden="true" /> : null}
+            </span>
+            <span className={cn("mt-1.5 text-[10.5px] leading-tight", reached ? "text-cds-textPrimary" : "text-cds-textPlaceholder")}>{label}</span>
+          </div>
+        )
+      })}
+    </div>
   )
 }

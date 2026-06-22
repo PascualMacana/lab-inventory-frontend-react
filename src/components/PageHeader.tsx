@@ -4,11 +4,14 @@ export function PageHeader({
   title,
   description,
   count,
+  action,
   plain = false,
 }: {
   title: string
   description?: string
   count?: ReactNode
+  // Optional slot rendered at the right of the header (e.g. a primary action button).
+  action?: ReactNode
   plain?: boolean
 }) {
   return (
@@ -23,7 +26,12 @@ export function PageHeader({
           </p>
         ) : null}
       </div>
-      {count ? <div className="text-sm tracking-[0.16px] text-cds-textSecondary">{count}</div> : null}
+      {count || action ? (
+        <div className="flex items-center gap-4">
+          {count ? <div className="text-sm tracking-[0.16px] text-cds-textSecondary">{count}</div> : null}
+          {action ?? null}
+        </div>
+      ) : null}
     </div>
   )
 }
