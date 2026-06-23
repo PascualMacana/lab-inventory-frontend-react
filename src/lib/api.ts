@@ -249,6 +249,25 @@ export type ReposicionRecomendacion = {
     cantidad_pendiente: number
     unidad: string
   } | null
+  // Cerebro de quiebre: prioridad relativa al lead time observado del proveedor.
+  riesgo_quiebre?: "inminente" | "pedir_ya" | "ok" | "sin_consumo" | string
+  lead_time_dias?: number | null
+  lead_time_fuente?: "proveedor" | "organizacion" | "default" | string
+  dias_seguridad?: number | null
+  punto_reorden?: number | null
+  dias_holgura?: number | null
+  fecha_limite_pedido?: string | null
+  // Comparador de proveedores: todos los tiempos del reactivo + consejo (vos decidís).
+  opciones_proveedor?: {
+    proveedor_id?: number | null
+    proveedor_nombre: string
+    lead_time_dias: number
+    lead_time_fuente: "proveedor" | "organizacion" | "default" | string
+    es_reciente: boolean
+    dias_holgura?: number | null
+    llega_a_tiempo: boolean
+  }[]
+  consejo_proveedor?: string | null
 }
 
 export type DashboardReposicion = {
@@ -324,6 +343,7 @@ export type CompraComunicacion = {
   proveedor_id?: number | null
   proveedor_nombre_snapshot?: string | null
   contacto_id?: number | null
+  contacto_nombre?: string | null
   contacto_email_snapshot?: string | null
   estado: "borrador" | "descargado" | "copiado" | "descartado" | string
   origen: "deterministico" | "ia" | string
@@ -337,7 +357,13 @@ export type CompraComunicacion = {
   fecha_actualizacion?: string | null
   creado_por: number
   creado_por_nombre?: string | null
+  ia_advertencias?: string[]
+  ia_canal?: CompraComunicacionCanal
+  ia_idioma?: CompraComunicacionIdioma
 }
+
+export type CompraComunicacionCanal = "email_formal" | "whatsapp" | "orden_compra"
+export type CompraComunicacionIdioma = "es" | "en" | "pt"
 
 export type CompraComunicacionVersion = {
   id: number
@@ -346,7 +372,7 @@ export type CompraComunicacionVersion = {
   solicitud_id: number
   version_numero: number
   contenido: string
-  origen: "generada" | "edicion" | string
+  origen: "generada" | "edicion" | "ia" | string
   usuario_id: number
   usuario_nombre?: string | null
   fecha: string
@@ -432,11 +458,33 @@ export type CompraSolicitudActualizar = {
   items?: CompraItemCrear[]
 }
 
+export type CompraConstructorItem = CompraItemCrear & {
+  nombre: string
+  cantidad_sugerida?: number
+  nivel?: string
+  motivos?: string[]
+  stock_actual?: number
+}
+
+export type CompraConstructorRespuesta = {
+  titulo: string
+  items: CompraConstructorItem[]
+  advertencias: string[]
+  modelo?: string | null
+}
+
 export type CompraComunicacionCrear = {
   proveedor_id?: number | null
   contacto_id?: number | null
   titulo?: string | null
   observaciones?: string | null
+}
+
+export type CompraComunicacionReescribirIA = {
+  canal: CompraComunicacionCanal
+  idioma: CompraComunicacionIdioma
+  nombre_contacto?: string | null
+  version_esperada: number
 }
 
 export type CompraRevalidacion = {
@@ -1786,6 +1834,13 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  construirCompraSolicitud: async (token: string, texto: string) =>
+    request<CompraConstructorRespuesta>("/compras/constructor", {
+      method: "POST",
+      token,
+      body: JSON.stringify({ texto }),
+    }),
+
   compraSolicitud: async (token: string, id: number) =>
     request<CompraSolicitud>(`/compras/solicitudes/${id}`, { token }),
 
@@ -1860,6 +1915,17 @@ export const api = {
       method: "PATCH",
       token,
       body: JSON.stringify({ contenido_editado: contenidoEditado }),
+    }),
+
+  reescribirCompraComunicacionIA: async (
+    token: string,
+    comunicacionId: number,
+    data: CompraComunicacionReescribirIA,
+  ) =>
+    request<CompraComunicacion>(`/compras/comunicaciones/${comunicacionId}/reescribir-ia`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(data),
     }),
 
   marcarCompraComunicacionCopiada: async (token: string, comunicacionId: number) =>

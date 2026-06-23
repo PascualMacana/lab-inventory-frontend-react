@@ -1,12 +1,12 @@
 import { FormEvent, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Check, ClipboardCheck, Clock, Copy, Download, FileText, PackageCheck, Plus, RefreshCw, Save, Search, Send, SlidersHorizontal, Trash2, Truck, X } from "lucide-react"
+import { Check, ClipboardCheck, Clock, Copy, Download, FileText, PackageCheck, Plus, RefreshCw, Save, Search, Send, SlidersHorizontal, Sparkles, Trash2, Truck, X } from "lucide-react"
 
 import { PageHeader } from "../components/PageHeader"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
 import { Label } from "../components/ui/label"
-import { api, type CompraComunicacion, type CompraComunicacionVersion, type CompraItem, type CompraItemCrear, type CompraPrioridad, type CompraSolicitud, type Lote, type Proveedor, type Reactivo, type ReposicionRecomendacion, type Usuario } from "../lib/api"
+import { api, type CompraComunicacion, type CompraComunicacionCanal, type CompraComunicacionIdioma, type CompraComunicacionVersion, type CompraItem, type CompraItemCrear, type CompraPrioridad, type CompraSolicitud, type Lote, type Proveedor, type Reactivo, type ReposicionRecomendacion, type Usuario } from "../lib/api"
 import { useAuth } from "../lib/auth"
 import { cn } from "../lib/utils"
 import type { LucideIcon } from "lucide-react"
@@ -154,6 +154,41 @@ function nivelClasses(nivel?: string) {
     return "bg-lab-warmTint text-lab-warmFg ring-lab-warm/40"
   }
   return "bg-lab-sageBg text-cds-supportSuccess ring-cds-supportSuccess/40"
+}
+
+const riesgoQuiebreLabels: Record<string, string> = {
+  inminente: "Quiebre inminente",
+  pedir_ya: "Pedí ya",
+}
+
+function riesgoQuiebreClasses(riesgo?: string) {
+  if (riesgo === "inminente") {
+    return "bg-lab-critTint text-cds-supportError ring-cds-supportError/40"
+  }
+  return "bg-lab-warmTint text-lab-warmFg ring-lab-warm/40"
+}
+
+// Atribuye el lead time al proveedor solo cuando es observado de ese proveedor;
+// si es mediana de la org o el default, no lo cuelga de un proveedor puntual.
+function leadTimeQuiebreLabel(recomendacion: ReposicionRecomendacion) {
+  if (recomendacion.lead_time_dias == null) {
+    return ""
+  }
+  const dias = formatNumber(recomendacion.lead_time_dias)
+  if (recomendacion.lead_time_fuente === "proveedor" && recomendacion.proveedor_reciente) {
+    return ` · ${recomendacion.proveedor_reciente} tarda ~${dias}d`
+  }
+  return ` · demora estimada ~${dias}d`
+}
+
+function leadTimeQuiebreTitle(recomendacion: ReposicionRecomendacion) {
+  if (recomendacion.lead_time_fuente === "proveedor" && recomendacion.proveedor_reciente) {
+    return `Lead time observado de ${recomendacion.proveedor_reciente} (pedido → recepción). Otro proveedor puede tardar distinto.`
+  }
+  if (recomendacion.lead_time_fuente === "organizacion") {
+    return "Lead time mediano de la organización (sin historia de este proveedor)"
+  }
+  return "Lead time estimado por defecto (sin historia de compras)"
 }
 
 function estadoClasses(estado: string) {
@@ -337,6 +372,12 @@ export function ComprasPage() {
   const [comunicacionTitulo, setComunicacionTitulo] = useState("Solicitud de cotizacion / pedido")
   const [comunicacionObservaciones, setComunicacionObservaciones] = useState("")
   const [contenidoComunicacion, setContenidoComunicacion] = useState("")
+  const [canalComunicacionIA, setCanalComunicacionIA] = useState<CompraComunicacionCanal>("email_formal")
+  const [idiomaComunicacionIA, setIdiomaComunicacionIA] = useState<CompraComunicacionIdioma>("es")
+  const [contactoComunicacionIA, setContactoComunicacionIA] = useState("")
+  const [advertenciasComunicacionIA, setAdvertenciasComunicacionIA] = useState<string[]>([])
+  const [pedidoIA, setPedidoIA] = useState("")
+  const [advertenciasConstructorIA, setAdvertenciasConstructorIA] = useState<string[]>([])
   const [recepcionDraft, setRecepcionDraft] = useState<RecepcionDraft>({ ...emptyRecepcionDraft })
   const [manual, setManual] = useState({
     busqueda: "",
@@ -462,6 +503,9 @@ export function ComprasPage() {
   const comunicacionActiva = comunicaciones.find((comunicacion) => comunicacion.id === comunicacionActivaId) ?? comunicaciones[0] ?? null
   const comunicacionActivaIdValor = comunicacionActiva?.id ?? null
   const comunicacionActivaContenido = comunicacionActiva?.contenido ?? ""
+  const comunicacionTieneCambiosSinGuardar = Boolean(
+    comunicacionActiva && contenidoComunicacion !== comunicacionActivaContenido,
+  )
   const versionesComunicacionQuery = useQuery({
     queryKey: ["compras", "comunicacion-versiones", comunicacionActivaIdValor],
     queryFn: () => api.compraComunicacionVersiones(token!, comunicacionActivaIdValor!),
@@ -580,6 +624,11 @@ export function ComprasPage() {
   }, [comunicacionActivaIdValor, comunicacionActivaContenido])
 
   useEffect(() => {
+    setContactoComunicacionIA(comunicacionActiva?.contacto_nombre ?? "")
+    setAdvertenciasComunicacionIA([])
+  }, [comunicacionActiva?.id, comunicacionActiva?.contacto_nombre])
+
+  useEffect(() => {
     setRecepcionDraft({ ...emptyRecepcionDraft })
   }, [solicitudSeleccionadaId])
 
@@ -611,6 +660,37 @@ export function ComprasPage() {
     onError: (error) => {
       setMensaje(null)
       setErrorLocal(mutationError(error, "No se pudo crear la solicitud."))
+    },
+  })
+
+  // Constructor conversacional: la IA solo arma un borrador editable; nada se guarda
+  // hasta que la persona lo confirme con el flujo normal de creación.
+  const construirMutation = useMutation({
+    mutationFn: () => api.construirCompraSolicitud(token!, pedidoIA.trim()),
+    onSuccess: (respuesta) => {
+      setErrorLocal(null)
+      setMensaje("La IA armó un borrador. Revisá los ítems y guardá cuando esté listo.")
+      // Solo piso el título si sigue siendo el placeholder por defecto.
+      setTitulo((current) =>
+        !current.trim() || current === "Reposicion de inventario" ? respuesta.titulo : current,
+      )
+      setItems((current) => [
+        ...current,
+        ...respuesta.items.map((item, index) => ({
+          ...item,
+          key: `ia-${Date.now()}-${index}`,
+          cantidad_solicitada: item.cantidad_solicitada || 1,
+          costo_unitario_estimado: item.costo_unitario_estimado ?? 0,
+          moneda: item.moneda ?? "ARS",
+        })),
+      ])
+      setAdvertenciasConstructorIA(respuesta.advertencias ?? [])
+      setPedidoIA("")
+    },
+    onError: (error) => {
+      setMensaje(null)
+      setAdvertenciasConstructorIA([])
+      setErrorLocal(mutationError(error, "No se pudo armar el borrador con IA."))
     },
   })
 
@@ -737,6 +817,34 @@ export function ComprasPage() {
     onError: (error) => {
       setMensaje(null)
       setErrorLocal(mutationError(error, "No se pudo guardar el borrador."))
+    },
+  })
+
+  const reescribirComunicacionIAMutation = useMutation({
+    mutationFn: () => api.reescribirCompraComunicacionIA(token!, comunicacionActiva!.id, {
+      canal: canalComunicacionIA,
+      idioma: idiomaComunicacionIA,
+      nombre_contacto: contactoComunicacionIA.trim() || null,
+      version_esperada: comunicacionActiva!.version_actual ?? 1,
+    }),
+    onSuccess: async (comunicacion) => {
+      setMensaje("La IA creó una nueva versión. Revisala antes de copiar o descargar.")
+      setErrorLocal(null)
+      setComunicacionActivaId(comunicacion.id)
+      setContenidoComunicacion(comunicacion.contenido)
+      setAdvertenciasComunicacionIA(comunicacion.ia_advertencias ?? [])
+      if (solicitudSeleccionada) {
+        queryClient.setQueryData<CompraSolicitud | undefined>(["compras", "solicitud", solicitudSeleccionada.id], (current) =>
+          current ? upsertComunicacion(current, comunicacion) : current,
+        )
+        await queryClient.invalidateQueries({ queryKey: ["compras", "comunicacion-versiones", comunicacion.id] })
+        await queryClient.invalidateQueries({ queryKey: ["compras", "solicitud", solicitudSeleccionada.id] })
+      }
+    },
+    onError: (error) => {
+      setMensaje(null)
+      setAdvertenciasComunicacionIA([])
+      setErrorLocal(mutationError(error, "No se pudo reescribir el borrador con IA."))
     },
   })
 
@@ -998,6 +1106,8 @@ export function ComprasPage() {
     setPrioridad("alta")
     setFechaNecesaria("")
     setNotas("")
+    setPedidoIA("")
+    setAdvertenciasConstructorIA([])
     setCreando(false)
   }
 
@@ -1010,6 +1120,8 @@ export function ComprasPage() {
     setPrioridad("alta")
     setFechaNecesaria("")
     setNotas("")
+    setPedidoIA("")
+    setAdvertenciasConstructorIA([])
     setErrorLocal(null)
     setMensaje(null)
     setCreando(true)
@@ -1054,6 +1166,11 @@ export function ComprasPage() {
     event.preventDefault()
     if (!items.length) {
       setErrorLocal("Agrega al menos un item antes de crear la solicitud.")
+      return
+    }
+    const sinUnidad = items.filter((item) => !item.unidad || !item.unidad.trim())
+    if (sinUnidad.length) {
+      setErrorLocal(`Elegí la unidad de: ${sinUnidad.map((item) => item.nombre).join(", ")}.`)
       return
     }
     if (editandoId != null) {
@@ -1312,6 +1429,24 @@ export function ComprasPage() {
                           <td className="px-4 py-3">
                             <div className="font-medium">{recomendacion.reactivo_nombre}</div>
                             <div className="mt-1 text-xs text-cds-textPlaceholder">{recomendacion.motivos.join(" · ") || "Sin motivo"}</div>
+                            {recomendacion.riesgo_quiebre === "inminente" || recomendacion.riesgo_quiebre === "pedir_ya" ? (
+                              <div
+                                className={cn("mt-2 inline-flex px-2 py-1 text-xs ring-1 ring-inset", riesgoQuiebreClasses(recomendacion.riesgo_quiebre))}
+                                title={leadTimeQuiebreTitle(recomendacion)}
+                              >
+                                {riesgoQuiebreLabels[recomendacion.riesgo_quiebre]}
+                                {recomendacion.fecha_limite_pedido ? ` · pedí antes del ${formatDate(recomendacion.fecha_limite_pedido)}` : ""}
+                                {leadTimeQuiebreLabel(recomendacion)}
+                              </div>
+                            ) : null}
+                            {recomendacion.consejo_proveedor ? (
+                              <div className="mt-1 text-xs text-cds-textSecondary">Sugerencia: {recomendacion.consejo_proveedor}</div>
+                            ) : null}
+                            {recomendacion.opciones_proveedor && recomendacion.opciones_proveedor.length > 1 ? (
+                              <div className="mt-1 text-xs text-cds-textPlaceholder">
+                                Proveedores: {recomendacion.opciones_proveedor.map((opcion) => `${opcion.proveedor_nombre} ~${formatNumber(opcion.lead_time_dias)}d${opcion.llega_a_tiempo ? " ✓" : ""}`).join(" · ")}
+                              </div>
+                            ) : null}
                             {recomendacion.compra_activa ? (
                               <div className="mt-2 inline-flex bg-lab-warmTint px-2 py-1 text-xs text-lab-warmFg ring-1 ring-inset ring-lab-warm/40">
                                 {estadoCompraActivaLabel(recomendacion.compra_activa.estado)} · {recomendacion.compra_activa.codigo}
@@ -1358,6 +1493,46 @@ export function ComprasPage() {
         <div className="space-y-6 xl:sticky xl:top-6">
           {creando || editandoId != null ? (
             <form className="space-y-6" onSubmit={submit}>
+              {editandoId == null ? (
+                <section className="border border-cds-borderSubtle bg-cds-layer01">
+                  <div className="flex items-center gap-2 border-b border-cds-borderSubtle p-4">
+                    <Sparkles size={18} aria-hidden="true" />
+                    <h2 className="text-base font-semibold">Describir el pedido</h2>
+                  </div>
+                  <div className="space-y-3 p-4">
+                    <p className="text-xs text-cds-textSecondary">
+                      Escribí lo que necesitás en lenguaje natural y la IA arma un borrador de ítems. Revisalo abajo antes de guardar.
+                    </p>
+                    <textarea
+                      id="compra-pedido-ia"
+                      className="min-h-[96px] w-full border-b border-cds-borderStrong bg-cds-field px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-cds-focus"
+                      value={pedidoIA}
+                      onChange={(event) => setPedidoIA(event.target.value)}
+                      placeholder="Ej: reponer guantes de nitrilo talle M, 5 cajas, y agar nutritivo para un par de meses"
+                    />
+                    <div className="flex justify-end">
+                      <Button
+                        type="button"
+                        size="compact"
+                        onClick={() => construirMutation.mutate()}
+                        disabled={construirMutation.isPending || !pedidoIA.trim()}
+                      >
+                        <Sparkles size={16} aria-hidden="true" />
+                        {construirMutation.isPending ? "Armando..." : "Armar borrador"}
+                      </Button>
+                    </div>
+                    {advertenciasConstructorIA.length ? (
+                      <div className="border-l-2 border-cds-supportWarning pl-3 text-xs text-cds-textSecondary">
+                        <div className="font-medium text-cds-textPrimary">Revisar antes de guardar</div>
+                        {advertenciasConstructorIA.map((advertencia) => (
+                          <div key={advertencia} className="mt-1">{advertencia}</div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                </section>
+              ) : null}
+
               <section className="border border-cds-borderSubtle bg-cds-layer01">
                 <div className="flex items-center justify-between border-b border-cds-borderSubtle p-4">
                   <div className="flex items-center gap-2">
@@ -1428,6 +1603,7 @@ export function ComprasPage() {
                               value={item.unidad ?? ""}
                               onChange={(event) => updateItem(item.key, { unidad: event.target.value })}
                             >
+                              <option value="" disabled>Elegí unidad</option>
                               {item.unidad && !unidadesOpciones.includes(item.unidad) ? (
                                 <option value={item.unidad}>{item.unidad}</option>
                               ) : null}
@@ -1442,11 +1618,28 @@ export function ComprasPage() {
                           </div>
                           <div>
                             <Label htmlFor={`${item.key}-proveedor`}>Proveedor</Label>
-                            <Input id={`${item.key}-proveedor`} value={item.proveedor_nombre ?? ""} onChange={(event) => updateItem(item.key, { proveedor_nombre: event.target.value })} />
+                            <select
+                              id={`${item.key}-proveedor`}
+                              className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-3 text-sm focus:border-b-cds-focus focus:outline-none"
+                              value={item.proveedor_nombre ?? ""}
+                              onChange={(event) => {
+                                const nombre = event.target.value
+                                const elegido = proveedores.find((proveedor) => proveedor.nombre === nombre)
+                                updateItem(item.key, { proveedor_nombre: nombre || null, proveedor_id: elegido?.id ?? null })
+                              }}
+                            >
+                              <option value="">Sin proveedor</option>
+                              {item.proveedor_nombre && !proveedores.some((proveedor) => proveedor.nombre === item.proveedor_nombre) ? (
+                                <option value={item.proveedor_nombre}>{item.proveedor_nombre} (sugerido)</option>
+                              ) : null}
+                              {proveedores.map((proveedor) => (
+                                <option key={proveedor.id} value={proveedor.nombre}>{proveedor.nombre}</option>
+                              ))}
+                            </select>
                           </div>
                           <div className="sm:col-span-2">
                             <Label htmlFor={`${item.key}-presentacion`}>Presentacion</Label>
-                            <Input id={`${item.key}-presentacion`} value={item.presentacion ?? ""} onChange={(event) => updateItem(item.key, { presentacion: event.target.value })} />
+                            <Input id={`${item.key}-presentacion`} value={item.presentacion ?? ""} placeholder="Formato comercial, ej. Frasco 500 ml, caja x 100 u" onChange={(event) => updateItem(item.key, { presentacion: event.target.value })} />
                           </div>
                           <div className="sm:col-span-2">
                             <Label htmlFor={`${item.key}-notas`}>Notas</Label>
@@ -1499,7 +1692,7 @@ export function ComprasPage() {
                   </div>
                   <div>
                     <Label htmlFor="manual-presentacion">Presentacion</Label>
-                    <Input id="manual-presentacion" value={manual.presentacion} onChange={(event) => setManual((current) => ({ ...current, presentacion: event.target.value }))} />
+                    <Input id="manual-presentacion" value={manual.presentacion} placeholder="Formato comercial, ej. Frasco 500 ml, caja x 100 u" onChange={(event) => setManual((current) => ({ ...current, presentacion: event.target.value }))} />
                   </div>
                 </div>
 
@@ -1831,7 +2024,7 @@ export function ComprasPage() {
                   ) : null}
 
                   <details className="mt-3 border-t border-cds-borderSubtle pt-3">
-                    <summary className="cursor-pointer text-[13px] text-cds-textSecondary">{comunicacionActiva ? "Editar / versiones" : "Generar borrador"}</summary>
+                    <summary className="cursor-pointer text-[13px] text-cds-textSecondary">{comunicacionActiva ? "Editar / IA / versiones" : "Generar borrador"}</summary>
                     <div className="mt-3 space-y-3">
                       <div>
                         <Label htmlFor="compra-com-titulo">Titulo</Label>
@@ -1872,6 +2065,73 @@ export function ComprasPage() {
 
                       {comunicacionActiva ? (
                         <>
+                          <div className="border border-cds-borderSubtle bg-cds-layer02 p-3">
+                            <div className="flex items-center gap-2">
+                              <Sparkles size={16} aria-hidden="true" />
+                              <span className="text-sm font-medium">Reescritura asistida</span>
+                            </div>
+                            <p className="mt-1 text-xs leading-5 text-cds-textSecondary">
+                              Ajusta tono, canal e idioma. Crea una versión nueva; no envía el mensaje ni modifica la compra.
+                            </p>
+                            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                              <label className="block">
+                                <Label htmlFor="compra-com-ia-canal">Canal</Label>
+                                <select
+                                  id="compra-com-ia-canal"
+                                  className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-3 text-sm focus:border-b-cds-focus focus:outline-none"
+                                  value={canalComunicacionIA}
+                                  onChange={(event) => setCanalComunicacionIA(event.target.value as CompraComunicacionCanal)}
+                                >
+                                  <option value="email_formal">Email formal</option>
+                                  <option value="whatsapp">WhatsApp</option>
+                                  <option value="orden_compra">Orden de compra</option>
+                                </select>
+                              </label>
+                              <label className="block">
+                                <Label htmlFor="compra-com-ia-idioma">Idioma</Label>
+                                <select
+                                  id="compra-com-ia-idioma"
+                                  className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-3 text-sm focus:border-b-cds-focus focus:outline-none"
+                                  value={idiomaComunicacionIA}
+                                  onChange={(event) => setIdiomaComunicacionIA(event.target.value as CompraComunicacionIdioma)}
+                                >
+                                  <option value="es">Español</option>
+                                  <option value="en">Inglés</option>
+                                  <option value="pt">Portugués</option>
+                                </select>
+                              </label>
+                              <div>
+                                <Label htmlFor="compra-com-ia-contacto">Nombre del contacto</Label>
+                                <Input
+                                  id="compra-com-ia-contacto"
+                                  value={contactoComunicacionIA}
+                                  onChange={(event) => setContactoComunicacionIA(event.target.value)}
+                                  placeholder="Opcional"
+                                />
+                              </div>
+                            </div>
+                            <Button
+                              type="button"
+                              size="compact"
+                              className="mt-3"
+                              onClick={() => reescribirComunicacionIAMutation.mutate()}
+                              disabled={reescribirComunicacionIAMutation.isPending || !contenidoComunicacion.trim() || comunicacionTieneCambiosSinGuardar}
+                            >
+                              <Sparkles size={16} aria-hidden="true" />
+                              {reescribirComunicacionIAMutation.isPending ? "Reescribiendo..." : "Crear versión con IA"}
+                            </Button>
+                            {comunicacionTieneCambiosSinGuardar ? (
+                              <div className="mt-2 text-xs text-cds-textSecondary">Guardá primero los cambios del editor para que la IA use esa versión.</div>
+                            ) : null}
+                            {advertenciasComunicacionIA.length ? (
+                              <div className="mt-3 border-l-2 border-cds-supportWarning pl-3 text-xs text-cds-textSecondary">
+                                <div className="font-medium text-cds-textPrimary">Revisar antes de usar</div>
+                                {advertenciasComunicacionIA.map((advertencia) => (
+                                  <div key={advertencia} className="mt-1">{advertencia}</div>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
                           <div>
                             <Label htmlFor="compra-com-contenido">Contenido revisable</Label>
                             <textarea
@@ -1907,7 +2167,7 @@ export function ComprasPage() {
                                       {version.version_numero === comunicacionActiva.version_actual ? (
                                         <span className="ml-2 bg-cds-layer02 px-2 py-0.5 text-xs text-cds-textSecondary ring-1 ring-inset ring-cds-borderSubtle">actual</span>
                                       ) : null}
-                                      <div className="mt-1 text-xs text-cds-textSecondary">{version.origen} · {formatDateTime(version.fecha)}</div>
+                                      <div className="mt-1 text-xs text-cds-textSecondary">{version.origen === "ia" ? "IA" : version.origen} · {formatDateTime(version.fecha)}</div>
                                     </div>
                                     <Button
                                       type="button"
