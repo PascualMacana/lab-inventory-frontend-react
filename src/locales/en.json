@@ -408,6 +408,9 @@
     "reposicionTareaExistente": "There is already an open task for this reagent.",
     "reposicionVerTarea": "View task",
     "reposicionTareaError": "Could not create the replenishment task.",
+    "quiebreInminente": "Stockout imminent",
+    "quiebrePedirYa": "Order now",
+    "quiebreAntesDel": "order before {{fecha}}",
     "reposicionNivel": {
       "urgente": "Urgent",
       "atencion": "Attention",

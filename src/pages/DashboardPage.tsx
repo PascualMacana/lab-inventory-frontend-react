@@ -203,6 +203,25 @@ function diasStockLabel(value: number | null | undefined, t: ReturnType<typeof u
   return t("dashboard.reposicionDiasStock", { dias: formatValue(value) })
 }
 
+function riesgoQuiebreToneClasses(riesgo?: string) {
+  if (riesgo === "inminente") {
+    return "bg-lab-critTint text-cds-supportError ring-1 ring-cds-supportError/40"
+  }
+  return "bg-lab-warmTint text-lab-warmFg ring-1 ring-lab-warm/40"
+}
+
+function formatFechaCorta(value?: string | null) {
+  if (!value) {
+    return ""
+  }
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value)
+  const date = match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return new Intl.DateTimeFormat("es-AR", { day: "2-digit", month: "short" }).format(date)
+}
+
 function TipoIcon({ tipo }: { tipo: "entrada" | "salida" | "ajuste" | null }) {
   if (tipo === "entrada") {
     return <ArrowUpCircle size={14} aria-hidden="true" />
@@ -364,14 +383,17 @@ export function DashboardPage() {
     return out
   }, [porVencer30, stockBajo, vencidos, t])
 
-  // Stock bajo: rows with positive stock and a replenishment signal. If there is
-  // no recent use, the bar falls back to current stock vs configured minimum.
+  // Stock bajo: rows actually heading toward a stockout. Below minimum but with
+  // no recent use is left out on purpose — nothing is draining it, so on a glance
+  // bar it is just noise. Keep what is being consumed (running low, or below
+  // minimum *with* consumption).
   const quiebreData = useMemo(() => {
     const horizonte = reposicionQuery.data?.parametros.dias ?? 30
     const conSenal = horizonteStock.filter((row) => {
       const stockAlcanzaPoco = row.motivos.includes("stock_alcanza_pocos_dias")
       const bajoMinimo = row.motivos.includes("bajo_stock_minimo")
-      return row.stock_actual > 0 && (stockAlcanzaPoco || bajoMinimo)
+      const tieneConsumo = row.dias_stock_estimado != null
+      return row.stock_actual > 0 && (stockAlcanzaPoco || (bajoMinimo && tieneConsumo))
     })
     const maxDias = Math.max(
       horizonte,
@@ -599,6 +621,12 @@ export function DashboardPage() {
                           {t(`dashboard.reposicionNivel.${item.nivel}`, { defaultValue: item.nivel })}
                         </span>
                       </div>
+                      {item.riesgo_quiebre === "inminente" || item.riesgo_quiebre === "pedir_ya" ? (
+                        <div className={cn("mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-medium", riesgoQuiebreToneClasses(item.riesgo_quiebre))}>
+                          {item.riesgo_quiebre === "inminente" ? t("dashboard.quiebreInminente") : t("dashboard.quiebrePedirYa")}
+                          {item.fecha_limite_pedido ? ` · ${t("dashboard.quiebreAntesDel", { fecha: formatFechaCorta(item.fecha_limite_pedido) })}` : ""}
+                        </div>
+                      ) : null}
                       <div className="mt-3 grid grid-cols-3 gap-2 font-mono text-[11px]">
                         <div>
                           <div className="text-cds-textSecondary">{t("dashboard.reposicionStock")}</div>
@@ -615,7 +643,10 @@ export function DashboardPage() {
                       </div>
                       <div className="mt-3 flex items-center gap-2 text-xs text-cds-textSecondary">
                         <ShoppingCart size={13} aria-hidden="true" />
-                        <span className="truncate">{item.proveedor_reciente || t("dashboard.reposicionSinProveedor")}</span>
+                        <span className="truncate">
+                          {item.proveedor_reciente || t("dashboard.reposicionSinProveedor")}
+                          {item.lead_time_dias != null ? ` · ~${formatValue(item.lead_time_dias)}d` : ""}
+                        </span>
                       </div>
                       {puedeCrearTarea ? (
                         <Button

@@ -408,6 +408,9 @@
     "reposicionTareaExistente": "Ya hay una tarea abierta para este reactivo.",
     "reposicionVerTarea": "Ver tarea",
     "reposicionTareaError": "No se pudo crear la tarea de reposición.",
+    "quiebreInminente": "Quiebre inminente",
+    "quiebrePedirYa": "Pedí ya",
+    "quiebreAntesDel": "pedí antes del {{fecha}}",
     "reposicionNivel": {
       "urgente": "Urgente",
       "atencion": "Atención",
