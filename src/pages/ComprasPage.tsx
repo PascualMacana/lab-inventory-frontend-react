@@ -10,6 +10,7 @@ import { Input } from "../components/ui/input"
 import { Label } from "../components/ui/label"
 import { api, type CompraComunicacion, type CompraComunicacionCanal, type CompraComunicacionIdioma, type CompraComunicacionVersion, type CompraItem, type CompraItemCrear, type CompraPrioridad, type CompraSolicitud, type Lote, type Proveedor, type Reactivo, type ReposicionRecomendacion, type TareaPendienteCompra, type Usuario } from "../lib/api"
 import { useAuth } from "../lib/auth"
+import { puede } from "../lib/permissions"
 import { cn } from "../lib/utils"
 import type { LucideIcon } from "lucide-react"
 
@@ -359,7 +360,7 @@ function accionSiguiente(estado: string, entrega?: string | null): AccionSiguien
 }
 
 export function ComprasPage() {
-  const { token } = useAuth()
+  const { token, usuario } = useAuth()
   const queryClient = useQueryClient()
   const [dias, setDias] = useState(30)
   const [titulo, setTitulo] = useState("Reposicion de inventario")
@@ -415,17 +416,24 @@ export function ComprasPage() {
   const [tab, setTab] = useState<"solicitudes" | "armar">("solicitudes")
 
   const [searchParams, setSearchParams] = useSearchParams()
+  const puedeCrear = puede(usuario, "crear_solicitud_compra")
+  const puedeEditarTodas = puede(usuario, "editar_solicitud_compra")
+  const puedeEditarPropia = puede(usuario, "editar_solicitud_compra_propia")
+  const puedeAprobar = puede(usuario, "aprobar_solicitud_compra")
+  const puedePrepararComunicacion = puede(usuario, "preparar_comunicacion_compra")
+  const puedeRegistrarRecepcion = puede(usuario, "registrar_recepcion_compra")
+  const puedeVerCostos = puede(usuario, "ver_costos_compra")
 
   const sugerenciasQuery = useQuery({
     queryKey: ["compras", "sugerencias", dias],
     queryFn: () => api.comprasSugerencias(token!, dias, 20),
-    enabled: Boolean(token),
+    enabled: Boolean(token) && puedeCrear,
   })
 
   const tareasPendientesQuery = useQuery({
     queryKey: ["compras", "tareas-pendientes", dias],
     queryFn: () => api.comprasTareasPendientes(token!, dias),
-    enabled: Boolean(token),
+    enabled: Boolean(token) && puedeCrear,
   })
 
   const solicitudesQuery = useQuery({
@@ -511,7 +519,7 @@ export function ComprasPage() {
   const proveedoresQuery = useQuery({
     queryKey: ["compras", "proveedores"],
     queryFn: () => api.proveedores(token!, true),
-    enabled: Boolean(token),
+    enabled: Boolean(token) && (puedePrepararComunicacion || puedeVerCostos),
   })
 
   const usuariosQuery = useQuery({
@@ -535,7 +543,7 @@ export function ComprasPage() {
   const versionesComunicacionQuery = useQuery({
     queryKey: ["compras", "comunicacion-versiones", comunicacionActivaIdValor],
     queryFn: () => api.compraComunicacionVersiones(token!, comunicacionActivaIdValor!),
-    enabled: Boolean(token) && comunicacionActivaIdValor != null,
+    enabled: Boolean(token) && puedePrepararComunicacion && comunicacionActivaIdValor != null,
   })
   const versionesComunicacion = versionesComunicacionQuery.data ?? emptyComunicacionVersiones
   const itemRecepcion = solicitudSeleccionada?.items?.find((item) => item.id === recepcionDraft.itemId) ?? null
@@ -548,7 +556,7 @@ export function ComprasPage() {
   const lotesRecepcionQuery = useQuery({
     queryKey: ["compras", "lotes-recepcion", recepcionDraft.itemId, busquedaRecepcionApi],
     queryFn: () => api.lotes(token!, busquedaRecepcionApi, false),
-    enabled: Boolean(token) && recepcionDraft.itemId != null && busquedaRecepcionApi.length >= 2,
+    enabled: Boolean(token) && puedeRegistrarRecepcion && recepcionDraft.itemId != null && busquedaRecepcionApi.length >= 2,
   })
   const lotesRecepcion = useMemo(() => {
     const lotes = lotesRecepcionQuery.data ?? emptyLotes
@@ -592,7 +600,7 @@ export function ComprasPage() {
   const lotesReferenciaQuery = useQuery({
     queryKey: ["compras", "lotes-referencia", reactivoManual?.id ?? null, manual.busqueda],
     queryFn: () => api.lotes(token!, reactivoManual?.nombre ?? manual.busqueda, false),
-    enabled: Boolean(token) && (Boolean(reactivoManual) || manual.busqueda.trim().length >= 2),
+    enabled: Boolean(token) && puedeVerCostos && (Boolean(reactivoManual) || manual.busqueda.trim().length >= 2),
   })
 
   const lotesReferencia = useMemo(() => {
@@ -1247,6 +1255,26 @@ export function ComprasPage() {
     setTab("solicitudes")
   }
 
+  function puedeEditarSolicitud(solicitud: CompraSolicitud) {
+    return puedeEditarTodas || (puedeEditarPropia && solicitud.solicitado_por === usuario?.id)
+  }
+
+  function puedeEjecutarAccion(
+    solicitud: CompraSolicitud,
+    accion: "enviar" | "aprobar" | "pedido" | "en_camino" | "recepcion",
+  ) {
+    if (accion === "enviar") {
+      return puedeCrear && puedeEditarSolicitud(solicitud)
+    }
+    if (accion === "aprobar") {
+      return puedeAprobar
+    }
+    if (accion === "pedido" || accion === "en_camino") {
+      return puedePrepararComunicacion
+    }
+    return puedeRegistrarRecepcion
+  }
+
   function ejecutarWorkflow(accion: "enviar" | "aprobar" | "rechazar" | "cambios" | "cancelar" | "pedido" | "en_camino") {
     if (!solicitudSeleccionada) {
       return
@@ -1301,10 +1329,10 @@ export function ComprasPage() {
         description="Solicitudes internas creadas desde reposicion sugerida o necesidades manuales."
         plain
         action={
-          <Button type="button" onClick={iniciarNuevaSolicitud}>
+          puedeCrear ? <Button type="button" onClick={iniciarNuevaSolicitud}>
             <Plus size={18} aria-hidden="true" />
             Nueva solicitud
-          </Button>
+          </Button> : undefined
         }
       />
 
@@ -1315,7 +1343,7 @@ export function ComprasPage() {
       <ModuleNav
         actions={[
           { label: "Solicitudes", onClick: () => setTab("solicitudes"), icon: <FileText size={18} aria-hidden="true" />, variant: tab === "solicitudes" ? "primary" : "secondary" },
-          { label: "Armar pedido", onClick: () => setTab("armar"), icon: <Plus size={18} aria-hidden="true" />, variant: tab === "armar" ? "primary" : "secondary" },
+          ...(puedeCrear ? [{ label: "Armar pedido", onClick: () => setTab("armar"), icon: <Plus size={18} aria-hidden="true" />, variant: tab === "armar" ? "primary" as const : "secondary" as const }] : []),
         ]}
       />
 
@@ -1497,7 +1525,7 @@ export function ComprasPage() {
                         <div className="mt-1 text-[12.5px] text-cds-textPlaceholder">{submeta}</div>
                       </div>
                       <div className="whitespace-nowrap text-right">
-                        <div className="font-mono text-[15px]">{formatMoney(solicitud.costo_total_estimado, "ARS")}</div>
+                        {puedeVerCostos ? <div className="font-mono text-[15px]">{formatMoney(solicitud.costo_total_estimado, "ARS")}</div> : null}
                         <div className="mt-1 text-[12px] text-cds-textPlaceholder">{solicitud.items_count ?? 0} item(s)</div>
                       </div>
                     </button>
@@ -1759,7 +1787,7 @@ export function ComprasPage() {
               <section className="border border-cds-borderSubtle bg-cds-layer01">
                 <div className="flex items-center justify-between border-b border-cds-borderSubtle p-4">
                   <h2 className="text-base font-semibold">Items seleccionados</h2>
-                  <div className="text-sm text-cds-textSecondary">Total: {formatMoney(totalEstimado)}</div>
+                  {puedeVerCostos ? <div className="text-sm text-cds-textSecondary">Total: {formatMoney(totalEstimado)}</div> : null}
                 </div>
                 <div className="space-y-3 p-4">
                   {items.length ? (
@@ -1799,10 +1827,10 @@ export function ComprasPage() {
                               ))}
                             </select>
                           </div>
-                          <div>
+                          {puedeVerCostos ? <div>
                             <Label htmlFor={`${item.key}-costo`}>Costo unitario</Label>
                             <Input id={`${item.key}-costo`} type="number" min="0" step="any" value={item.costo_unitario_estimado ?? 0} onChange={(event) => updateItem(item.key, { costo_unitario_estimado: Number(event.target.value) })} />
-                          </div>
+                          </div> : null}
                           <div>
                             <Label htmlFor={`${item.key}-proveedor`}>Proveedor</Label>
                             <select
@@ -1873,10 +1901,10 @@ export function ComprasPage() {
                       ))}
                     </select>
                   </div>
-                  <div>
+                  {puedeVerCostos ? <div>
                     <Label htmlFor="manual-costo">Costo unitario</Label>
                     <Input id="manual-costo" type="number" min="0" step="any" value={manual.costo} onChange={(event) => setManual((current) => ({ ...current, costo: event.target.value }))} />
-                  </div>
+                  </div> : null}
                   <div>
                     <Label htmlFor="manual-presentacion">Presentacion</Label>
                     <Input id="manual-presentacion" value={manual.presentacion} placeholder="Formato comercial, ej. Frasco 500 ml, caja x 100 u" onChange={(event) => setManual((current) => ({ ...current, presentacion: event.target.value }))} />
@@ -1909,7 +1937,7 @@ export function ComprasPage() {
                         )}
                       </div>
                     </div>
-                    <div className="border border-cds-borderSubtle bg-cds-layer02 p-3">
+                    {puedeVerCostos ? <div className="border border-cds-borderSubtle bg-cds-layer02 p-3">
                       <div className="text-xs font-medium uppercase tracking-[0.32px] text-cds-textSecondary">Precios historicos</div>
                       <div className="mt-2 space-y-2">
                         {lotesReferencia.length ? (
@@ -1939,7 +1967,7 @@ export function ComprasPage() {
                           <div className="text-sm text-cds-textSecondary">Sin lotes con costo cargado.</div>
                         )}
                       </div>
-                    </div>
+                    </div> : null}
                   </div>
                 ) : null}
 
@@ -1980,7 +2008,7 @@ export function ComprasPage() {
                     {solicitudSeleccionada.fecha_necesaria ? <span>· necesaria {formatDate(solicitudSeleccionada.fecha_necesaria)}</span> : null}
                     {solicitudSeleccionada.fecha_pedido ? <span>· pedido {formatDate(solicitudSeleccionada.fecha_pedido)}</span> : null}
                   </div>
-                  {["borrador", "cambios_solicitados"].includes(solicitudSeleccionada.estado) ? (
+                  {puedeEditarSolicitud(solicitudSeleccionada) && ["borrador", "cambios_solicitados"].includes(solicitudSeleccionada.estado) ? (
                     <Button type="button" size="compact" variant="secondary" className="mt-3" onClick={() => cargarSolicitudParaEditar(solicitudSeleccionada)}>Editar</Button>
                   ) : null}
                 </div>
@@ -1995,6 +2023,9 @@ export function ComprasPage() {
                     const next = accionSiguiente(solicitudSeleccionada.estado, solicitudSeleccionada.estado_entrega)
                     if (!next) {
                       return <div className="text-[13px] text-cds-textSecondary">Sin acciones pendientes para esta solicitud.</div>
+                    }
+                    if (!puedeEjecutarAccion(solicitudSeleccionada, next.accion)) {
+                      return <div className="text-[13px] text-cds-textSecondary">El seguimiento continúa con el rol responsable de esta etapa.</div>
                     }
                     const NextIcon = next.icon
                     const requiereFecha = next.accion === "pedido" || next.accion === "en_camino"
@@ -2033,18 +2064,18 @@ export function ComprasPage() {
                     )
                   })()}
 
-                  {["borrador", "pendiente_aprobacion", "cambios_solicitados", "aprobada", "recibida_parcial"].includes(solicitudSeleccionada.estado) ? (
+                  {(puedeEditarSolicitud(solicitudSeleccionada) || puedeAprobar) && ["borrador", "pendiente_aprobacion", "cambios_solicitados", "aprobada", "recibida_parcial"].includes(solicitudSeleccionada.estado) ? (
                     <details className="mt-3 border-t border-cds-borderSubtle pt-3">
                       <summary className="cursor-pointer text-[13px] text-cds-textSecondary">Más acciones</summary>
                       <div className="mt-3 space-y-3">
-                        {solicitudSeleccionada.estado === "pendiente_aprobacion" ? (
+                        {puedeAprobar && solicitudSeleccionada.estado === "pendiente_aprobacion" ? (
                           <div>
                             <Label htmlFor="compra-workflow-motivo">Motivo</Label>
                             <Input id="compra-workflow-motivo" value={motivoWorkflow} onChange={(event) => setMotivoWorkflow(event.target.value)} placeholder="Requerido para rechazar o pedir cambios" />
                           </div>
                         ) : null}
                         <div className="flex flex-wrap gap-2">
-                          {solicitudSeleccionada.estado === "pendiente_aprobacion" ? (
+                          {puedeAprobar && solicitudSeleccionada.estado === "pendiente_aprobacion" ? (
                             <>
                               <Button type="button" size="compact" variant="secondary" onClick={() => ejecutarWorkflow("cambios")} disabled={workflowMutation.isPending}>Pedir cambios</Button>
                               <Button type="button" size="compact" variant="danger" onClick={() => ejecutarWorkflow("rechazar")} disabled={workflowMutation.isPending}>
@@ -2053,7 +2084,9 @@ export function ComprasPage() {
                               </Button>
                             </>
                           ) : null}
-                          <Button type="button" size="compact" variant="secondary" onClick={() => ejecutarWorkflow("cancelar")} disabled={workflowMutation.isPending}>Cancelar solicitud</Button>
+                          {puedeEditarSolicitud(solicitudSeleccionada) ? (
+                            <Button type="button" size="compact" variant="secondary" onClick={() => ejecutarWorkflow("cancelar")} disabled={workflowMutation.isPending}>Cancelar solicitud</Button>
+                          ) : null}
                         </div>
                       </div>
                     </details>
@@ -2071,7 +2104,7 @@ export function ComprasPage() {
                     const pendiente = cantidadPendienteItem(item)
                     const recibido = Number(item.cantidad_recibida ?? 0)
                     const recepcionActiva = recepcionDraft.itemId === item.id
-                    const puedeRecibir =
+                    const puedeRecibir = puedeRegistrarRecepcion &&
                       ["aprobada", "recibida_parcial"].includes(solicitudSeleccionada.estado) &&
                       ["aprobado", "recibido_parcial"].includes(item.estado) &&
                       pendiente > 0
@@ -2090,7 +2123,7 @@ export function ComprasPage() {
                           </div>
                           <div className="whitespace-nowrap text-right">
                             <div className="font-mono text-[13.5px]">{formatNumber(item.cantidad_solicitada)} {item.unidad}</div>
-                            <div className="mt-1 font-mono text-[12px] text-cds-textPlaceholder">{formatMoney(Number(item.cantidad_solicitada) * Number(item.costo_unitario_estimado), item.moneda ?? "ARS")}</div>
+                            {puedeVerCostos ? <div className="mt-1 font-mono text-[12px] text-cds-textPlaceholder">{formatMoney(Number(item.cantidad_solicitada) * Number(item.costo_unitario_estimado), item.moneda ?? "ARS")}</div> : null}
                             {puedeRecibir && !recepcionActiva ? (
                               <Button type="button" size="compact" variant="secondary" className="mt-1.5" onClick={() => abrirRecepcion(item)}>
                                 <Check size={14} aria-hidden="true" />
@@ -2175,13 +2208,13 @@ export function ComprasPage() {
                     )
                   })}
                 </div>
-                <div className="flex items-center justify-between bg-cds-layer01 px-[18px] py-[15px]">
+                {puedeVerCostos ? <div className="flex items-center justify-between bg-cds-layer01 px-[18px] py-[15px]">
                   <span className="text-[13px] tracking-[0.16px] text-cds-textSecondary">Total estimado</span>
                   <span className="font-mono text-[18px] font-semibold">{formatMoney(solicitudSeleccionada.costo_total_estimado, "ARS")}</span>
-                </div>
+                </div> : null}
               </section>
 
-              {["aprobada", "recibida_parcial"].includes(solicitudSeleccionada.estado) || comunicaciones.length ? (
+              {puedePrepararComunicacion && (["aprobada", "recibida_parcial"].includes(solicitudSeleccionada.estado) || comunicaciones.length) ? (
                 <section className="border border-cds-borderSubtle bg-cds-layer01 px-[18px] py-4">
                   <div className="mb-2.5 flex items-center justify-between">
                     <h2 className="text-[15px] font-semibold">Comunicación al proveedor</h2>
