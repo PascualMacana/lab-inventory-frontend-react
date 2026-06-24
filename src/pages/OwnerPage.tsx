@@ -833,6 +833,7 @@ function AsistenteEventosPanel({
             <option value="vision">{t("owner.origen.vision")}</option>
             <option value="matching">{t("owner.origen.matching")}</option>
             <option value="importacion">{t("owner.origen.importacion")}</option>
+            <option value="compras">{t("owner.origen.compras")}</option>
           </select>
         </label>
         <label className="block">
@@ -850,6 +851,7 @@ function AsistenteEventosPanel({
             <option value="vision">{t("owner.modo.vision")}</option>
             <option value="matching">{t("owner.modo.matching")}</option>
             <option value="importacion">{t("owner.modo.importacion")}</option>
+            <option value="compras">{t("owner.modo.compras")}</option>
             <option value="error">{t("owner.modo.error")}</option>
           </select>
         </label>

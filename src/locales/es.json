@@ -846,13 +846,15 @@
       "vision": "Visión",
       "matching": "Matching",
       "importacion": "Importación",
+      "compras": "Compras",
       "error": "Error"
     },
     "origen": {
       "asistente": "Chat",
       "vision": "Visión",
       "matching": "Matching",
-      "importacion": "Importación"
+      "importacion": "Importación",
+      "compras": "Compras"
     },
     "modulo": {
       "dashboard": "Dashboard",
