@@ -1,7 +1,7 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import type { ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { AlertTriangle, ArrowDownCircle, ArrowUpCircle, BrainCircuit, ClipboardPlus, FileSignature, ShoppingCart, SlidersHorizontal } from "lucide-react"
+import { AlertTriangle, ArrowDownCircle, ArrowUpCircle, BellOff, BrainCircuit, ClipboardPlus, FileSignature, RotateCcw, ShoppingCart, SlidersHorizontal } from "lucide-react"
 import { Link } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 
@@ -284,6 +284,32 @@ export function DashboardPage() {
     },
   })
 
+  // Silenciar sugerencias de reposición (jefe): saca de la lista un reactivo que
+  // ya no se usa. Es silencio inteligente; reaparece solo si vuelve a consumirse.
+  const puedeSilenciar = puede(usuario, "editar_reactivo")
+  const [verSilenciados, setVerSilenciados] = useState(false)
+  const silenciadosQuery = useQuery({
+    queryKey: ["reposicion-silenciados"],
+    queryFn: () => api.reposicionSilenciados(token!),
+    enabled: Boolean(token) && puedeSilenciar,
+  })
+  const silenciados = silenciadosQuery.data ?? []
+  async function refrescarReposicion() {
+    await queryClient.invalidateQueries({ queryKey: ["dashboard-reposicion"] })
+    await queryClient.invalidateQueries({ queryKey: ["reposicion-silenciados"] })
+    // El silencio total también saca el reactivo del "Stock bajo" (alertas + KPI),
+    // que sale del resumen principal.
+    await queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+  }
+  const silenciarMutation = useMutation({
+    mutationFn: (reactivoId: number) => api.silenciarReposicion(token!, reactivoId),
+    onSuccess: refrescarReposicion,
+  })
+  const reactivarMutation = useMutation({
+    mutationFn: (reactivoId: number) => api.reactivarReposicion(token!, reactivoId),
+    onSuccess: refrescarReposicion,
+  })
+
   const data = dashboardQuery.data ?? {}
   const series = dashboardSeriesQuery.data?.puntos ?? emptySeries
   const contadores = data.contadores ?? {}
@@ -550,8 +576,55 @@ export function DashboardPage() {
               <BrainCircuit size={15} aria-hidden="true" />
               {t("dashboard.reposicionTitulo")}
             </span>
-            <span>{t("dashboard.reposicionVentana", { dias: reposicionQuery.data?.parametros.dias ?? 30 })}</span>
+            <span className="inline-flex items-center gap-3">
+              {puedeSilenciar && silenciados.length ? (
+                <button
+                  type="button"
+                  onClick={() => setVerSilenciados((v) => !v)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 uppercase tracking-[0.32px] transition-colors",
+                    verSilenciados ? "bg-cds-layer02 text-cds-textPrimary" : "text-cds-textSecondary hover:text-cds-textPrimary",
+                  )}
+                >
+                  <BellOff size={13} aria-hidden="true" />
+                  {t("dashboard.reposicionVerSilenciados", { n: silenciados.length })}
+                </button>
+              ) : null}
+              <span>{t("dashboard.reposicionVentana", { dias: reposicionQuery.data?.parametros.dias ?? 30 })}</span>
+            </span>
           </header>
+
+          {puedeSilenciar && verSilenciados && silenciados.length ? (
+            <div className="mb-3 border border-cds-borderSubtle bg-cds-layer01 p-3">
+              <div className="mb-2 font-mono text-[11px] uppercase tracking-[0.32px] text-cds-textSecondary">
+                {t("dashboard.reposicionSilenciadosTitulo")}
+              </div>
+              <ul className="divide-y divide-cds-borderSubtle">
+                {silenciados.map((s) => (
+                  <li key={s.id} className="flex items-center justify-between gap-3 py-2">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm text-cds-textPrimary">{s.reactivo_nombre}</div>
+                      <div className="mt-0.5 truncate text-xs text-cds-textSecondary">
+                        {s.motivo ? `${s.motivo} · ` : ""}
+                        {s.silenciado_por_nombre ? t("dashboard.reposicionSilenciadoMeta", { nombre: s.silenciado_por_nombre }) : ""}
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="compact"
+                      className="h-8 shrink-0 gap-1.5"
+                      disabled={reactivarMutation.isPending}
+                      onClick={() => reactivarMutation.mutate(s.reactivo_id)}
+                    >
+                      <RotateCcw size={13} aria-hidden="true" />
+                      {t("dashboard.reposicionReactivar")}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           {reposicionQuery.isError ? (
             <div className="border-l-2 border-cds-supportError bg-lab-critTint px-4 py-3 text-sm">
               {t("dashboard.reposicionError")}
@@ -660,6 +733,18 @@ export function DashboardPage() {
                           <ClipboardPlus size={14} aria-hidden="true" />
                           {crearTareaReposicionMutation.isPending ? t("dashboard.reposicionCreandoTarea") : t("dashboard.reposicionCrearTarea")}
                         </Button>
+                      ) : null}
+                      {puedeSilenciar && item.riesgo_quiebre === "sin_consumo" ? (
+                        <button
+                          type="button"
+                          title={t("dashboard.reposicionSilenciarTitulo")}
+                          disabled={silenciarMutation.isPending}
+                          onClick={() => silenciarMutation.mutate(item.reactivo_id)}
+                          className="mt-2 inline-flex w-full items-center justify-center gap-1.5 text-xs text-cds-textSecondary transition-colors hover:text-cds-textPrimary disabled:opacity-50"
+                        >
+                          <BellOff size={13} aria-hidden="true" />
+                          {t("dashboard.reposicionSilenciar")}
+                        </button>
                       ) : null}
                     </article>
                   ))}

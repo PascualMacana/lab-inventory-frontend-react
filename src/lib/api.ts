@@ -43,6 +43,10 @@ export type Tarea = {
   fecha_actualizacion?: string | null
   fecha_completada?: string | null
   activo: number | boolean
+  // Puente con Compras: ítem de compra vivo más reciente que nació de esta tarea.
+  compra_codigo?: string | null
+  compra_solicitud_id?: number | null
+  compra_item_estado?: string | null
 }
 
 export type TareaCrear = {
@@ -302,6 +306,7 @@ export type CompraItem = {
   solicitud_id: number
   reactivo_id?: number | null
   reactivo_nombre?: string | null
+  tarea_id?: number | null
   descripcion_manual?: string | null
   origen: "reposicion" | "manual"
   estado: string
@@ -428,6 +433,7 @@ export type CompraSolicitud = {
 export type CompraItemCrear = {
   origen: "reposicion" | "manual"
   reactivo_id?: number | null
+  tarea_id?: number | null
   descripcion_manual?: string | null
   dias_reposicion?: number
   cantidad_solicitada: number
@@ -515,6 +521,35 @@ export type ReposicionTareaResponse = {
   tarea: Tarea
   recomendacion: ReposicionRecomendacion
   creada: boolean
+}
+
+// Silencio de sugerencias de reposición (reactivos que ya no se usan).
+export type ReposicionSilenciado = {
+  id: number
+  reactivo_id: number
+  reactivo_nombre: string
+  unidad: string
+  motivo?: string | null
+  fecha_silenciado: string
+  silenciado_por: number
+  silenciado_por_nombre?: string | null
+}
+
+// Panel "Tareas de reposición pendientes" que arma el carrito desde las tareas.
+export type TareaPendienteCompra = {
+  tarea_id: number
+  titulo: string
+  prioridad: PrioridadTarea
+  fecha_limite?: string | null
+  reactivo_id: number
+  reactivo_nombre: string
+  unidad: string
+  tiene_recomendacion: boolean
+  recomendacion?: ReposicionRecomendacion | null
+}
+
+export type TareasPendientesCompraResponse = {
+  tareas: TareaPendienteCompra[]
 }
 
 export type Reactivo = {
@@ -1800,6 +1835,9 @@ export const api = {
   comprasSugerencias: async (token: string, dias = 30, limite = 10) =>
     request<DashboardReposicion>(`/compras/sugerencias?dias=${dias}&limite=${limite}`, { token }),
 
+  comprasTareasPendientes: async (token: string, dias = 30) =>
+    request<TareasPendientesCompraResponse>(`/compras/tareas-pendientes?dias=${dias}`, { token }),
+
   comprasSolicitudes: async (
     token: string,
     filtros: {
@@ -1958,6 +1996,22 @@ export const api = {
       method: "POST",
       token,
       body: JSON.stringify({ reactivo_id: reactivoId, dias, asignado_a: asignadoA ?? null }),
+    }),
+
+  reposicionSilenciados: async (token: string) =>
+    request<ReposicionSilenciado[]>("/reposicion/silenciados", { token }),
+
+  silenciarReposicion: async (token: string, reactivoId: number, motivo?: string | null) =>
+    request<ReposicionSilenciado>("/reposicion/silenciar", {
+      method: "POST",
+      token,
+      body: JSON.stringify({ reactivo_id: reactivoId, motivo: motivo ?? null }),
+    }),
+
+  reactivarReposicion: async (token: string, reactivoId: number) =>
+    request<{ reactivo_id: number; reactivados: number }>(`/reposicion/silenciar/${reactivoId}/reactivar`, {
+      method: "POST",
+      token,
     }),
 
   reactivos: async (token: string) => request<Reactivo[]>("/reactivos", { token }),

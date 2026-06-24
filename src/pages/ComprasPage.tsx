@@ -1,12 +1,14 @@
 import { FormEvent, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Check, ClipboardCheck, Clock, Copy, Download, FileText, PackageCheck, Plus, RefreshCw, Save, Search, Send, SlidersHorizontal, Sparkles, Trash2, Truck, X } from "lucide-react"
+import { useSearchParams } from "react-router-dom"
+import { Check, ClipboardCheck, ClipboardList, Clock, Copy, Download, FileText, PackageCheck, Plus, RefreshCw, Save, Search, Send, SlidersHorizontal, Sparkles, Trash2, Truck, X } from "lucide-react"
 
+import { ModuleNav } from "../components/ModuleNav"
 import { PageHeader } from "../components/PageHeader"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
 import { Label } from "../components/ui/label"
-import { api, type CompraComunicacion, type CompraComunicacionCanal, type CompraComunicacionIdioma, type CompraComunicacionVersion, type CompraItem, type CompraItemCrear, type CompraPrioridad, type CompraSolicitud, type Lote, type Proveedor, type Reactivo, type ReposicionRecomendacion, type Usuario } from "../lib/api"
+import { api, type CompraComunicacion, type CompraComunicacionCanal, type CompraComunicacionIdioma, type CompraComunicacionVersion, type CompraItem, type CompraItemCrear, type CompraPrioridad, type CompraSolicitud, type Lote, type Proveedor, type Reactivo, type ReposicionRecomendacion, type TareaPendienteCompra, type Usuario } from "../lib/api"
 import { useAuth } from "../lib/auth"
 import { cn } from "../lib/utils"
 import type { LucideIcon } from "lucide-react"
@@ -35,6 +37,7 @@ const unidadesOpciones = ["ml", "L", "g", "kg", "mg", "ug", "unidad"]
 const estadosFiltro = ["", "borrador", "pendiente_aprobacion", "cambios_solicitados", "aprobada", "recibida_parcial", "recibida", "rechazada", "cancelada"] as const
 const emptySolicitudes: CompraSolicitud[] = []
 const emptyRecomendaciones: ReposicionRecomendacion[] = []
+const emptyTareasPendientes: TareaPendienteCompra[] = []
 const emptyReactivos: Reactivo[] = []
 const emptyLotes: Lote[] = []
 const emptyProveedores: Proveedor[] = []
@@ -80,6 +83,7 @@ function toPayloadItem(item: CompraDraftItem): CompraItemCrear {
   return {
     origen: item.origen,
     reactivo_id: item.reactivo_id ?? null,
+    tarea_id: item.tarea_id ?? null,
     descripcion_manual: item.descripcion_manual ?? null,
     dias_reposicion: item.dias_reposicion,
     cantidad_solicitada: item.cantidad_solicitada,
@@ -154,6 +158,16 @@ function nivelClasses(nivel?: string) {
     return "bg-lab-warmTint text-lab-warmFg ring-lab-warm/40"
   }
   return "bg-lab-sageBg text-cds-supportSuccess ring-cds-supportSuccess/40"
+}
+
+function prioridadTareaClasses(prioridad?: string) {
+  if (prioridad === "urgente") {
+    return "bg-lab-critTint text-cds-supportError ring-cds-supportError/40"
+  }
+  if (prioridad === "alta") {
+    return "bg-lab-warmTint text-lab-warmFg ring-lab-warm/40"
+  }
+  return "bg-cds-layer02 text-cds-textSecondary ring-cds-borderSubtle"
 }
 
 const riesgoQuiebreLabels: Record<string, string> = {
@@ -267,6 +281,7 @@ function draftFromCompraItem(item: NonNullable<CompraSolicitud["items"]>[number]
     key: `compra-item-${item.id}`,
     origen: item.origen,
     reactivo_id: item.reactivo_id ?? null,
+    tarea_id: item.tarea_id ?? null,
     descripcion_manual: item.descripcion_manual ?? null,
     nombre: item.reactivo_nombre ?? item.descripcion_manual ?? `Item ${item.id}`,
     cantidad_solicitada: item.cantidad_solicitada,
@@ -394,12 +409,22 @@ export function ComprasPage() {
   const [revalidacion, setRevalidacion] = useState<string | null>(null)
   // Filtros avanzados colapsables (solo Buscar/Estado/Prioridad quedan siempre visibles).
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false)
-  // Modo constructor: la columna derecha muestra el constructor en vez del detalle.
-  const [creando, setCreando] = useState(false)
+  // Compras en dos pestañas: "solicitudes" (lista + detalle = seguimiento) y
+  // "armar" (reposición + tareas + constructor = crear). Cada una hace una sola
+  // cosa, así ninguna queda cargada y el constructor deja de pelear con el sticky.
+  const [tab, setTab] = useState<"solicitudes" | "armar">("solicitudes")
+
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const sugerenciasQuery = useQuery({
     queryKey: ["compras", "sugerencias", dias],
     queryFn: () => api.comprasSugerencias(token!, dias, 20),
+    enabled: Boolean(token),
+  })
+
+  const tareasPendientesQuery = useQuery({
+    queryKey: ["compras", "tareas-pendientes", dias],
+    queryFn: () => api.comprasTareasPendientes(token!, dias),
     enabled: Boolean(token),
   })
 
@@ -496,6 +521,7 @@ export function ComprasPage() {
   })
 
   const recomendaciones = sugerenciasQuery.data?.recomendaciones ?? emptyRecomendaciones
+  const tareasPendientes = tareasPendientesQuery.data?.tareas ?? emptyTareasPendientes
   const solicitudes = solicitudesQuery.data ?? emptySolicitudes
   const solicitudesResumen = resumenQuery.data ?? emptySolicitudes
   const solicitudSeleccionada = detalleSolicitudQuery.data ?? null
@@ -638,6 +664,13 @@ export function ComprasPage() {
     setFechaPedidoWorkflow(fechaGuardada || (puedeTenerPedido ? todayKey() : ""))
   }, [solicitudSeleccionada?.id, solicitudSeleccionada?.fecha_pedido, solicitudSeleccionada?.estado])
 
+  // El puente con Tareas: tras crear/editar/recepcionar/cancelar una compra, el
+  // panel de tareas pendientes y los badges de Tareas pueden haber cambiado.
+  async function invalidarPuenteTareas() {
+    await queryClient.invalidateQueries({ queryKey: ["compras", "tareas-pendientes"] })
+    await queryClient.invalidateQueries({ queryKey: ["tareas"] })
+  }
+
   const crearMutation = useMutation({
     mutationFn: () =>
       api.crearCompraSolicitud(token!, {
@@ -652,10 +685,11 @@ export function ComprasPage() {
       setMensaje(`Solicitud ${solicitud.codigo} creada.`)
       setErrorLocal(null)
       setItems([])
-      setCreando(false)
+      setTab("solicitudes")
       setSolicitudSeleccionadaId(solicitud.id)
       await queryClient.invalidateQueries({ queryKey: ["compras", "solicitudes"] })
       await queryClient.invalidateQueries({ queryKey: ["compras", "resumen"] })
+      await invalidarPuenteTareas()
     },
     onError: (error) => {
       setMensaje(null)
@@ -710,11 +744,12 @@ export function ComprasPage() {
       setEditandoId(null)
       setEditandoFecha(null)
       setItems([])
-      setCreando(false)
+      setTab("solicitudes")
       setSolicitudSeleccionadaId(solicitud.id)
       await queryClient.invalidateQueries({ queryKey: ["compras", "solicitudes"] })
       await queryClient.invalidateQueries({ queryKey: ["compras", "resumen"] })
       await queryClient.invalidateQueries({ queryKey: ["compras", "solicitud", solicitud.id] })
+      await invalidarPuenteTareas()
     },
     onError: (error) => {
       setMensaje(null)
@@ -766,6 +801,7 @@ export function ComprasPage() {
       await queryClient.invalidateQueries({ queryKey: ["compras", "solicitudes"] })
       await queryClient.invalidateQueries({ queryKey: ["compras", "resumen"] })
       await queryClient.invalidateQueries({ queryKey: ["compras", "solicitud", solicitud.id] })
+      await invalidarPuenteTareas()
     },
     onError: (error) => {
       setMensaje(null)
@@ -911,6 +947,7 @@ export function ComprasPage() {
       await queryClient.invalidateQueries({ queryKey: ["compras", "solicitudes"] })
       await queryClient.invalidateQueries({ queryKey: ["compras", "resumen"] })
       await queryClient.invalidateQueries({ queryKey: ["compras", "solicitud", solicitud.id] })
+      await invalidarPuenteTareas()
     },
     onError: (error) => {
       setMensaje(null)
@@ -934,7 +971,7 @@ export function ComprasPage() {
       setMensaje(`Ya existe una compra activa para ${recomendacion.reactivo_nombre}: ${recomendacion.compra_activa.codigo}.`)
       return
     }
-    setCreando(true)
+    setTab("armar")
     setItems((current) => {
       if (current.some((item) => item.origen === "reposicion" && item.reactivo_id === recomendacion.reactivo_id)) {
         return current
@@ -957,6 +994,63 @@ export function ComprasPage() {
           motivos: recomendacion.motivos,
           stock_actual: recomendacion.stock_actual,
           notas: "",
+        },
+      ]
+    })
+  }
+
+  // Vuelca una tarea de reposición al carrito. Si hay recomendación vigente, el
+  // ítem nace como reposición (con snapshot); si no, como ítem manual del reactivo.
+  // En ambos casos queda linkeado a la tarea para cerrar el ciclo al recibir.
+  function agregarTarea(tarea: TareaPendienteCompra) {
+    setErrorLocal(null)
+    setMensaje(null)
+    const recom = tarea.recomendacion
+    if (recom?.compra_activa) {
+      setMensaje(`Ya existe una compra activa para ${tarea.reactivo_nombre}: ${recom.compra_activa.codigo}.`)
+      return
+    }
+    setTab("armar")
+    setItems((current) => {
+      if (current.some((item) => item.tarea_id === tarea.tarea_id)) {
+        return current
+      }
+      if (recom) {
+        return [
+          ...current,
+          {
+            key: `tarea-${tarea.tarea_id}`,
+            origen: "reposicion",
+            reactivo_id: tarea.reactivo_id,
+            tarea_id: tarea.tarea_id,
+            dias_reposicion: dias,
+            nombre: tarea.reactivo_nombre,
+            cantidad_solicitada: recom.cantidad_sugerida || 1,
+            cantidad_sugerida: recom.cantidad_sugerida,
+            unidad: recom.unidad || tarea.unidad,
+            proveedor_nombre: recom.proveedor_reciente ?? null,
+            costo_unitario_estimado: recom.costo_unitario_reciente ?? 0,
+            moneda: "ARS",
+            nivel: recom.nivel,
+            motivos: recom.motivos,
+            stock_actual: recom.stock_actual,
+            notas: "",
+          },
+        ]
+      }
+      return [
+        ...current,
+        {
+          key: `tarea-${tarea.tarea_id}`,
+          origen: "manual",
+          reactivo_id: tarea.reactivo_id,
+          tarea_id: tarea.tarea_id,
+          nombre: tarea.reactivo_nombre,
+          cantidad_solicitada: 1,
+          unidad: tarea.unidad,
+          costo_unitario_estimado: 0,
+          moneda: "ARS",
+          notas: `Desde la tarea: ${tarea.titulo}`,
         },
       ]
     })
@@ -998,7 +1092,7 @@ export function ComprasPage() {
     const notaReferencia = loteReferencia
       ? `Precio de referencia: ${loteReferencia.codigo_interno}, ingreso ${formatDate(loteReferencia.fecha_ingreso)}, ${formatMoney(loteReferencia.costo_total)} total.`
       : ""
-    setCreando(true)
+    setTab("armar")
     setItems((current) => [
       ...current,
       {
@@ -1037,6 +1131,25 @@ export function ComprasPage() {
     setItems((current) => current.filter((item) => item.key !== key))
   }
 
+  // Entrada directa desde una tarea: /compras?tarea_id=ID abre el constructor con
+  // esa tarea ya cargada en el carrito. Limpiamos el param para no re-agregarla.
+  const tareaParam = searchParams.get("tarea_id")
+  useEffect(() => {
+    if (!tareaParam || !tareasPendientesQuery.data) {
+      return
+    }
+    const tarea = tareasPendientes.find((item) => String(item.tarea_id) === tareaParam)
+    if (tarea) {
+      agregarTarea(tarea)
+    } else {
+      setTab("armar")
+      setMensaje("Esa tarea ya no está disponible para compras (quizás ya tiene una compra en curso).")
+    }
+    searchParams.delete("tarea_id")
+    setSearchParams(searchParams, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tareaParam, tareasPendientesQuery.data])
+
   function limpiarFiltrosSolicitudes() {
     setEstadoFiltro("")
     setPrioridadFiltro("")
@@ -1065,6 +1178,7 @@ export function ComprasPage() {
     setEditandoFecha(solicitud.fecha_actualizacion ?? null)
     setErrorLocal(null)
     setMensaje(null)
+    setTab("armar")
   }
 
   function abrirRecepcion(item: CompraItem) {
@@ -1108,7 +1222,7 @@ export function ComprasPage() {
     setNotas("")
     setPedidoIA("")
     setAdvertenciasConstructorIA([])
-    setCreando(false)
+    setTab("solicitudes")
   }
 
   // Abre el constructor (columna derecha) con un draft limpio.
@@ -1124,13 +1238,13 @@ export function ComprasPage() {
     setAdvertenciasConstructorIA([])
     setErrorLocal(null)
     setMensaje(null)
-    setCreando(true)
+    setTab("armar")
   }
 
   // Selecciona una solicitud y sale del modo constructor para mostrar su detalle.
   function seleccionarSolicitud(id: number) {
     setSolicitudSeleccionadaId(id)
-    setCreando(false)
+    setTab("solicitudes")
   }
 
   function ejecutarWorkflow(accion: "enviar" | "aprobar" | "rechazar" | "cambios" | "cancelar" | "pedido" | "en_camino") {
@@ -1198,7 +1312,15 @@ export function ComprasPage() {
       {errorLocal ? <div className="mb-6 border-l-4 border-cds-supportError bg-cds-layer01 px-4 py-3 text-sm">{errorLocal}</div> : null}
       {revalidacion ? <div className="mb-6 border-l-4 border-cds-focus bg-cds-layer01 px-4 py-3 text-sm">{revalidacion}</div> : null}
 
+      <ModuleNav
+        actions={[
+          { label: "Solicitudes", onClick: () => setTab("solicitudes"), icon: <FileText size={18} aria-hidden="true" />, variant: tab === "solicitudes" ? "primary" : "secondary" },
+          { label: "Armar pedido", onClick: () => setTab("armar"), icon: <Plus size={18} aria-hidden="true" />, variant: tab === "armar" ? "primary" : "secondary" },
+        ]}
+      />
+
       {/* Tira de métricas del pipeline — clicables: setean el filtro de estado */}
+      {tab === "solicitudes" ? (
       <div className="mb-7 grid grid-cols-2 gap-3.5 sm:grid-cols-3 xl:grid-cols-5">
         <PipelineTile label="Borradores" value={pipeline.borradores} icon={FileText} onClick={() => setEstadoFiltro("borrador")} active={estadoFiltro === "borrador"} />
         <PipelineTile label="Pend. aprobación" value={pipeline.pendientes} icon={Clock} tone="warning" onClick={() => setEstadoFiltro("pendiente_aprobacion")} active={estadoFiltro === "pendiente_aprobacion"} />
@@ -1206,11 +1328,14 @@ export function ComprasPage() {
         <PipelineTile label="En camino" value={pipeline.enCamino} icon={Truck} tone="petrol" onClick={() => setEstadoFiltro("aprobada")} />
         <PipelineTile label="Recibidas (mes)" value={pipeline.recibidasMes} icon={Check} onClick={() => setEstadoFiltro("recibida")} active={estadoFiltro === "recibida"} />
       </div>
+      ) : null}
 
-      {/* Maestro-detalle: lista a la izquierda (fluida), detalle/constructor a la derecha (430px, sticky) */}
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_430px]">
-        {/* ===== IZQUIERDA: filtros + lista + reposición ===== */}
+      {/* Maestro-detalle: izquierda y derecha cambian según la pestaña activa. */}
+      <div className={cn("grid items-start gap-6", tab === "armar" ? "xl:grid-cols-[minmax(0,1fr)_560px]" : "xl:grid-cols-[minmax(0,1fr)_430px]")}>
+        {/* ===== IZQUIERDA: Solicitudes → filtros + lista · Armar → reposición + tareas ===== */}
         <div className="space-y-6">
+          {tab === "solicitudes" ? (
+          <>
           {/* Filtros: esenciales + "Más filtros" */}
           <section className="border border-cds-borderSubtle bg-cds-layer01">
             <div className="flex flex-col gap-3 border-b border-cds-borderSubtle p-4 md:flex-row md:items-end">
@@ -1340,7 +1465,7 @@ export function ComprasPage() {
             ) : solicitudes.length ? (
               <div className="divide-y divide-cds-borderSubtle">
                 {solicitudes.map((solicitud) => {
-                  const seleccionada = solicitudSeleccionadaId === solicitud.id && !creando
+                  const seleccionada = solicitudSeleccionadaId === solicitud.id
                   const prioridadAlta = solicitud.prioridad === "alta" || solicitud.prioridad === "urgente"
                   const submeta = [
                     `Creada ${formatDate(solicitud.fecha_creacion)}`,
@@ -1383,7 +1508,9 @@ export function ComprasPage() {
               <div className="p-4 text-sm text-cds-textSecondary">Todavia no hay solicitudes.</div>
             )}
           </section>
-
+          </>
+          ) : (
+          <>
           {/* Reposición sugerida */}
           <section className="border border-cds-borderSubtle bg-cds-layer01">
             <div className="flex flex-col gap-3 border-b border-cds-borderSubtle p-4 md:flex-row md:items-end md:justify-between">
@@ -1487,11 +1614,71 @@ export function ComprasPage() {
               </table>
             </div>
           </section>
+
+          {/* Tareas de reposición → carrito (cierre del ciclo Tareas ⇄ Compras) */}
+          <section className="border border-cds-borderSubtle bg-cds-layer01">
+            <div className="flex items-center gap-2 border-b border-cds-borderSubtle p-4">
+              <ClipboardList size={18} aria-hidden="true" />
+              <div>
+                <h2 className="text-base font-semibold">Tareas de reposicion pendientes</h2>
+                <p className="mt-1 text-sm text-cds-textSecondary">Volca las tareas “Reponer X” al carrito. Al recibir la compra, la tarea se completa sola.</p>
+              </div>
+            </div>
+            <div className="divide-y divide-cds-borderSubtle">
+              {tareasPendientesQuery.isLoading ? (
+                <div className="p-4 text-sm text-cds-textSecondary">Cargando tareas...</div>
+              ) : tareasPendientes.length ? (
+                tareasPendientes.map((tarea) => {
+                  const enCarrito = items.some((item) => item.tarea_id === tarea.tarea_id)
+                  const compraActiva = tarea.recomendacion?.compra_activa
+                  const bloqueada = Boolean(compraActiva)
+                  const riesgo = tarea.recomendacion?.riesgo_quiebre
+                  return (
+                    <div key={tarea.tarea_id} className="flex items-start justify-between gap-3 p-4">
+                      <div className="min-w-0">
+                        <div className="font-medium">{tarea.reactivo_nombre}</div>
+                        <div className="mt-1 text-xs text-cds-textPlaceholder">#{tarea.tarea_id} · {tarea.titulo}</div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <span className={cn("inline-flex px-2 py-1 text-xs ring-1 ring-inset", prioridadTareaClasses(tarea.prioridad))}>{tarea.prioridad}</span>
+                          {riesgo === "inminente" || riesgo === "pedir_ya" ? (
+                            <span className={cn("inline-flex px-2 py-1 text-xs ring-1 ring-inset", riesgoQuiebreClasses(riesgo))}>{riesgoQuiebreLabels[riesgo]}</span>
+                          ) : null}
+                          {!tarea.tiene_recomendacion ? (
+                            <span className="inline-flex px-2 py-1 text-xs text-cds-textSecondary ring-1 ring-inset ring-cds-borderSubtle">Sin recomendacion vigente</span>
+                          ) : null}
+                          {compraActiva ? (
+                            <span className="inline-flex bg-lab-warmTint px-2 py-1 text-xs text-lab-warmFg ring-1 ring-inset ring-lab-warm/40">
+                              {estadoCompraActivaLabel(compraActiva.estado)} · {compraActiva.codigo}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        size="compact"
+                        variant={enCarrito || bloqueada ? "secondary" : "primary"}
+                        onClick={() => agregarTarea(tarea)}
+                        disabled={enCarrito || bloqueada}
+                      >
+                        {enCarrito ? <Check size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}
+                        {enCarrito ? "Agregado" : bloqueada ? "En curso" : "Agregar"}
+                      </Button>
+                    </div>
+                  )
+                })
+              ) : (
+                <div className="p-4 text-sm text-cds-textSecondary">No hay tareas de reposicion pendientes.</div>
+              )}
+            </div>
+          </section>
+          </>
+          )}
         </div>
 
-        {/* ===== DERECHA: detalle / constructor (sticky) ===== */}
-        <div className="space-y-6 xl:sticky xl:top-6">
-          {creando || editandoId != null ? (
+        {/* ===== DERECHA: Armar → constructor (no sticky, así no se corta al scrollear)
+                            Solicitudes → detalle (sticky) ===== */}
+        <div className={cn("space-y-6", tab === "solicitudes" && "xl:sticky xl:top-6")}>
+          {tab === "armar" ? (
             <form className="space-y-6" onSubmit={submit}>
               {editandoId == null ? (
                 <section className="border border-cds-borderSubtle bg-cds-layer01">

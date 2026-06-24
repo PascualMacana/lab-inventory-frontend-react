@@ -1,8 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { CalendarClock, MessageSquarePlus, Plus, RotateCcw, Save, UserRound } from "lucide-react"
-import { Link } from "react-router-dom"
-import { useSearchParams } from "react-router-dom"
+import { CalendarClock, MessageSquarePlus, Plus, RotateCcw, Save, ShoppingCart, UserRound } from "lucide-react"
+import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 
 import { ModuleNav } from "../components/ModuleNav"
@@ -98,6 +97,7 @@ export function TareasPage() {
   const queryClient = useQueryClient()
   const puedeGestionar = puede(usuario, "gestionar_tareas")
   const puedeCrear = puede(usuario, "crear_tarea")
+  const puedeCrearCompra = puede(usuario, "crear_solicitud_compra")
   const [tab, setTab] = useState<"mis" | "equipo" | "nueva">(() => (puede(usuario, "gestionar_tareas") ? "equipo" : "mis"))
   const [estado, setEstado] = useState("")
   const [asignadoA, setAsignadoA] = useState("")
@@ -265,6 +265,7 @@ export function TareasPage() {
                 token={token!}
                 usuarios={usuarios}
                 puedeGestionar={puedeGestionar}
+                puedeCrearCompra={puedeCrearCompra}
                 onError={setErrorLocal}
                 onUpdated={refrescar}
               />
@@ -321,9 +322,16 @@ function TareasTable({ tareas, selectedId, isLoading, onSelect }: { tareas: Tare
   )
 }
 
-function TareaDetalle({ tarea, token, usuarios, puedeGestionar, onError, onUpdated }: { tarea: Tarea; token: string; usuarios: Usuario[]; puedeGestionar: boolean; onError: (message: string | null) => void; onUpdated: (message?: string) => void | Promise<void> }) {
+function TareaDetalle({ tarea, token, usuarios, puedeGestionar, puedeCrearCompra, onError, onUpdated }: { tarea: Tarea; token: string; usuarios: Usuario[]; puedeGestionar: boolean; puedeCrearCompra: boolean; onError: (message: string | null) => void; onUpdated: (message?: string) => void | Promise<void> }) {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const { t } = useTranslation()
+  // Puente con Compras: una tarea "Reponer X" (ligada a un reactivo) puede
+  // volcarse al carrito; mientras tiene una compra viva mostramos su estado.
+  const esTareaReactivo = tarea.entidad_tipo === "reactivo" && Boolean(tarea.entidad_id)
+  const tareaCerrada = tarea.estado === "completada" || tarea.estado === "cancelada"
+  const compraRecibida = tarea.compra_item_estado === "recibido"
+  const mostrarAgregarCompra = puedeCrearCompra && esTareaReactivo && !tareaCerrada && !tarea.compra_codigo
   const [comentario, setComentario] = useState("")
   const eventosQuery = useQuery({
     queryKey: ["tarea-eventos", tarea.id],
@@ -396,8 +404,31 @@ function TareaDetalle({ tarea, token, usuarios, puedeGestionar, onError, onUpdat
             {t("tareas.verLotesReactivoRelacionado")}
           </Link>
         ) : null}
+        {tarea.compra_codigo ? (
+          <Link
+            to="/compras"
+            className={cn(
+              "inline-flex w-fit items-center gap-2 px-2 py-1 text-xs ring-1 ring-inset",
+              compraRecibida
+                ? "bg-lab-sageBg text-cds-supportSuccess ring-cds-supportSuccess/40"
+                : "bg-lab-warmTint text-lab-warmFg ring-lab-warm/40",
+            )}
+          >
+            <ShoppingCart size={14} aria-hidden="true" />
+            {compraRecibida
+              ? t("tareas.compraRecibida", { codigo: tarea.compra_codigo })
+              : t("tareas.enCompra", { codigo: tarea.compra_codigo })}
+          </Link>
+        ) : null}
         {tarea.descripcion ? <p className="text-cds-textPrimary">{tarea.descripcion}</p> : null}
       </div>
+
+      {mostrarAgregarCompra ? (
+        <Button type="button" variant="secondary" className="mt-4 w-full" onClick={() => navigate(`/compras?tarea_id=${tarea.id}`)}>
+          <ShoppingCart size={18} aria-hidden="true" />
+          {t("tareas.agregarACompras")}
+        </Button>
+      ) : null}
 
       <div className="mt-5 grid gap-3">
         <label className="block">
