@@ -844,6 +844,8 @@ export type ProveedorCrear = {
   notas?: string | null
 }
 
+export type ProveedorActualizar = ProveedorCrear
+
 export type ContactoCrear = {
   nombre: string
   email?: string | null
@@ -851,6 +853,8 @@ export type ContactoCrear = {
   rol?: string | null
   notas?: string | null
 }
+
+export type ContactoActualizar = ContactoCrear
 
 export type AsistenteTurnoHistorial = {
   role: "user" | "assistant"
@@ -1133,7 +1137,7 @@ export type ProtocoloPlantillaCrear = {
 }
 
 // ── Cepario (registro biológico) ──
-export type CeparioTipo = "microorganismo" | "parte_genetica"
+export type CeparioTipo = "microorganismo" | "parte_genetica" | "linea_celular"
 export type CeparioEstado = "aislado" | "cepa" | "archivado" | "activa"
 export type CeparioViabilidad = "viable" | "requiere_repique" | "agotado_critico"
 export type GrupoOperativo = "H" | "U" | "P" | "M" | "?"
@@ -1153,6 +1157,11 @@ export type EntidadBiologica = {
   categoria?: string | null
   resistencia?: string | null
   concentracion_ng_ul?: number | null
+  // Línea celular (subset en el listado).
+  organismo?: string | null
+  tejido_origen?: string | null
+  tipo_cultivo?: string | null
+  micoplasma_estado?: string | null
   nro_viales_total: number
   viabilidad_resumen: CeparioViabilidad | null
   fecha_creacion?: string
@@ -1174,6 +1183,8 @@ export type CeparioVial = {
   viabilidad: CeparioViabilidad | null
   medio_repique: string | null
   ultimo_control: string | null
+  pasaje?: number | null
+  origen_stock_id?: number | null
   fecha_creacion?: string
   activo: number | boolean
   // Presentes al resolver por QR (JOIN con la entidad dueña).
@@ -1225,6 +1236,18 @@ export type EntidadDetalle = EntidadBiologica & {
   resistencia?: string | null
   concentracion_ng_ul?: number | null
   funcion_uso?: string | null
+  // Línea celular (set completo en el detalle).
+  organismo?: string | null
+  tejido_origen?: string | null
+  tipo_cultivo?: string | null
+  morfologia?: string | null
+  medio_recomendado?: string | null
+  ratio_split?: string | null
+  micoplasma_estado?: string | null
+  micoplasma_fecha?: string | null
+  pasaje_maximo_recomendado?: number | null
+  referencia_externa?: string | null
+  modificacion_genetica?: string | null
   stock: CeparioVial[]
   caracterizaciones: EntidadCaracterizacion[]
   eventos: CeparioEvento[]
@@ -1293,6 +1316,17 @@ export type CepEntidadCrear = {
   resistencia?: string | null
   concentracion_ng_ul?: number | null
   funcion_uso?: string | null
+  organismo?: string | null
+  tejido_origen?: string | null
+  tipo_cultivo?: string | null
+  morfologia?: string | null
+  medio_recomendado?: string | null
+  ratio_split?: string | null
+  micoplasma_estado?: string | null
+  micoplasma_fecha?: string | null
+  pasaje_maximo_recomendado?: number | null
+  referencia_externa?: string | null
+  modificacion_genetica?: string | null
 }
 
 export type CepEntidadActualizar = {
@@ -1313,6 +1347,17 @@ export type CepEntidadActualizar = {
   resistencia?: string | null
   concentracion_ng_ul?: number | null
   funcion_uso?: string | null
+  organismo?: string | null
+  tejido_origen?: string | null
+  tipo_cultivo?: string | null
+  morfologia?: string | null
+  medio_recomendado?: string | null
+  ratio_split?: string | null
+  micoplasma_estado?: string | null
+  micoplasma_fecha?: string | null
+  pasaje_maximo_recomendado?: number | null
+  referencia_externa?: string | null
+  modificacion_genetica?: string | null
 }
 
 export type CepStockCrear = {
@@ -1330,12 +1375,29 @@ export type CepStockCrear = {
   viabilidad?: CeparioViabilidad
   medio_repique?: string | null
   ultimo_control?: string | null
+  // Líneas celulares: nº de pasaje del vial y vial de origen (genealogía de pasaje).
+  pasaje?: number | null
+  origen_stock_id?: number | null
 }
 
 export type CepVialCreado = {
   stock_id: number
   codigo_interno: string
   ubicacion_posicion: string | null
+  pasaje?: number | null
+}
+
+// Genealogía de pasaje (vial→vial) de una línea celular.
+export type CepGenealogiaNodo = {
+  stock_id: number
+  codigo_interno: string
+  pasaje: number | null
+  origen_stock_id: number | null
+  activo: number | boolean
+}
+export type CepGenealogiaPasaje = {
+  entidad_id: number
+  nodos: CepGenealogiaNodo[]
 }
 
 export type CepStockCrearResultado = {
@@ -2209,6 +2271,13 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  actualizarProveedor: async (token: string, id: number, data: ProveedorActualizar) =>
+    request<{ id: number; mensaje: string }>(`/proveedores/${id}`, {
+      method: "PATCH",
+      token,
+      body: JSON.stringify(data),
+    }),
+
   desactivarProveedor: async (token: string, id: number) =>
     request<{ mensaje: string }>(`/proveedores/${id}/desactivar`, {
       method: "PATCH",
@@ -2224,6 +2293,13 @@ export const api = {
   agregarContactoProveedor: async (token: string, proveedorId: number, data: ContactoCrear) =>
     request<{ id: number; mensaje: string }>(`/proveedores/${proveedorId}/contactos`, {
       method: "POST",
+      token,
+      body: JSON.stringify(data),
+    }),
+
+  actualizarContactoProveedor: async (token: string, contactoId: number, data: ContactoActualizar) =>
+    request<{ mensaje: string }>(`/proveedores/contactos/${contactoId}`, {
+      method: "PATCH",
       token,
       body: JSON.stringify(data),
     }),
@@ -2418,6 +2494,9 @@ export const api = {
 
   ceparioEntidad: async (token: string, entidadId: number) =>
     request<EntidadDetalle>(`/cepario/entidades/${entidadId}`, { token }),
+
+  ceparioGenealogiaPasaje: async (token: string, entidadId: number) =>
+    request<CepGenealogiaPasaje>(`/cepario/entidades/${entidadId}/genealogia-pasaje`, { token }),
 
   ceparioBacdiveBuscar: async (
     token: string,

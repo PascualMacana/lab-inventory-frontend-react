@@ -19,6 +19,8 @@ import {
   type CepConsumoInventario,
   type CepEntidadActualizar,
   type CepEntidadCrear,
+  type CepGenealogiaNodo,
+  type CepGenealogiaPasaje,
   type CepMovimientoCrear,
   type CepMovimientoTipo,
   type CepReferenciaExterna,
@@ -116,6 +118,29 @@ const CAT_TOKEN: Record<string, string> = {
   gen_interes: "gen",
   terminador: "terminador",
   tag: "tag",
+}
+
+// Familias del cepario → su etiqueta i18n (tabs).
+const TIPO_KEY: Record<CeparioTipo, string> = {
+  microorganismo: "cepario.tipoMicro",
+  parte_genetica: "cepario.tipoParte",
+  linea_celular: "cepario.tipoLinea",
+}
+const TIPOS: CeparioTipo[] = ["microorganismo", "parte_genetica", "linea_celular"]
+
+// Vocabularios de línea celular (espejo de cepario.VOCABULARIOS del backend).
+const TIPOS_CULTIVO = ["adherente", "suspension", "mixto"] as const
+const CULTIVO_KEY: Record<string, string> = {
+  adherente: "cepario.cultivoAdherente",
+  suspension: "cepario.cultivoSuspension",
+  mixto: "cepario.cultivoMixto",
+}
+const MICOPLASMA = ["negativo", "positivo", "pendiente", "no_testeado"] as const
+const MICOPLASMA_KEY: Record<string, string> = {
+  negativo: "cepario.micoNegativo",
+  positivo: "cepario.micoPositivo",
+  pendiente: "cepario.micoPendiente",
+  no_testeado: "cepario.micoNoTesteado",
 }
 
 // Ensayos de la Ficha de caracterización (espejo de CAMPOS_CARACTERIZACION del
@@ -226,6 +251,25 @@ function ParteChip({ categoria }: { categoria?: string | null }) {
       }}
     >
       {t(CAT_KEY[categoria] ?? categoria)}
+    </span>
+  )
+}
+
+// Chip de familia para líneas celulares: un único tint con el acento del cepario
+// (las líneas no tienen sub-tipo como las partes; el chip solo marca la familia).
+function LineaChip() {
+  const { t } = useTranslation()
+  const v = "var(--lab-cepario)"
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium tracking-[0.16px]"
+      style={{
+        color: v,
+        backgroundColor: `color-mix(in srgb, ${v} 14%, transparent)`,
+        boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${v} 40%, transparent)`,
+      }}
+    >
+      {t("cepario.chipLinea")}
     </span>
   )
 }
@@ -430,6 +474,36 @@ function ParteCard({ entidad, onClick }: { entidad: EntidadBiologica; onClick: (
       <div>
         <div className="text-base font-medium text-cds-textPrimary">{entidad.nombre ?? ""}</div>
         {meta ? <div className="mt-[7px] font-mono text-[12.5px] text-cds-textSecondary">{meta}</div> : null}
+      </div>
+      <VialMeter n={entidad.nro_viales_total} color={stock} />
+    </button>
+  )
+}
+
+// Card de galería de una línea celular: acento por viabilidad del stock (como
+// micro), código + nombre de la línea, organismo · tipo de cultivo como meta.
+function LineaCard({ entidad, onClick }: { entidad: EntidadBiologica; onClick: () => void }) {
+  const { t } = useTranslation()
+  const stock = entidad.viabilidad_resumen ? VIA_STOCK_COLOR[entidad.viabilidad_resumen] : STOCK_VACIO
+  const meta = [
+    entidad.organismo || null,
+    entidad.tipo_cultivo ? t(CULTIVO_KEY[entidad.tipo_cultivo] ?? entidad.tipo_cultivo) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ")
+  return (
+    <button type="button" onClick={onClick} className={CARD_CLASS}>
+      <span className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: stock }} aria-hidden="true" />
+      <div className="flex items-start justify-between gap-2">
+        <span className="font-mono text-[14.5px] font-medium tracking-[0.02em] text-cds-textPrimary">{entidad.codigo ?? "—"}</span>
+        <CardEstadoBadge viabilidad={entidad.viabilidad_resumen} />
+      </div>
+      <div>
+        <div className="text-base font-medium text-cds-textPrimary">{entidad.nombre ?? ""}</div>
+        {meta ? <div className="mt-[7px] font-mono text-[12.5px] text-cds-textSecondary">{meta}</div> : null}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <LineaChip />
       </div>
       <VialMeter n={entidad.nro_viales_total} color={stock} />
     </button>
@@ -698,10 +772,133 @@ function NuevaParteForm({ pending, onSubmit }: { pending: boolean; onSubmit: (da
   )
 }
 
+// Alta de una línea celular: una sola identidad (BB-LC-NNN, estado 'activa'). Sin
+// ciclo aislado→cepa ni ensayos bacterianos; el nº de pasaje vive en el vial.
+function NuevaLineaForm({ pending, onSubmit }: { pending: boolean; onSubmit: (data: CepEntidadCrear) => void }) {
+  const { t } = useTranslation()
+  const [nombre, setNombre] = useState("")
+  const [organismo, setOrganismo] = useState("")
+  const [tejido, setTejido] = useState("")
+  const [tipoCultivo, setTipoCultivo] = useState("")
+  const [morfologia, setMorfologia] = useState("")
+  const [medio, setMedio] = useState("")
+  const [ratioSplit, setRatioSplit] = useState("")
+  const [micoplasma, setMicoplasma] = useState("")
+  const [micoplasmaFecha, setMicoplasmaFecha] = useState("")
+  const [pasajeMax, setPasajeMax] = useState("")
+  const [refExterna, setRefExterna] = useState("")
+  const [modGenetica, setModGenetica] = useState("")
+  const [procedencia, setProcedencia] = useState("adquirida")
+  const [bsl, setBsl] = useState("")
+
+  function submit(event: FormEvent) {
+    event.preventDefault()
+    const pasaje = pasajeMax.trim() ? Number(pasajeMax) : null
+    onSubmit({
+      tipo: "linea_celular",
+      nombre: nombre.trim() || null,
+      organismo: organismo.trim() || null,
+      tejido_origen: tejido.trim() || null,
+      tipo_cultivo: tipoCultivo || null,
+      morfologia: morfologia.trim() || null,
+      medio_recomendado: medio.trim() || null,
+      ratio_split: ratioSplit.trim() || null,
+      micoplasma_estado: micoplasma || null,
+      micoplasma_fecha: micoplasmaFecha.trim() || null,
+      pasaje_maximo_recomendado: pasaje != null && Number.isFinite(pasaje) ? pasaje : null,
+      referencia_externa: refExterna.trim() || null,
+      modificacion_genetica: modGenetica.trim() || null,
+      procedencia: procedencia || null,
+      nivel_bioseguridad: bsl.trim() || null,
+    })
+  }
+
+  return (
+    <form onSubmit={submit} className="max-w-2xl">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="block sm:col-span-2">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoNombre")}</span>
+          <Input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="HEK293T" />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoOrganismo")}</span>
+          <Input value={organismo} onChange={(e) => setOrganismo(e.target.value)} placeholder="Homo sapiens" />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoTejido")}</span>
+          <Input value={tejido} onChange={(e) => setTejido(e.target.value)} />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoTipoCultivo")}</span>
+          <select className={SELECT_CLASS} value={tipoCultivo} onChange={(e) => setTipoCultivo(e.target.value)}>
+            <option value="">{t("cepario.cultivoSinDef")}</option>
+            {TIPOS_CULTIVO.map((c) => (
+              <option key={c} value={c}>{t(CULTIVO_KEY[c])}</option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoMorfologia")}</span>
+          <Input value={morfologia} onChange={(e) => setMorfologia(e.target.value)} placeholder="epitelial" />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoMedioRec")}</span>
+          <Input value={medio} onChange={(e) => setMedio(e.target.value)} placeholder="DMEM + 10% FBS" />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoRatioSplit")}</span>
+          <Input value={ratioSplit} onChange={(e) => setRatioSplit(e.target.value)} placeholder="1:8" />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoMicoplasma")}</span>
+          <select className={SELECT_CLASS} value={micoplasma} onChange={(e) => setMicoplasma(e.target.value)}>
+            <option value="">{t("cepario.micoSinDef")}</option>
+            {MICOPLASMA.map((m) => (
+              <option key={m} value={m}>{t(MICOPLASMA_KEY[m])}</option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoMicoplasmaFecha")}</span>
+          <Input type="date" value={micoplasmaFecha} onChange={(e) => setMicoplasmaFecha(e.target.value)} />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoPasajeMax")}</span>
+          <Input type="number" min={0} value={pasajeMax} onChange={(e) => setPasajeMax(e.target.value)} placeholder="30" />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoProcedencia")}</span>
+          <select className={SELECT_CLASS} value={procedencia} onChange={(e) => setProcedencia(e.target.value)}>
+            <option value="adquirida">{t("cepario.procAdquirida")}</option>
+            <option value="disenada">{t("cepario.procDisenada")}</option>
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoRefExterna")}</span>
+          <Input value={refExterna} onChange={(e) => setRefExterna(e.target.value)} placeholder="ATCC CRL-3216" />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoBsl")}</span>
+          <Input value={bsl} onChange={(e) => setBsl(e.target.value)} placeholder="BSL-2" />
+        </label>
+        <label className="block sm:col-span-2">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoModGenetica")}</span>
+          <Input value={modGenetica} onChange={(e) => setModGenetica(e.target.value)} />
+        </label>
+      </div>
+      <div className="mt-6">
+        <Button type="submit" variant="primary" disabled={pending}>
+          {t("cepario.guardarLinea")}
+        </Button>
+      </div>
+    </form>
+  )
+}
+
 // Las cajas (cryoboxes) viven en el inventario (categoría "Caja criogénica"); el
 // cepario solo las lista (vía /cepario/cajas) para seleccionar al congelar y para
 // el mapa visual. No se administran desde el cepario.
-function CongelarVialesForm({ pending, onSubmit, sugerirCeldas, cajas, defaultTemperatura = "-80" }: { pending: boolean; onSubmit: (data: CepStockCrear) => void; sugerirCeldas: (cajaEquipamientoId: number, cantidad: number) => Promise<string[]>; cajas: CepCaja[]; defaultTemperatura?: string }) {
+function CongelarVialesForm({ pending, onSubmit, sugerirCeldas, cajas, defaultTemperatura = "-80", esLinea = false, viales = [] }: { pending: boolean; onSubmit: (data: CepStockCrear) => void; sugerirCeldas: (cajaEquipamientoId: number, cantidad: number) => Promise<string[]>; cajas: CepCaja[]; defaultTemperatura?: string; esLinea?: boolean; viales?: CeparioVial[] }) {
   const { t } = useTranslation()
   const [nroViales, setNroViales] = useState("1")
   const [cajaId, setCajaId] = useState("")
@@ -713,6 +910,9 @@ function CongelarVialesForm({ pending, onSubmit, sugerirCeldas, cajas, defaultTe
   const [crio, setCrio] = useState("")
   const [viabilidad, setViabilidad] = useState<CeparioViabilidad>("viable")
   const [medioRepique, setMedioRepique] = useState("")
+  // Líneas celulares: nº de pasaje de esta tanda y vial del que se expandió.
+  const [pasaje, setPasaje] = useState("")
+  const [origenStockId, setOrigenStockId] = useState("")
   const [errorForm, setErrorForm] = useState<string | null>(null)
 
   // Mientras el usuario no edite las celdas a mano, las prellenamos con las
@@ -773,6 +973,13 @@ function CongelarVialesForm({ pending, onSubmit, sugerirCeldas, cajas, defaultTe
       crioprotectante: crio.trim() || null,
       viabilidad,
       medio_repique: medioRepique.trim() || null,
+      // Pasaje y genealogía solo aplican a líneas celulares.
+      ...(esLinea
+        ? {
+            pasaje: pasaje.trim() ? Number(pasaje) : null,
+            origen_stock_id: origenStockId ? Number(origenStockId) : null,
+          }
+        : {}),
     }
     // Con celdas explícitas mandamos `posiciones` (las define una a una, sirve para
     // dispersar); sin celdas, `nro_viales` y el backend autoasigna las próximas libres.
@@ -838,6 +1045,25 @@ function CongelarVialesForm({ pending, onSubmit, sugerirCeldas, cajas, defaultTe
           <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoMedioRepique")}</span>
           <Input value={medioRepique} onChange={(e) => setMedioRepique(e.target.value)} />
         </label>
+        {esLinea ? (
+          <>
+            <label className="block">
+              <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoPasaje")}</span>
+              <Input type="number" min={0} value={pasaje} onChange={(e) => setPasaje(e.target.value)} placeholder="18" />
+            </label>
+            <label className="block sm:col-span-2">
+              <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoOrigenVial")}</span>
+              <select className={SELECT_CLASS} value={origenStockId} onChange={(e) => setOrigenStockId(e.target.value)}>
+                <option value="">{t("cepario.origenSinVial")}</option>
+                {viales.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.codigo_interno}{v.pasaje != null ? ` · P${v.pasaje}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        ) : null}
       </div>
       <div className="mt-4">
         <Button type="submit" variant="primary" size="compact" disabled={pending}>
@@ -2282,8 +2508,71 @@ function CajasView({
   )
 }
 
+// Árbol de genealogía de pasaje (vial→vial) de una línea celular. Arma la
+// jerarquía con `origen_stock_id` y la indenta por profundidad. Incluye viales
+// inactivos (descongelados) para no perder la cadena. Raíz = sin origen (o con un
+// origen que ya no está en el set).
+function NodoGenealogia({
+  nodo,
+  depth,
+  hijosDe,
+}: {
+  nodo: CepGenealogiaNodo
+  depth: number
+  hijosDe: Map<number, CepGenealogiaNodo[]>
+}) {
+  const { t } = useTranslation()
+  const hijos = hijosDe.get(nodo.stock_id) ?? []
+  const inactivo = !nodo.activo
+  return (
+    <li>
+      <div className="flex items-center gap-2 py-1" style={{ paddingLeft: depth * 18 }}>
+        {depth > 0 ? <span className="text-cds-textSecondary" aria-hidden="true">└</span> : null}
+        <span
+          className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10.5px] font-medium text-lab-cepario"
+          style={{ backgroundColor: "color-mix(in srgb, var(--lab-cepario) 14%, transparent)" }}
+        >
+          {nodo.pasaje != null ? `P${nodo.pasaje}` : "—"}
+        </span>
+        <span className={cn("font-mono text-xs", inactivo ? "text-cds-textSecondary line-through" : "text-cds-textPrimary")}>
+          {nodo.codigo_interno}
+        </span>
+        {inactivo ? <span className="text-[11px] text-cds-textSecondary">({t("cepario.vialInactivo")})</span> : null}
+      </div>
+      {hijos.length ? (
+        <ul>
+          {hijos.map((h) => (
+            <NodoGenealogia key={h.stock_id} nodo={h} depth={depth + 1} hijosDe={hijosDe} />
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  )
+}
+
+function GenealogiaPasaje({ nodos }: { nodos: CepGenealogiaNodo[] }) {
+  const idset = new Set(nodos.map((n) => n.stock_id))
+  const hijosDe = new Map<number, CepGenealogiaNodo[]>()
+  for (const n of nodos) {
+    if (n.origen_stock_id != null && idset.has(n.origen_stock_id)) {
+      const arr = hijosDe.get(n.origen_stock_id) ?? []
+      arr.push(n)
+      hijosDe.set(n.origen_stock_id, arr)
+    }
+  }
+  const raices = nodos.filter((n) => n.origen_stock_id == null || !idset.has(n.origen_stock_id))
+  return (
+    <ul>
+      {raices.map((r) => (
+        <NodoGenealogia key={r.stock_id} nodo={r} depth={0} hijosDe={hijosDe} />
+      ))}
+    </ul>
+  )
+}
+
 function CeparioDetalle({
   entidad,
+  genealogia,
   puedeStock,
   puedeDescartar,
   screening,
@@ -2316,6 +2605,7 @@ function CeparioDetalle({
   onVolver,
 }: {
   entidad: EntidadDetalle
+  genealogia: CepGenealogiaPasaje | null
   puedeStock: boolean
   puedeDescartar: boolean
   screening: ScreeningProps
@@ -2355,6 +2645,8 @@ function CeparioDetalle({
   const [archivando, setArchivando] = useState(false)
   const [motivoArchivar, setMotivoArchivar] = useState("")
   const esParte = entidad.tipo === "parte_genetica"
+  const esLinea = entidad.tipo === "linea_celular"
+  const esMicro = entidad.tipo === "microorganismo"
   const esAislado = entidad.estado === "aislado"
   const esArchivado = entidad.estado === "archivado"
   const grupoDefinido = entidad.grupo_operativo != null && entidad.grupo_operativo !== "?"
@@ -2407,7 +2699,7 @@ function CeparioDetalle({
         <span className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: acento }} aria-hidden="true" />
         <div className="flex flex-wrap items-center gap-3">
           <span className="font-mono text-3xl font-medium tracking-[0.01em] text-cds-textPrimary">{codigo}</span>
-          {esParte ? <ParteChip categoria={entidad.categoria} /> : <GrupoAvatar grupo={entidad.grupo_operativo} />}
+          {esParte ? <ParteChip categoria={entidad.categoria} /> : esLinea ? <LineaChip /> : <GrupoAvatar grupo={entidad.grupo_operativo} />}
           <EstadoPill estado={entidad.estado} />
           <ViabilidadPlano viabilidad={viabilidadResumen} />
           {entidad.nivel_bioseguridad ? (
@@ -2420,7 +2712,7 @@ function CeparioDetalle({
           <div
             className={cn(
               "mt-2.5 text-lg",
-              esParte
+              esParte || esLinea
                 ? "font-medium text-cds-textPrimary"
                 : entidad.taxon_presuntivo
                   ? "font-medium italic text-cds-textPrimary"
@@ -2449,6 +2741,42 @@ function CeparioDetalle({
                 <MetaCampo label={t("cepario.detProcedencia")}>{t(entidad.procedencia === "adquirida" ? "cepario.procAdquirida" : "cepario.procDisenada")}</MetaCampo>
               ) : null}
             </>
+          ) : esLinea ? (
+            <>
+              {entidad.organismo ? (
+                <MetaCampo label={t("cepario.detOrganismo")}>{entidad.organismo}</MetaCampo>
+              ) : null}
+              {entidad.tejido_origen ? (
+                <MetaCampo label={t("cepario.detTejido")}>{entidad.tejido_origen}</MetaCampo>
+              ) : null}
+              {entidad.tipo_cultivo ? (
+                <MetaCampo label={t("cepario.detTipoCultivo")}>{t(CULTIVO_KEY[entidad.tipo_cultivo] ?? entidad.tipo_cultivo)}</MetaCampo>
+              ) : null}
+              {entidad.morfologia ? (
+                <MetaCampo label={t("cepario.detMorfologia")}>{entidad.morfologia}</MetaCampo>
+              ) : null}
+              {entidad.medio_recomendado ? (
+                <MetaCampo label={t("cepario.detMedioRec")}>{entidad.medio_recomendado}</MetaCampo>
+              ) : null}
+              {entidad.ratio_split ? (
+                <MetaCampo label={t("cepario.detRatioSplit")} mono>{entidad.ratio_split}</MetaCampo>
+              ) : null}
+              {entidad.micoplasma_estado ? (
+                <MetaCampo label={t("cepario.detMicoplasma")}>{t(MICOPLASMA_KEY[entidad.micoplasma_estado] ?? entidad.micoplasma_estado)}</MetaCampo>
+              ) : null}
+              {entidad.pasaje_maximo_recomendado != null ? (
+                <MetaCampo label={t("cepario.detPasajeMax")} mono>{entidad.pasaje_maximo_recomendado}</MetaCampo>
+              ) : null}
+              {entidad.referencia_externa ? (
+                <MetaCampo label={t("cepario.detRefExterna")} mono>{entidad.referencia_externa}</MetaCampo>
+              ) : null}
+              {entidad.modificacion_genetica ? (
+                <MetaCampo label={t("cepario.detModGenetica")}>{entidad.modificacion_genetica}</MetaCampo>
+              ) : null}
+              {entidad.procedencia ? (
+                <MetaCampo label={t("cepario.detProcedencia")}>{t(entidad.procedencia === "adquirida" ? "cepario.procAdquirida" : "cepario.procDisenada")}</MetaCampo>
+              ) : null}
+            </>
           ) : (
             <>
               {entidad.origen_muestra ? (
@@ -2466,7 +2794,7 @@ function CeparioDetalle({
             </>
           )}
         </dl>
-        {!esParte && screening.puedeCaracterizar ? (
+        {esMicro && screening.puedeCaracterizar ? (
           <>
             <div className="mt-5">
               <Button
@@ -2494,7 +2822,7 @@ function CeparioDetalle({
         ) : null}
       </div>
 
-      {!esParte && (esAislado || esArchivado) && screening.puedePromover ? (
+      {esMicro && (esAislado || esArchivado) && screening.puedePromover ? (
         <div className="flex flex-col gap-2 border-b border-cds-borderSubtle pb-4">
           <div className="flex flex-wrap gap-2">
             {esAislado ? (
@@ -2543,7 +2871,7 @@ function CeparioDetalle({
         </div>
       ) : null}
 
-      {!esParte ? (
+      {esMicro ? (
         <BacDiveReferencias
           entidad={entidad}
           consultaInicial={consultaInicialBacdive(entidad)}
@@ -2591,6 +2919,8 @@ function CeparioDetalle({
             defaultTemperatura={esParte ? "-20" : "-80"}
             sugerirCeldas={sugerirCeldas}
             cajas={cajas}
+            esLinea={esLinea}
+            viales={entidad.stock}
             onSubmit={(data) => {
               onCongelar(data)
               setCongelando(false)
@@ -2618,7 +2948,17 @@ function CeparioDetalle({
                       <span className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: spine }} aria-hidden="true" />
                       <div className="flex flex-wrap items-start justify-between gap-4 py-4 pl-5 pr-[18px]">
                         <div className="min-w-0">
-                          <div className="font-mono text-sm font-medium text-cds-textPrimary">{vial.codigo_interno}</div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="font-mono text-sm font-medium text-cds-textPrimary">{vial.codigo_interno}</div>
+                            {vial.pasaje != null ? (
+                              <span
+                                className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10.5px] font-medium text-lab-cepario"
+                                style={{ backgroundColor: "color-mix(in srgb, var(--lab-cepario) 14%, transparent)" }}
+                              >
+                                {t("cepario.detPasaje")} {vial.pasaje}
+                              </span>
+                            ) : null}
+                          </div>
                           <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-cds-textSecondary">
                             {sinUbicacion ? (
                               <span>{t("cepario.sinUbicacion")}</span>
@@ -2708,12 +3048,25 @@ function CeparioDetalle({
         </div>
       </section>
 
+      {esLinea ? (
+        <section>
+          <h2 className="mb-3 border-b border-cds-borderSubtle pb-2 text-sm font-medium tracking-[0.16px] text-cds-textPrimary">{t("cepario.detGenealogia")}</h2>
+          {genealogia && genealogia.nodos.length ? (
+            <GenealogiaPasaje nodos={genealogia.nodos} />
+          ) : (
+            <PlacaVacia>
+              <div className="text-sm text-cds-textSecondary">{t("cepario.genealogiaVacia")}</div>
+            </PlacaVacia>
+          )}
+        </section>
+      ) : null}
+
       <section>
         <h2 className="mb-3 border-b border-cds-borderSubtle pb-2 text-sm font-medium tracking-[0.16px] text-cds-textPrimary">{t("cepario.detTimeline")}</h2>
         <Timeline eventos={entidad.eventos} />
       </section>
 
-      {!esParte ? (
+      {esMicro ? (
         <section>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-cds-borderSubtle pb-2">
             <h2 className="text-sm font-medium tracking-[0.16px] text-cds-textPrimary">{t("cepario.detCaracterizacion")}</h2>
@@ -2812,6 +3165,8 @@ export function CeparioPage() {
   const [bacdiveParches, setBacdiveParches] = useState<Record<number, CepBacdivePatch | undefined>>({})
 
   const esParteVista = tipo === "parte_genetica"
+  const esLineaVista = tipo === "linea_celular"
+  const esMicroVista = tipo === "microorganismo"
   const entidadesQuery = useQuery({
     queryKey: ["cepario", "entidades", tipo, grupo, estado, categoria],
     queryFn: () => api.ceparioEntidades(token!, {
@@ -2835,6 +3190,15 @@ export function CeparioPage() {
     enabled: Boolean(token) && tab === "detalle" && Boolean(entidadId),
   })
 
+  // Genealogía de pasaje: solo para líneas celulares (incluye viales inactivos).
+  const genealogiaQuery = useQuery({
+    queryKey: ["cepario", "genealogia", entidadId],
+    queryFn: () => api.ceparioGenealogiaPasaje(token!, entidadId!),
+    enabled:
+      Boolean(token) && tab === "detalle" && Boolean(entidadId) &&
+      entidadQuery.data?.tipo === "linea_celular",
+  })
+
   const entidades = entidadesQuery.data ?? entidadesVacias
   const entidadesFiltradas = useMemo(() => {
     const texto = busqueda.trim().toLocaleLowerCase("es")
@@ -2845,7 +3209,7 @@ export function CeparioPage() {
       if (!texto) {
         return true
       }
-      return [e.codigo, e.codigo_temporal, e.nombre, e.taxon_presuntivo, e.categoria, e.resistencia]
+      return [e.codigo, e.codigo_temporal, e.nombre, e.taxon_presuntivo, e.categoria, e.resistencia, e.organismo]
         .filter(Boolean)
         .some((v) => String(v).toLocaleLowerCase("es").includes(texto))
     })
@@ -2896,9 +3260,11 @@ export function CeparioPage() {
       const msgKey =
         res.tipo === "parte_genetica"
           ? "cepario.parteCreada"
-          : res.estado === "aislado"
-            ? "cepario.aisladoCreado"
-            : "cepario.cepaCreada"
+          : res.tipo === "linea_celular"
+            ? "cepario.lineaCreada"
+            : res.estado === "aislado"
+              ? "cepario.aisladoCreado"
+              : "cepario.cepaCreada"
       setMensaje(t(msgKey, { codigo: res.codigo ?? res.codigo_temporal ?? "" }))
       setErrorLocal(null)
       abrirDetalle(res.id)
@@ -2980,6 +3346,7 @@ export function CeparioPage() {
   function invalidarDetalle() {
     queryClient.invalidateQueries({ queryKey: ["cepario", "entidad", entidadId] })
     queryClient.invalidateQueries({ queryKey: ["cepario", "entidades"] })
+    queryClient.invalidateQueries({ queryKey: ["cepario", "genealogia", entidadId] })
   }
 
   const buscarBacdiveMutation = useMutation({
@@ -3152,7 +3519,7 @@ export function CeparioPage() {
     tab === "listado"
       ? [
           ...(puedeCrear
-            ? [{ label: t(esParteVista ? "cepario.nuevaParte" : "cepario.nuevoMicro"), onClick: () => { setTab("nueva"); setMensaje(null); setErrorLocal(null) }, icon: <Plus size={18} aria-hidden="true" /> }]
+            ? [{ label: t(esParteVista ? "cepario.nuevaParte" : esLineaVista ? "cepario.nuevaLinea" : "cepario.nuevoMicro"), onClick: () => { setTab("nueva"); setMensaje(null); setErrorLocal(null) }, icon: <Plus size={18} aria-hidden="true" /> }]
             : []),
           { label: t("cepario.verCajas"), onClick: () => { setTab("cajas"); setMensaje(null); setErrorLocal(null) }, icon: <Grid3x3 size={18} aria-hidden="true" />, variant: "secondary" as const },
         ]
@@ -3163,7 +3530,7 @@ export function CeparioPage() {
       <PageHeader
         title={t("cepario.title")}
         description={t("cepario.desc")}
-        count={entidadesQuery.isLoading ? t("cepario.cargando") : t(esParteVista ? "cepario.countPartesN" : "cepario.countN", { n: entidadesFiltradas.length })}
+        count={entidadesQuery.isLoading ? t("cepario.cargando") : t(esParteVista ? "cepario.countPartesN" : esLineaVista ? "cepario.countLineasN" : "cepario.countN", { n: entidadesFiltradas.length })}
         plain
       />
 
@@ -3176,7 +3543,7 @@ export function CeparioPage() {
 
       {tab === "listado" ? (
         <div className="mb-4 inline-flex border border-cds-borderSubtle" role="tablist" aria-label={t("cepario.title")}>
-          {(["microorganismo", "parte_genetica"] as CeparioTipo[]).map((tp) => (
+          {TIPOS.map((tp) => (
             <button
               key={tp}
               type="button"
@@ -3188,7 +3555,7 @@ export function CeparioPage() {
                 tipo === tp ? "bg-lab-ceparioTint text-cds-textPrimary" : "text-cds-textSecondary hover:text-cds-textPrimary",
               )}
             >
-              {t(tp === "microorganismo" ? "cepario.tipoMicro" : "cepario.tipoParte")}
+              {t(TIPO_KEY[tp])}
             </button>
           ))}
         </div>
@@ -3207,6 +3574,8 @@ export function CeparioPage() {
       {tab === "nueva" ? (
         esParteVista ? (
           <NuevaParteForm pending={crearEntidadMutation.isPending} onSubmit={(data) => crearEntidadMutation.mutate(data)} />
+        ) : esLineaVista ? (
+          <NuevaLineaForm pending={crearEntidadMutation.isPending} onSubmit={(data) => crearEntidadMutation.mutate(data)} />
         ) : (
           <NuevaMicroForm pending={crearEntidadMutation.isPending} onSubmit={(data) => crearEntidadMutation.mutate(data)} />
         )
@@ -3223,6 +3592,7 @@ export function CeparioPage() {
         ) : entidadQuery.data ? (
           <CeparioDetalle
             entidad={entidadQuery.data}
+            genealogia={genealogiaQuery.data ?? null}
             puedeStock={puedeStock}
             puedeDescartar={puedeDescartar}
             screening={screening}
@@ -3262,15 +3632,15 @@ export function CeparioPage() {
         )
       ) : (
         <>
-          <div className={cn("mb-4 grid gap-4", esParteVista ? "lg:grid-cols-[minmax(0,1fr)_auto]" : "lg:grid-cols-[minmax(0,1fr)_auto_auto_auto]")}>
+          <div className={cn("mb-4 grid gap-4", esMicroVista ? "lg:grid-cols-[minmax(0,1fr)_auto_auto_auto]" : esParteVista ? "lg:grid-cols-[minmax(0,1fr)_auto]" : "lg:grid-cols-[minmax(0,1fr)]")}>
             <label className="block">
               <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">{t("cepario.buscar")}</span>
               <div className="relative">
                 <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-cds-textSecondary" size={18} aria-hidden="true" />
-                <Input className="pl-12" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder={t(esParteVista ? "cepario.buscarPhParte" : "cepario.buscarPh")} />
+                <Input className="pl-12" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder={t(esParteVista ? "cepario.buscarPhParte" : esLineaVista ? "cepario.buscarPhLinea" : "cepario.buscarPh")} />
               </div>
             </label>
-            {esParteVista ? (
+            {esLineaVista ? null : esParteVista ? (
               <label className="block">
                 <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">{t("cepario.filtroCategoria")}</span>
                 <select className={FILTRO_SELECT_CLASS} value={categoria} onChange={(e) => setCategoria(e.target.value)}>
@@ -3327,6 +3697,8 @@ export function CeparioPage() {
               {entidadesFiltradas.map((e) =>
                 esParteVista ? (
                   <ParteCard key={e.id} entidad={e} onClick={() => abrirDetalle(e.id)} />
+                ) : esLineaVista ? (
+                  <LineaCard key={e.id} entidad={e} onClick={() => abrirDetalle(e.id)} />
                 ) : (
                   <CeparioCard key={e.id} entidad={e} onClick={() => abrirDetalle(e.id)} />
                 ),
@@ -3354,6 +3726,31 @@ export function CeparioPage() {
                     <td className="px-4 py-2"><ParteChip categoria={e.categoria} /></td>
                     <td className="px-4 py-2 text-cds-textSecondary">{e.resistencia ?? ""}</td>
                     <td className="px-4 py-2 text-right text-cds-textSecondary">{e.concentracion_ng_ul != null ? t("cepario.concentracionVal", { n: e.concentracion_ng_ul }) : ""}</td>
+                    <td className="px-4 py-2 text-right">{e.nro_viales_total}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : esLineaVista ? (
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-cds-borderSubtle bg-cds-layer01 text-xs tracking-[0.32px] text-cds-textSecondary">
+                  <th className="h-10 px-4 text-left font-normal">{t("cepario.thCodigo")}</th>
+                  <th className="h-10 px-4 text-left font-normal">{t("cepario.thOrganismo")}</th>
+                  <th className="h-10 px-4 text-left font-normal">{t("cepario.thTipoCultivo")}</th>
+                  <th className="h-10 px-4 text-right font-normal">{t("cepario.thViales")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entidadesFiltradas.map((e) => (
+                  <tr
+                    key={e.id}
+                    onClick={() => abrirDetalle(e.id)}
+                    className="cursor-pointer border-b border-cds-borderSubtle hover:bg-cds-layer01"
+                  >
+                    <td className="px-4 py-2 font-mono text-cds-textPrimary">{e.codigo ?? "—"}</td>
+                    <td className="px-4 py-2 text-cds-textSecondary">{e.organismo ?? e.nombre ?? ""}</td>
+                    <td className="px-4 py-2 text-cds-textSecondary">{e.tipo_cultivo ? t(CULTIVO_KEY[e.tipo_cultivo] ?? e.tipo_cultivo) : ""}</td>
                     <td className="px-4 py-2 text-right">{e.nro_viales_total}</td>
                   </tr>
                 ))}
