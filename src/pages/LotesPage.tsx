@@ -87,7 +87,7 @@ export function LotesPage() {
   const { token, usuario } = useAuth()
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const puedeCrearLote = puede(usuario, "crear_lote")
   const puedeImprimir = puede(usuario, "imprimir_hoja_avery")
   const [reactivoId, setReactivoId] = useState<number | null>(null)
@@ -116,21 +116,35 @@ export function LotesPage() {
 
   const lotes = lotesQuery.data ?? lotesVacios
   const reactivoIdUrl = Number(searchParams.get("reactivo_id") ?? "")
+  const proveedorIdUrl = Number(searchParams.get("proveedor_id") ?? "")
   const lotesFiltrados = useMemo(() => {
     const texto = busqueda.trim().toLocaleLowerCase("es")
-    if (!texto) {
-      return lotes
-    }
-    return lotes.filter((lote) =>
-      [lote.codigo_interno, lote.numero_lote, lote.marca, lote.codigo_proveedor, lote.proveedor, lote.ubicacion, lote.reactivo_nombre, lote.cas_numero]
-        .filter(Boolean)
-        .some((value) => String(value).toLocaleLowerCase("es").includes(texto)),
-    )
-  }, [busqueda, lotes])
+    return lotes.filter((lote) => {
+      if (proveedorIdUrl && lote.proveedor_id !== proveedorIdUrl) {
+        return false
+      }
+      if (!texto) {
+        return true
+      }
+      return [lote.codigo_interno, lote.numero_lote, lote.marca, lote.codigo_proveedor, lote.proveedor, lote.ubicacion, lote.reactivo_nombre, lote.cas_numero]
+          .filter(Boolean)
+          .some((value) => String(value).toLocaleLowerCase("es").includes(texto))
+    })
+  }, [busqueda, lotes, proveedorIdUrl])
+  const lotesVista = proveedorIdUrl ? lotesFiltrados : lotes
 
-  const stockTotal = lotes.reduce((total, lote) => total + (lote.cantidad_actual ?? 0), 0)
-  const proximoVencimiento = lotes[0]?.fecha_vencimiento
+  const stockTotal = lotesVista.reduce((total, lote) => total + (lote.cantidad_actual ?? 0), 0)
+  const proximoVencimiento = lotesVista[0]?.fecha_vencimiento
   const codigoUrl = searchParams.get("codigo")
+
+  function limpiarProveedorFiltro() {
+    if (!proveedorIdUrl) {
+      return
+    }
+    const siguiente = new URLSearchParams(searchParams)
+    siguiente.delete("proveedor_id")
+    setSearchParams(siguiente, { replace: true })
+  }
 
   useEffect(() => {
     if (!reactivoIdUrl || !reactivos.some((reactivo) => reactivo.id === reactivoIdUrl)) {
@@ -198,6 +212,15 @@ export function LotesPage() {
         <div className="mb-6 border-l-4 border-cds-supportError bg-cds-layer01 px-4 py-3 text-sm">{errorLocal}</div>
       ) : null}
 
+      {proveedorIdUrl ? (
+        <div className="mb-4 flex flex-col gap-3 border-l-4 border-cds-focus bg-cds-layer01 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+          <span>{t("lotes.filtroProveedorActivo")}</span>
+          <Button type="button" variant="ghost" size="compact" onClick={limpiarProveedorFiltro}>
+            {t("lotes.quitarFiltro")}
+          </Button>
+        </div>
+      ) : null}
+
       <ListadoLotes
           token={token!}
           puedeEditar={puedeCrearLote}
@@ -205,13 +228,14 @@ export function LotesPage() {
           reactivos={reactivos}
           reactivoSeleccionado={reactivoSeleccionado}
           lotes={lotesFiltrados}
-          lotesTodos={lotes}
+          lotesTodos={lotesVista}
           loteSeleccionadoId={loteSeleccionadoId}
           isLoading={lotesQuery.isLoading}
           busqueda={busqueda}
           stockTotal={stockTotal}
           proximoVencimiento={proximoVencimiento}
           onReactivoChange={(value) => {
+            limpiarProveedorFiltro()
             setReactivoId(value)
             setLoteSeleccionadoId(null)
           }}
@@ -222,12 +246,14 @@ export function LotesPage() {
             setMensaje(null)
             setReactivoId(null)
             setLoteSeleccionadoId(null)
+            limpiarProveedorFiltro()
             setBusqueda(texto)
             await queryClient.invalidateQueries({ queryKey: ["lotes"] })
           }}
           onBuscarCodigoInterno={async (codigo) => {
             setErrorLocal(null)
             setMensaje(null)
+            limpiarProveedorFiltro()
             try {
               const lote = await api.lotePorCodigo(token!, codigo)
               setReactivoId(null)
