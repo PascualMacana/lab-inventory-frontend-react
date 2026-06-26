@@ -806,6 +806,7 @@ export type PerfilEtiqueta = {
   alto_mm: number
   grilla: boolean
   por_pagina: number
+  max_por_pdf: number
 }
 
 export type Proveedor = {
@@ -927,12 +928,14 @@ export type EquipamientoCrear = {
 export type EventoEquipamiento = {
   id: number
   equipamiento_id: number
+  unidad_id?: number | null
   usuario_id: number
   tipo: "alta" | "rotura" | "calibracion" | "reparacion" | "baja"
   cantidad: number
   fecha: string
   motivo: string
   equipamiento_nombre: string
+  unidad_codigo?: string | null
   usuario_nombre: string
 }
 
@@ -942,6 +945,26 @@ export type EventoEquipamientoCrear = {
   tipo: EventoEquipamiento["tipo"]
   cantidad: number
   motivo: string
+  unidad_id?: number | null
+}
+
+export type EquipamientoUnidad = {
+  id: number
+  organizacion_id: number
+  equipamiento_id: number
+  codigo_interno: string
+  numero_serie?: string | null
+  ubicacion?: string | null
+  estado: "operativa" | "fuera_de_uso" | "calibracion" | "baja"
+  fecha_creacion: string
+  usuario_id?: number | null
+  activo: number
+  ultimo_evento_fecha?: string | null
+  ultimo_evento_tipo?: EventoEquipamiento["tipo"] | null
+  equipamiento_nombre?: string
+  equipamiento_categoria?: string | null
+  equipamiento_marca?: string | null
+  equipamiento_modelo?: string | null
 }
 
 export type AuditoriaEvento = {
@@ -2232,6 +2255,25 @@ export const api = {
 
   equipamientoDetalle: async (token: string, id: number) =>
     request<Equipamiento>(`/equipamiento/${id}`, { token }),
+
+  equipamientoUnidades: async (token: string, id: number) =>
+    request<EquipamientoUnidad[]>(`/equipamiento/${id}/unidades`, { token }),
+
+  equipamientoUnidadPorCodigo: async (token: string, codigoInterno: string) =>
+    request<EquipamientoUnidad>(`/equipamiento/unidades/codigo/${encodeURIComponent(codigoInterno)}`, { token }),
+
+  equipamientoEtiquetasPdf: async (
+    token: string,
+    unidadIds: number[],
+    formato = "rollo_50x30",
+    posicionInicio = 1,
+  ) =>
+    requestBlob("/equipamiento/unidades/etiquetas-pdf", {
+      method: "POST",
+      token,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ unidad_ids: unidadIds, formato, posicion_inicio: posicionInicio }),
+    }),
 
   categoriasEquipamiento: async (token: string) =>
     request<{ categorias: string[] }>("/equipamiento/categorias", { token }),

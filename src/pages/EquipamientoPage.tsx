@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Eye, EyeOff, History, Microscope, Plus, Search, Wrench } from "lucide-react"
+import { ArrowLeft, Download, Eye, EyeOff, History, Microscope, Plus, QrCode, Search, Wrench } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { ModuleNav } from "../components/ModuleNav"
@@ -11,6 +11,7 @@ import {
   api,
   type Equipamiento,
   type EquipamientoCrear,
+  type EquipamientoUnidad,
   type EventoEquipamiento,
   type EventoEquipamientoCrear,
   type Proveedor,
@@ -26,7 +27,14 @@ type TipoEvento = EventoEquipamiento["tipo"]
 const equiposVacios: Equipamiento[] = []
 const eventosVacios: EventoEquipamiento[] = []
 const proveedoresVacios: Proveedor[] = []
+const unidadesVacias: EquipamientoUnidad[] = []
 const tiposEvento: TipoEvento[] = ["alta", "rotura", "calibracion", "reparacion", "baja"]
+const formatosEtiquetaEquipo = [
+  { clave: "rollo_70x40", nombre: "Frasco grande — 70×40 mm (rollo)", maxPorPdf: 500 },
+  { clave: "rollo_50x30", nombre: "Frasco mediano — 50×30 mm (rollo)", maxPorPdf: 500 },
+  { clave: "avery_l7160", nombre: "Avery L7160 — A4, 21/hoja", maxPorPdf: 210 },
+  { clave: "rollo_30x20", nombre: "Frasco chico — 30×20 mm (rollo)", maxPorPdf: 500 },
+]
 
 function nullable(value: FormDataEntryValue | null) {
   const trimmed = String(value ?? "").trim()
@@ -62,6 +70,17 @@ function formatDateTime(value: string | null | undefined) {
 
 function mutationError(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
 }
 
 export function EquipamientoPage() {
@@ -128,8 +147,10 @@ export function EquipamientoPage() {
     await queryClient.invalidateQueries({ queryKey: ["equipamiento"] })
     await queryClient.invalidateQueries({ queryKey: ["equipamiento-categorias"] })
     await queryClient.invalidateQueries({ queryKey: ["eventos-equipamiento"] })
+    await queryClient.invalidateQueries({ queryKey: ["equipamiento-unidades"] })
     if (equipoSeleccionado?.id) {
       await queryClient.invalidateQueries({ queryKey: ["eventos-equipamiento", equipoSeleccionado.id] })
+      await queryClient.invalidateQueries({ queryKey: ["equipamiento-unidades", equipoSeleccionado.id] })
     }
     if (mensajeOk) {
       setMensaje(mensajeOk)
@@ -330,10 +351,29 @@ function EquipoDetalle({
     queryFn: () => api.eventosEquipamiento(token, equipo.id, 200),
     enabled: Boolean(token && equipo.id),
   })
+  const unidadesQuery = useQuery({
+    queryKey: ["equipamiento-unidades", equipo.id],
+    queryFn: () => api.equipamientoUnidades(token, equipo.id),
+    enabled: Boolean(token && equipo.id),
+  })
   const eventoMutation = useMutation({
     mutationFn: (data: EventoEquipamientoCrear) => api.registrarEventoEquipamiento(token, data),
   })
   const eventos = eventosQuery.data ?? eventosVacios
+  const unidades = unidadesQuery.data ?? unidadesVacias
+  const [unidadEventoId, setUnidadEventoId] = useState("")
+  const [unidadesEtiqueta, setUnidadesEtiqueta] = useState<number[]>([])
+  const [formatoEtiqueta, setFormatoEtiqueta] = useState("rollo_70x40")
+  const etiquetasMutation = useMutation({
+    mutationFn: ({ ids, formato }: { ids: number[]; formato: string }) =>
+      api.equipamientoEtiquetasPdf(token, ids, formato),
+  })
+  const formatoEtiquetaSeleccionado = formatosEtiquetaEquipo.find((formato) => formato.clave === formatoEtiqueta) ?? formatosEtiquetaEquipo[0]
+
+  useEffect(() => {
+    setUnidadEventoId("")
+    setUnidadesEtiqueta([])
+  }, [equipo.id])
 
   async function registrarEvento(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -342,8 +382,13 @@ function EquipoDetalle({
     try {
       const form = new FormData(formElement)
       const tipo = String(form.get("tipo") ?? "alta") as TipoEvento
-      const cantidad = requireFiniteNumber(parseFormNumber(form.get("cantidad"), 1), t("equip.errCantidad"))
+      const unidadIdRaw = String(form.get("unidad_id") ?? "").trim()
+      const unidadId = unidadIdRaw ? Number(unidadIdRaw) : null
+      const cantidad = unidadId ? 1 : requireFiniteNumber(parseFormNumber(form.get("cantidad"), 1), t("equip.errCantidad"))
       const motivo = String(form.get("motivo") ?? "").trim()
+      if (unidadIdRaw && !Number.isInteger(unidadId)) {
+        throw new Error(t("equip.errUnidad"))
+      }
       if (!Number.isInteger(cantidad) || cantidad <= 0) {
         throw new Error(t("equip.errCantidadEntero"))
       }
@@ -356,11 +401,36 @@ function EquipoDetalle({
         tipo,
         cantidad,
         motivo,
+        unidad_id: unidadId,
       })
       formElement.reset()
+      setUnidadEventoId("")
       await onUpdated(t("equip.msgEvento", { tipo: t(`equip.tipoEvento.${tipo}`) }))
     } catch (error) {
       onError(mutationError(error, t("equip.errEvento")))
+    }
+  }
+
+  function toggleUnidadEtiqueta(id: number) {
+    setUnidadesEtiqueta((actual) =>
+      actual.includes(id) ? actual.filter((item) => item !== id) : [...actual, id],
+    )
+  }
+
+  async function descargarEtiquetas() {
+    onError(null)
+    try {
+      if (!unidadesEtiqueta.length) {
+        throw new Error(t("equip.errEtiquetasSeleccion"))
+      }
+      if (unidadesEtiqueta.length > formatoEtiquetaSeleccionado.maxPorPdf) {
+        throw new Error(t("equip.errEtiquetasMax", { n: formatoEtiquetaSeleccionado.maxPorPdf }))
+      }
+      const blob = await etiquetasMutation.mutateAsync({ ids: unidadesEtiqueta, formato: formatoEtiqueta })
+      const nombre = equipo.nombre.trim().replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "")
+      downloadBlob(blob, `etiquetas_equipamiento_${nombre || equipo.id}.pdf`)
+    } catch (error) {
+      onError(mutationError(error, t("equip.errEtiquetas")))
     }
   }
 
@@ -397,8 +467,46 @@ function EquipoDetalle({
           </div>
 
           <div className="mt-6 border-t border-cds-borderSubtle pt-5">
+            <div className="mb-6">
+              <h3 className="mb-4">{t("equip.unidadesTitulo")}</h3>
+              <UnidadesTable
+                unidades={unidades}
+                isLoading={unidadesQuery.isLoading}
+                seleccion={unidadesEtiqueta}
+                onToggle={toggleUnidadEtiqueta}
+              />
+              <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto]">
+                <label className="block">
+                  <Label className="mb-2" htmlFor={`formato-equipo-${equipo.id}`}>{t("equip.tamanoEtiqueta")}</Label>
+                  <select
+                    id={`formato-equipo-${equipo.id}`}
+                    className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
+                    value={formatoEtiqueta}
+                    onChange={(event) => setFormatoEtiqueta(event.target.value)}
+                  >
+                    {formatosEtiquetaEquipo.map((formato) => (
+                      <option key={formato.clave} value={formato.clave}>
+                        {formato.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="text-xs text-cds-textSecondary md:self-end md:pb-3">
+                  {t("equip.maxEtiquetasPdf", { n: formatoEtiquetaSeleccionado.maxPorPdf })}
+                </div>
+                <div className="flex items-end">
+                  <Button type="button" variant="secondary" onClick={descargarEtiquetas} disabled={etiquetasMutation.isPending || !unidadesEtiqueta.length}>
+                    <Download size={18} aria-hidden="true" />
+                    {etiquetasMutation.isPending ? t("equip.generandoEtiquetas") : t("equip.imprimirCodigos")}
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-cds-borderSubtle pt-5">
             <h3 className="mb-4">{t("equip.historialEquipo")}</h3>
             <EventosList eventos={eventos} isLoading={eventosQuery.isLoading} />
+            </div>
           </div>
         </div>
 
@@ -417,6 +525,26 @@ function EquipoDetalle({
                 </select>
               </label>
               <Field label={t("equip.fCantidad")} name="cantidad" defaultValue="1" inputMode="numeric" required />
+              <label className="block">
+                <Label className="mb-2" htmlFor={`unidad-${equipo.id}`}>{t("equip.fUnidad")}</Label>
+                <select
+                  id={`unidad-${equipo.id}`}
+                  name="unidad_id"
+                  className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
+                  value={unidadEventoId}
+                  onChange={(event) => setUnidadEventoId(event.target.value)}
+                >
+                  <option value="">{t("equip.fUnidadSinEspecificar")}</option>
+                  {unidades.filter((unidad) => unidad.estado !== "baja").map((unidad) => (
+                    <option key={unidad.id} value={unidad.id}>
+                      {unidad.codigo_interno} · {t(`equip.estadoUnidad.${unidad.estado}`)}
+                    </option>
+                  ))}
+                </select>
+                {unidadEventoId ? (
+                  <div className="mt-1 text-xs text-cds-textSecondary">{t("equip.fUnidadCantidad")}</div>
+                ) : null}
+              </label>
               <Field label={t("equip.fMotivo")} name="motivo" placeholder={t("equip.fMotivoPh")} required />
             </div>
             <Button className="mt-5" type="submit" disabled={eventoMutation.isPending}>
@@ -427,6 +555,68 @@ function EquipoDetalle({
         ) : null}
       </div>
     </section>
+  )
+}
+
+function UnidadesTable({
+  unidades,
+  isLoading,
+  seleccion,
+  onToggle,
+}: {
+  unidades: EquipamientoUnidad[]
+  isLoading: boolean
+  seleccion: number[]
+  onToggle: (id: number) => void
+}) {
+  const { t } = useTranslation()
+  if (isLoading) {
+    return <div className="bg-cds-background p-3 text-sm text-cds-textSecondary">{t("equip.cargandoUnidades")}</div>
+  }
+  if (!unidades.length) {
+    return <div className="bg-cds-background p-3 text-sm text-cds-textSecondary">{t("equip.sinUnidades")}</div>
+  }
+  return (
+    <div className="overflow-x-auto border-t border-cds-borderSubtle">
+      <table className="w-full min-w-[760px] border-collapse text-left text-sm">
+        <thead>
+          <tr className="border-b border-cds-borderSubtle bg-cds-background text-xs tracking-[0.32px] text-cds-textSecondary">
+            <th className="h-10 w-10 px-3 font-normal"></th>
+            <th className="h-10 px-3 font-normal">{t("equip.thCodigo")}</th>
+            <th className="h-10 px-3 font-normal">{t("equip.thEstado")}</th>
+            <th className="h-10 px-3 font-normal">{t("equip.iSerie")}</th>
+            <th className="h-10 px-3 font-normal">{t("equip.ubicacion")}</th>
+            <th className="h-10 px-3 font-normal">{t("equip.thUltimoEvento")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {unidades.map((unidad) => (
+            <tr key={unidad.id} className="border-b border-cds-borderSubtle">
+              <td className="h-11 px-3">
+                <input
+                  type="checkbox"
+                  checked={seleccion.includes(unidad.id)}
+                  onChange={() => onToggle(unidad.id)}
+                  aria-label={t("equip.seleccionarUnidad", { codigo: unidad.codigo_interno })}
+                />
+              </td>
+              <td className="h-11 px-3">
+                <span className="inline-flex items-center gap-2 font-mono text-xs">
+                  <QrCode size={15} aria-hidden="true" />
+                  {unidad.codigo_interno}
+                </span>
+              </td>
+              <td className="h-11 px-3">{t(`equip.estadoUnidad.${unidad.estado}`)}</td>
+              <td className="h-11 px-3 text-cds-textSecondary">{unidad.numero_serie || "-"}</td>
+              <td className="h-11 px-3 text-cds-textSecondary">{unidad.ubicacion || "-"}</td>
+              <td className="h-11 px-3 text-cds-textSecondary">
+                {unidad.ultimo_evento_tipo ? t(`equip.tipoEvento.${unidad.ultimo_evento_tipo}`) : "-"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -544,7 +734,7 @@ function HistorialGlobal({ token }: { token: string }) {
     const texto = busqueda.trim().toLocaleLowerCase("es")
     const tipoOk = tipo ? evento.tipo === tipo : true
     const textoOk = texto
-      ? [evento.equipamiento_nombre, evento.usuario_nombre, evento.motivo].some((value) => String(value || "").toLocaleLowerCase("es").includes(texto))
+      ? [evento.equipamiento_nombre, evento.unidad_codigo, evento.usuario_nombre, evento.motivo].some((value) => String(value || "").toLocaleLowerCase("es").includes(texto))
       : true
     return tipoOk && textoOk
   })
@@ -589,6 +779,7 @@ function EventosList({ eventos, isLoading }: { eventos: EventoEquipamiento[]; is
           </div>
           <div className="mt-2 text-cds-textSecondary">
             {t("equip.unidadesPor", { cantidad: evento.cantidad, usuario: evento.usuario_nombre })}
+            {evento.unidad_codigo ? ` · ${evento.unidad_codigo}` : ""}
           </div>
           <div className="mt-2">{evento.motivo}</div>
         </article>
@@ -607,11 +798,12 @@ function EventosTable({ eventos, isLoading }: { eventos: EventoEquipamiento[]; i
   }
   return (
     <div className="overflow-x-auto border-t border-cds-borderSubtle">
-      <table className="w-full min-w-[980px] border-collapse text-left text-sm">
+      <table className="w-full min-w-[1080px] border-collapse text-left text-sm">
         <thead>
           <tr className="border-b border-cds-borderSubtle bg-cds-layer01 text-xs tracking-[0.32px] text-cds-textSecondary">
             <th className="h-10 px-4 font-normal">{t("equip.thFecha")}</th>
             <th className="h-10 px-4 font-normal">{t("equip.thEquipo")}</th>
+            <th className="h-10 px-4 font-normal">{t("equip.thCodigo")}</th>
             <th className="h-10 px-4 font-normal">{t("equip.tipo")}</th>
             <th className="h-10 px-4 text-right font-normal">{t("equip.thCantidad")}</th>
             <th className="h-10 px-4 font-normal">{t("equip.thUsuario")}</th>
@@ -623,6 +815,7 @@ function EventosTable({ eventos, isLoading }: { eventos: EventoEquipamiento[]; i
             <tr key={evento.id} className="border-b border-cds-borderSubtle hover:bg-cds-layer01">
               <td className="h-12 px-4 text-cds-textSecondary">{formatDateTime(evento.fecha)}</td>
               <td className="h-12 px-4">{evento.equipamiento_nombre}</td>
+              <td className="h-12 px-4 font-mono text-xs text-cds-textSecondary">{evento.unidad_codigo || "-"}</td>
               <td className="h-12 px-4">{t(`equip.tipoEvento.${evento.tipo}`)}</td>
               <td className="h-12 px-4 text-right font-mono">{evento.cantidad}</td>
               <td className="h-12 px-4 text-cds-textSecondary">{evento.usuario_nombre}</td>

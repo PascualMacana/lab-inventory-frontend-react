@@ -1383,7 +1383,7 @@ function EtiquetasLotes({
   reactivoNombre: string
 }) {
   const [loteQrId, setLoteQrId] = useState(lotes[0]?.id ?? 0)
-  const [seleccionPdf, setSeleccionPdf] = useState<number[]>(lotes.map((lote) => lote.id))
+  const [seleccionPdf, setSeleccionPdf] = useState<number[]>([])
   const [posicionInicio, setPosicionInicio] = useState("1")
   const [formato, setFormato] = useState("avery_l7160")
   const [errorLocal, setErrorLocal] = useState<string | null>(null)
@@ -1404,9 +1404,10 @@ function EtiquetasLotes({
   // Fallback a Avery hasta que cargue la lista (o si la query falla).
   const perfiles = perfilesQuery.data?.length
     ? perfilesQuery.data
-    : [{ clave: "avery_l7160", nombre: "Avery L7160 — A4, 21/hoja", ancho_mm: 63.5, alto_mm: 38.1, grilla: true, por_pagina: 21 }]
+    : [{ clave: "avery_l7160", nombre: "Avery L7160 — A4, 21/hoja", ancho_mm: 63.5, alto_mm: 38.1, grilla: true, por_pagina: 21, max_por_pdf: 210 }]
   const perfilSel = perfiles.find((p) => p.clave === formato) ?? perfiles[0]
   const esGrilla = perfilSel.grilla
+  const maxEtiquetasPdf = perfilSel.max_por_pdf ?? (esGrilla ? perfilSel.por_pagina * 10 : 500)
 
   const loteQr = lotes.find((lote) => lote.id === loteQrId) ?? lotes[0]
 
@@ -1445,6 +1446,9 @@ function EtiquetasLotes({
       }
       if (!seleccionPdf.length) {
         throw new Error(t("lotes.errSeleccionaLote"))
+      }
+      if (seleccionPdf.length > maxEtiquetasPdf) {
+        throw new Error(t("lotes.errEtiquetasMax", { n: maxEtiquetasPdf }))
       }
       const blob = await pdfMutation.mutateAsync({ ids: seleccionPdf, posicion, fmt: formato })
       const nombre = reactivoNombre.trim().replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "")
@@ -1513,6 +1517,8 @@ function EtiquetasLotes({
           {esGrilla
             ? t("lotes.pdfA4Hoja", { n: perfilSel.por_pagina })
             : t("lotes.rolloUnaPorPagina", { ancho: perfilSel.ancho_mm, alto: perfilSel.alto_mm })}
+          {" "}
+          {t("lotes.maxEtiquetasPdf", { n: maxEtiquetasPdf })}
         </p>
         <div className="max-h-56 overflow-y-auto border-t border-cds-borderSubtle">
           {lotes.map((lote) => (
