@@ -31,7 +31,7 @@ export const SEGURIDAD_JSX = String.raw`
               <div>
                 <div className="t">HTTPS + SSH endurecido</div>
                 <div className="en">TLS auto-renewed · key-only auth</div>
-                <p className="d">Caddy con TLS automático. API y Streamlit no están expuestos a internet. Sin login por contraseña, sin acceso root. <code>fail2ban</code> activo.</p>
+                <p className="d">Caddy con TLS automático. La API no está expuesta directamente a internet. Sin login por contraseña, sin acceso root. <code>fail2ban</code> activo.</p>
               </div>
             </div>
             <div className="sec-row">

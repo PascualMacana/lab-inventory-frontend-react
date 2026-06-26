@@ -1,6 +1,6 @@
 # Lab Inventory React Frontend
 
-Frontend React paralelo al Streamlit actual. Esta app consume la API FastAPI existente y no reemplaza todavía el frontend productivo.
+Frontend React vigente de Lab Inventory. Esta app consume la API FastAPI existente.
 
 ## Comandos
 
