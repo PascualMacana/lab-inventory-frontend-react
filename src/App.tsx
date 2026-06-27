@@ -17,7 +17,7 @@ import { RoadmapView } from "./command-center/views/RoadmapView"
 // bundle principal de toda la app (igual que GraphsPage). Solo pesa al abrir la vista.
 const InsightsView = lazy(() => import("./command-center/views/InsightsView").then((m) => ({ default: m.InsightsView })))
 import { LandingShell } from "./components/LandingShell"
-import { ChangePasswordPage } from "./components/LoginPage"
+import { ChangePasswordPage, ResetPasswordPage } from "./components/LoginPage"
 import { LandingPage } from "./pages/LandingPage"
 import { LandingSeguridadPage } from "./pages/LandingSeguridadPage"
 import { useAuth } from "./lib/auth"
@@ -85,6 +85,7 @@ export function App() {
   if (!token) {
     return (
       <Routes>
+        <Route path="reset-password" element={<ResetPasswordPage />} />
         <Route element={<LandingShell />}>
           <Route index element={<LandingPage />} />
           <Route path="login" element={<LandingPage />} />

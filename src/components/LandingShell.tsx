@@ -252,7 +252,7 @@ export function LandingShell() {
                 <input className="login-input" id="login-pass" type="password" placeholder="••••••••" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
               </div>
       
-              <a href="mailto:Ox.serv@hotmail.com" className="login-forgot">¿Olvidaste tu contraseña?</a>
+              <Link to="/reset-password" className="login-forgot">¿Olvidaste tu contraseña?</Link>
       
               {loginError ? <div className="login-error">{loginError}</div> : null}
 

@@ -1729,6 +1729,18 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
 
+  solicitarResetPassword: async (email: string) =>
+    request<{ mensaje: string }>("/auth/solicitar-reset-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
+  resetPassword: async (token: string, passwordNueva: string) =>
+    request<{ mensaje: string }>("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, password_nueva: passwordNueva }),
+    }),
+
   logout: async (token: string) =>
     request<{ mensaje: string }>("/auth/logout", {
       method: "POST",
