@@ -1137,7 +1137,7 @@ export type ProtocoloPlantillaCrear = {
 }
 
 // ── Cepario (registro biológico) ──
-export type CeparioTipo = "microorganismo" | "parte_genetica" | "linea_celular"
+export type CeparioTipo = "microorganismo" | "parte_genetica" | "linea_celular" | "hongo"
 export type CeparioEstado = "aislado" | "cepa" | "archivado" | "activa"
 export type CeparioViabilidad = "viable" | "requiere_repique" | "agotado_critico"
 export type GrupoOperativo = "H" | "U" | "P" | "M" | "?"
@@ -1162,6 +1162,9 @@ export type EntidadBiologica = {
   tejido_origen?: string | null
   tipo_cultivo?: string | null
   micoplasma_estado?: string | null
+  // Hongo/levadura (subset en el listado).
+  subtipo?: string | null
+  especie?: string | null
   nro_viales_total: number
   viabilidad_resumen: CeparioViabilidad | null
   fecha_creacion?: string
@@ -1248,6 +1251,18 @@ export type EntidadDetalle = EntidadBiologica & {
   pasaje_maximo_recomendado?: number | null
   referencia_externa?: string | null
   modificacion_genetica?: string | null
+  // Hongo/levadura (set completo en el detalle).
+  subtipo?: string | null
+  especie?: string | null
+  origen_aislamiento?: string | null
+  medio_cultivo?: string | null
+  temperatura_optima?: string | null
+  forma_conservacion?: string | null
+  tipo_sexual?: string | null
+  genotipo_marcadores?: string | null
+  morfologia_colonia?: string | null
+  referencia_coleccion?: string | null
+  ingenieria_genetica?: string | null
   stock: CeparioVial[]
   caracterizaciones: EntidadCaracterizacion[]
   eventos: CeparioEvento[]
@@ -1327,6 +1342,17 @@ export type CepEntidadCrear = {
   pasaje_maximo_recomendado?: number | null
   referencia_externa?: string | null
   modificacion_genetica?: string | null
+  subtipo?: string | null
+  especie?: string | null
+  origen_aislamiento?: string | null
+  medio_cultivo?: string | null
+  temperatura_optima?: string | null
+  forma_conservacion?: string | null
+  tipo_sexual?: string | null
+  genotipo_marcadores?: string | null
+  morfologia_colonia?: string | null
+  referencia_coleccion?: string | null
+  ingenieria_genetica?: string | null
 }
 
 export type CepEntidadActualizar = {
@@ -1358,6 +1384,17 @@ export type CepEntidadActualizar = {
   pasaje_maximo_recomendado?: number | null
   referencia_externa?: string | null
   modificacion_genetica?: string | null
+  subtipo?: string | null
+  especie?: string | null
+  origen_aislamiento?: string | null
+  medio_cultivo?: string | null
+  temperatura_optima?: string | null
+  forma_conservacion?: string | null
+  tipo_sexual?: string | null
+  genotipo_marcadores?: string | null
+  morfologia_colonia?: string | null
+  referencia_coleccion?: string | null
+  ingenieria_genetica?: string | null
 }
 
 export type CepStockCrear = {
@@ -1557,6 +1594,55 @@ export type CepBacdiveRefreshResponse = {
   }
   sin_cambios: boolean
 }
+
+// ── Cepario C2: capa de secuencia (ADN + features) ──
+export type CepTopologia = "circular" | "lineal"
+export type CepFormatoSecuencia = "fasta" | "genbank" | "manual"
+export type CepFormatoGuardar = CepFormatoSecuencia | "auto"
+export type CepFeatureTipo =
+  | "gene" | "cds" | "promotor" | "terminador" | "rbs" | "resistencia" | "sitio" | "misc"
+export type CepHebra = "+" | "-"
+
+export type CepFeature = {
+  id: number
+  nombre: string | null
+  tipo: CepFeatureTipo
+  inicio: number
+  fin: number
+  hebra: CepHebra
+  color: string | null
+}
+
+export type CepSecuencia = {
+  id: number
+  entidad_id: number
+  secuencia: string
+  longitud: number
+  topologia: CepTopologia
+  formato_origen: CepFormatoSecuencia
+  nombre_origen: string | null
+  fecha_creacion: string
+  features: CepFeature[]
+  // Solo viene en la respuesta del PUT: cuántas features del GenBank se saltearon (M2).
+  features_omitidas?: number
+}
+
+export type CepSecuenciaGuardar = {
+  contenido: string
+  formato?: CepFormatoGuardar
+  topologia?: CepTopologia | null
+}
+
+export type CepFeatureCrear = {
+  nombre?: string | null
+  tipo: CepFeatureTipo
+  inicio: number
+  fin: number
+  hebra?: CepHebra
+  color?: string | null
+}
+
+export type CepFeatureEditar = Partial<CepFeatureCrear>
 
 type ApiOptions = RequestInit & {
   token?: string | null
@@ -2560,6 +2646,49 @@ export const api = {
       method: "POST",
       token,
       body: JSON.stringify({ campos }),
+    }),
+
+  // ── Cepario C2: secuencia + features de una entidad (en este corte, partes genéticas) ──
+  ceparioSecuencia: async (token: string, entidadId: number): Promise<CepSecuencia | null> => {
+    const r = await request<CepSecuencia | { entidad_id: number; secuencia: null }>(
+      `/cepario/entidades/${entidadId}/secuencia`,
+      { token },
+    )
+    // El backend devuelve { entidad_id, secuencia: null } cuando la entidad no tiene secuencia.
+    return r.secuencia === null ? null : (r as CepSecuencia)
+  },
+
+  ceparioGuardarSecuencia: async (token: string, entidadId: number, data: CepSecuenciaGuardar) =>
+    request<CepSecuencia>(`/cepario/entidades/${entidadId}/secuencia`, {
+      method: "PUT",
+      token,
+      body: JSON.stringify(data),
+    }),
+
+  ceparioBorrarSecuencia: async (token: string, entidadId: number) =>
+    request<{ entidad_id: number; eliminada: boolean }>(`/cepario/entidades/${entidadId}/secuencia`, {
+      method: "DELETE",
+      token,
+    }),
+
+  ceparioAgregarFeature: async (token: string, entidadId: number, data: CepFeatureCrear) =>
+    request<CepFeature>(`/cepario/entidades/${entidadId}/features`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(data),
+    }),
+
+  ceparioEditarFeature: async (token: string, featureId: number, data: CepFeatureEditar) =>
+    request<CepFeature>(`/cepario/features/${featureId}`, {
+      method: "PATCH",
+      token,
+      body: JSON.stringify(data),
+    }),
+
+  ceparioBorrarFeature: async (token: string, featureId: number) =>
+    request<{ id: number; eliminada: boolean }>(`/cepario/features/${featureId}`, {
+      method: "DELETE",
+      token,
     }),
 
   crearEntidadCepario: async (token: string, data: CepEntidadCrear) =>

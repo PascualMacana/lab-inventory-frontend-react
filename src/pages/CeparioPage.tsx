@@ -1,6 +1,6 @@
-import { FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react"
+import { FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { AlertTriangle, Archive, ArrowLeft, ArrowRight, Calculator, Check, ChevronRight, ChevronUp, ExternalLink, FileText, Grid3x3, Link2, PenLine, Plus, QrCode, RotateCcw, Search, Snowflake } from "lucide-react"
+import { AlertTriangle, Archive, ArrowLeft, ArrowRight, Calculator, Check, ChevronRight, ChevronUp, Copy, Dna, Download, ExternalLink, FileText, Grid3x3, Link2, PenLine, Plus, QrCode, RotateCcw, Scissors, Search, Snowflake, Trash2, Upload, X } from "lucide-react"
 import { useSearchParams } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 
@@ -26,6 +26,14 @@ import {
   type CepReferenciaExterna,
   type CepScoreResultado,
   type CepStockCrear,
+  type CepSecuencia,
+  type CepFeature,
+  type CepFeatureTipo,
+  type CepFeatureCrear,
+  type CepFeatureEditar,
+  type CepFormatoGuardar,
+  type CepHebra,
+  type CepTopologia,
   type CeparioEvento,
   type CeparioTipo,
   type CeparioViabilidad,
@@ -41,6 +49,8 @@ import {
 import { useAuth } from "../lib/auth"
 import { puede } from "../lib/permissions"
 import { cn } from "../lib/utils"
+import { buscarSitios, type SitiosEnzima } from "../lib/enzimas"
+import { buscarMotivo, esMotivoValido } from "../lib/motivos"
 
 type Vista = "galeria" | "tabla"
 type Tab = "listado" | "detalle" | "nueva" | "cajas"
@@ -52,6 +62,8 @@ const SELECT_CLASS = "h-12 w-full border-b border-cds-borderStrong bg-cds-field 
 // queden alineados (el SELECT_CLASS h-12 es solo para los formularios).
 const FILTRO_SELECT_CLASS =
   "h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
+const CARAC_SELECT_CLASS =
+  "h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary transition-colors focus:border-b-cds-focus focus:outline-none"
 const entidadesVacias: EntidadBiologica[] = []
 
 const VIABILIDAD: Record<CeparioViabilidad, { key: string; dot: string; pill: string }> = {
@@ -125,8 +137,9 @@ const TIPO_KEY: Record<CeparioTipo, string> = {
   microorganismo: "cepario.tipoMicro",
   parte_genetica: "cepario.tipoParte",
   linea_celular: "cepario.tipoLinea",
+  hongo: "cepario.tipoHongo",
 }
-const TIPOS: CeparioTipo[] = ["microorganismo", "parte_genetica", "linea_celular"]
+const TIPOS: CeparioTipo[] = ["microorganismo", "parte_genetica", "linea_celular", "hongo"]
 
 // Vocabularios de línea celular (espejo de cepario.VOCABULARIOS del backend).
 const TIPOS_CULTIVO = ["adherente", "suspension", "mixto"] as const
@@ -141,6 +154,22 @@ const MICOPLASMA_KEY: Record<string, string> = {
   positivo: "cepario.micoPositivo",
   pendiente: "cepario.micoPendiente",
   no_testeado: "cepario.micoNoTesteado",
+}
+
+// Vocabularios de hongo/levadura (espejo de cepario.VOCABULARIOS del backend).
+const SUBTIPOS_HONGO = ["levadura", "filamentoso", "dimorfico"] as const
+const SUBTIPO_HONGO_KEY: Record<string, string> = {
+  levadura: "cepario.subtipoLevadura",
+  filamentoso: "cepario.subtipoFilamentoso",
+  dimorfico: "cepario.subtipoDimorfico",
+}
+const FORMAS_CONSERVACION = ["glicerol", "esporas", "liofilizado", "agar_inclinado", "papel_filtro"] as const
+const CONSERVACION_KEY: Record<string, string> = {
+  glicerol: "cepario.conservacionGlicerol",
+  esporas: "cepario.conservacionEsporas",
+  liofilizado: "cepario.conservacionLiofilizado",
+  agar_inclinado: "cepario.conservacionAgar",
+  papel_filtro: "cepario.conservacionPapel",
 }
 
 // Ensayos de la Ficha de caracterización (espejo de CAMPOS_CARACTERIZACION del
@@ -167,6 +196,63 @@ const ENSAYOS: { campo: string; key: string; hint?: string }[] = [
   { campo: "vp_mr", key: "cepario.ensayoVpMr" },
   { campo: "ferment_azucares", key: "cepario.ensayoFerment" },
 ]
+
+type EnsayoOpcion = { value: string; labelKey?: string; label?: string }
+
+const OPCIONES_SIGNO: EnsayoOpcion[] = [{ value: "+" }, { value: "-" }, { value: "pendiente", labelKey: "cepario.gramPendiente" }]
+const OPCIONES_INTENSIDAD: EnsayoOpcion[] = [
+  { value: "-" },
+  { value: "+" },
+  { value: "++" },
+  { value: "+++" },
+  { value: "pendiente", labelKey: "cepario.gramPendiente" },
+]
+
+const OPCIONES_ENSAYO: Record<string, EnsayoOpcion[]> = {
+  gram: [
+    { value: "+" },
+    { value: "-" },
+    { value: "variable", labelKey: "cepario.gramVariable" },
+    { value: "pendiente", labelKey: "cepario.gramPendiente" },
+  ],
+  esporas: [
+    { value: "Sí" },
+    { value: "No" },
+    { value: "pendiente", labelKey: "cepario.gramPendiente" },
+  ],
+  motilidad: OPCIONES_SIGNO,
+  catalasa: OPCIONES_SIGNO,
+  oxidasa: OPCIONES_SIGNO,
+  ureasa: OPCIONES_INTENSIDAD,
+  eps_mucoidez: OPCIONES_INTENSIDAD,
+  biofilm: OPCIONES_SIGNO,
+  hidrolisis_almidon: OPCIONES_SIGNO,
+  hidrolisis_caseina: OPCIONES_SIGNO,
+  hidrolisis_gelatina: OPCIONES_SIGNO,
+  halotolerancia_nacl: [
+    { value: "0", label: "0 %" },
+    { value: "5", label: "5 %" },
+    { value: "10", label: "10 %" },
+    { value: "15", label: "15 %" },
+  ],
+  rango_t: [
+    { value: "4 - 30", label: "4 - 30 °C" },
+    { value: "4 - 37", label: "4 - 37 °C" },
+    { value: "15 - 37", label: "15 - 37 °C" },
+    { value: "25 - 37", label: "25 - 37 °C" },
+    { value: "30 - 37", label: "30 - 37 °C" },
+  ],
+  rango_ph: [
+    { value: "5 - 9" },
+    { value: "6 - 8" },
+    { value: "6 - 9" },
+    { value: "7 - 9" },
+  ],
+  nitrato: OPCIONES_SIGNO,
+  citrato: OPCIONES_SIGNO,
+}
+
+const CAMPOS_CARAC_TEXTO_LIBRE = new Set(["vp_mr", "ferment_azucares", "morfologia_celular", "morfologia_colonia"])
 
 const DECISIONES = ["pasa", "no_pasa", "reevaluar"] as const
 const DECISION_KEY: Record<string, string> = {
@@ -195,11 +281,15 @@ function ensayosDeFicha(ficha: EntidadCaracterizacion): Record<string, string> {
   return out
 }
 
+function etiquetaOpcionEnsayo(opcion: EnsayoOpcion, t: (key: string) => string) {
+  return opcion.labelKey ? t(opcion.labelKey) : opcion.label ?? opcion.value
+}
+
 function mutationError(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
 }
 
-function descargarPdf(blob: Blob, nombre: string) {
+function descargarBlob(blob: Blob, nombre: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")
   a.href = url
@@ -270,6 +360,25 @@ function LineaChip() {
       }}
     >
       {t("cepario.chipLinea")}
+    </span>
+  )
+}
+
+// Chip de familia para hongos/levaduras: tint del acento del cepario; muestra el
+// subtipo (levadura/filamentoso/dimórfico) cuando se conoce, si no la familia.
+function HongoChip({ subtipo }: { subtipo?: string | null }) {
+  const { t } = useTranslation()
+  const v = "var(--lab-cepario)"
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium tracking-[0.16px]"
+      style={{
+        color: v,
+        backgroundColor: `color-mix(in srgb, ${v} 14%, transparent)`,
+        boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${v} 40%, transparent)`,
+      }}
+    >
+      {subtipo ? t(SUBTIPO_HONGO_KEY[subtipo] ?? subtipo) : t("cepario.chipHongo")}
     </span>
   )
 }
@@ -504,6 +613,29 @@ function LineaCard({ entidad, onClick }: { entidad: EntidadBiologica; onClick: (
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <LineaChip />
+      </div>
+      <VialMeter n={entidad.nro_viales_total} color={stock} />
+    </button>
+  )
+}
+
+// Card de galería de un hongo/levadura: acento por viabilidad del stock, código +
+// nombre, especie (itálica) como meta y el chip con el subtipo.
+function HongoCard({ entidad, onClick }: { entidad: EntidadBiologica; onClick: () => void }) {
+  const stock = entidad.viabilidad_resumen ? VIA_STOCK_COLOR[entidad.viabilidad_resumen] : STOCK_VACIO
+  return (
+    <button type="button" onClick={onClick} className={CARD_CLASS}>
+      <span className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: stock }} aria-hidden="true" />
+      <div className="flex items-start justify-between gap-2">
+        <span className="font-mono text-[14.5px] font-medium tracking-[0.02em] text-cds-textPrimary">{entidad.codigo ?? "—"}</span>
+        <CardEstadoBadge viabilidad={entidad.viabilidad_resumen} />
+      </div>
+      <div>
+        <div className="text-base font-medium text-cds-textPrimary">{entidad.nombre ?? ""}</div>
+        {entidad.especie ? <div className="mt-[7px] text-[12.5px] italic text-cds-textSecondary">{entidad.especie}</div> : null}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <HongoChip subtipo={entidad.subtipo} />
       </div>
       <VialMeter n={entidad.nro_viales_total} color={stock} />
     </button>
@@ -889,6 +1021,126 @@ function NuevaLineaForm({ pending, onSubmit }: { pending: boolean; onSubmit: (da
       <div className="mt-6">
         <Button type="submit" variant="primary" disabled={pending}>
           {t("cepario.guardarLinea")}
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+function NuevaHongoForm({ pending, onSubmit }: { pending: boolean; onSubmit: (data: CepEntidadCrear) => void }) {
+  const { t } = useTranslation()
+  const [nombre, setNombre] = useState("")
+  const [subtipo, setSubtipo] = useState("")
+  const [especie, setEspecie] = useState("")
+  const [origen, setOrigen] = useState("")
+  const [medio, setMedio] = useState("")
+  const [temperatura, setTemperatura] = useState("")
+  const [conservacion, setConservacion] = useState("")
+  const [tipoSexual, setTipoSexual] = useState("")
+  const [genotipo, setGenotipo] = useState("")
+  const [morfologia, setMorfologia] = useState("")
+  const [refColeccion, setRefColeccion] = useState("")
+  const [ingenieria, setIngenieria] = useState("")
+  const [procedencia, setProcedencia] = useState("adquirida")
+  const [bsl, setBsl] = useState("")
+
+  function submit(event: FormEvent) {
+    event.preventDefault()
+    onSubmit({
+      tipo: "hongo",
+      nombre: nombre.trim() || null,
+      subtipo: subtipo || null,
+      especie: especie.trim() || null,
+      origen_aislamiento: origen.trim() || null,
+      medio_cultivo: medio.trim() || null,
+      temperatura_optima: temperatura.trim() || null,
+      forma_conservacion: conservacion || null,
+      tipo_sexual: tipoSexual.trim() || null,
+      genotipo_marcadores: genotipo.trim() || null,
+      morfologia_colonia: morfologia.trim() || null,
+      referencia_coleccion: refColeccion.trim() || null,
+      ingenieria_genetica: ingenieria.trim() || null,
+      procedencia: procedencia || null,
+      nivel_bioseguridad: bsl.trim() || null,
+    })
+  }
+
+  return (
+    <form onSubmit={submit} className="max-w-2xl">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="block sm:col-span-2">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoNombre")}</span>
+          <Input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="S. cerevisiae BY4741" />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoSubtipo")}</span>
+          <select className={SELECT_CLASS} value={subtipo} onChange={(e) => setSubtipo(e.target.value)}>
+            <option value="">{t("cepario.subtipoSinDef")}</option>
+            {SUBTIPOS_HONGO.map((s) => (
+              <option key={s} value={s}>{t(SUBTIPO_HONGO_KEY[s])}</option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoEspecie")}</span>
+          <Input value={especie} onChange={(e) => setEspecie(e.target.value)} placeholder="Saccharomyces cerevisiae" />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoOrigenAislamiento")}</span>
+          <Input value={origen} onChange={(e) => setOrigen(e.target.value)} placeholder="ATCC" />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoMedioCultivo")}</span>
+          <Input value={medio} onChange={(e) => setMedio(e.target.value)} placeholder="YPD" />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoTemperaturaOptima")}</span>
+          <Input value={temperatura} onChange={(e) => setTemperatura(e.target.value)} placeholder="30 °C" />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoFormaConservacion")}</span>
+          <select className={SELECT_CLASS} value={conservacion} onChange={(e) => setConservacion(e.target.value)}>
+            <option value="">{t("cepario.conservacionSinDef")}</option>
+            {FORMAS_CONSERVACION.map((f) => (
+              <option key={f} value={f}>{t(CONSERVACION_KEY[f])}</option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoTipoSexual")}</span>
+          <Input value={tipoSexual} onChange={(e) => setTipoSexual(e.target.value)} placeholder="MATa" />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoProcedencia")}</span>
+          <select className={SELECT_CLASS} value={procedencia} onChange={(e) => setProcedencia(e.target.value)}>
+            <option value="adquirida">{t("cepario.procAdquirida")}</option>
+            <option value="disenada">{t("cepario.procDisenada")}</option>
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoRefColeccion")}</span>
+          <Input value={refColeccion} onChange={(e) => setRefColeccion(e.target.value)} placeholder="ATCC 201388" />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoBsl")}</span>
+          <Input value={bsl} onChange={(e) => setBsl(e.target.value)} placeholder="BSL-1" />
+        </label>
+        <label className="block sm:col-span-2">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoGenotipo")}</span>
+          <Input value={genotipo} onChange={(e) => setGenotipo(e.target.value)} placeholder="his3Δ1 leu2Δ0 ura3Δ0" />
+        </label>
+        <label className="block sm:col-span-2">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoMorfColonia")}</span>
+          <Input value={morfologia} onChange={(e) => setMorfologia(e.target.value)} placeholder="colonias cremosas lisas" />
+        </label>
+        <label className="block sm:col-span-2">
+          <span className="mb-2 block text-xs font-normal leading-4 tracking-[0.32px] text-cds-textSecondary">{t("cepario.campoIngenieria")}</span>
+          <Input value={ingenieria} onChange={(e) => setIngenieria(e.target.value)} />
+        </label>
+      </div>
+      <div className="mt-6">
+        <Button type="submit" variant="primary" disabled={pending}>
+          {t("cepario.guardarHongo")}
         </Button>
       </div>
     </form>
@@ -1356,22 +1608,29 @@ function CaracterizacionForm({
     <form onSubmit={submit} className="mt-3 border border-cds-borderSubtle bg-cds-layer01 p-4">
       <h4 className="mb-3 text-xs font-medium tracking-[0.32px] text-cds-textSecondary">{t("cepario.ensayosTitulo")}</h4>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {ENSAYOS.map(({ campo, key, hint }) => (
-          <label key={campo} className="block">
-            <span className="mb-1 block text-xs text-cds-textSecondary">{t(key)}</span>
-            {campo === "gram" ? (
-              <select className={SELECT_CLASS} value={ensayos.gram ?? ""} onChange={(e) => setEnsayo("gram", e.target.value)}>
-                <option value="">—</option>
-                <option value="+">+</option>
-                <option value="-">-</option>
-                <option value="variable">{t("cepario.gramVariable")}</option>
-                <option value="pendiente">{t("cepario.gramPendiente")}</option>
-              </select>
-            ) : (
-              <Input value={ensayos[campo] ?? ""} onChange={(e) => setEnsayo(campo, e.target.value)} placeholder={hint} />
-            )}
-          </label>
-        ))}
+        {ENSAYOS.map(({ campo, key, hint }) => {
+          const valor = ensayos[campo] ?? ""
+          const opciones = CAMPOS_CARAC_TEXTO_LIBRE.has(campo) ? null : OPCIONES_ENSAYO[campo]
+          const valorFueraDeLista = valor && opciones && !opciones.some((opcion) => opcion.value === valor)
+          return (
+            <label key={campo} className="block">
+              <span className="mb-1 block text-xs text-cds-textSecondary">{t(key)}</span>
+              {opciones ? (
+                <select className={CARAC_SELECT_CLASS} value={valor} onChange={(e) => setEnsayo(campo, e.target.value)}>
+                  <option value="">—</option>
+                  {valorFueraDeLista ? <option value={valor}>{valor}</option> : null}
+                  {opciones.map((opcion) => (
+                    <option key={opcion.value} value={opcion.value}>
+                      {etiquetaOpcionEnsayo(opcion, t)}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <Input value={valor} onChange={(e) => setEnsayo(campo, e.target.value)} placeholder={hint} />
+              )}
+            </label>
+          )
+        })}
       </div>
 
       <div className="mt-4 border-t border-cds-borderSubtle pt-4">
@@ -2570,6 +2829,1569 @@ function GenealogiaPasaje({ nodos }: { nodos: CepGenealogiaNodo[] }) {
   )
 }
 
+// ============================================
+// Cepario C2 — capa de secuencia (panel de la ficha de parte genética)
+// ============================================
+
+// Feature type → color token (CSS var). A feature with its own `color` (hex from
+// GenBank or set by hand) wins; otherwise we color it by type. The SAME palette is
+// shared by the map, the list and the sequence highlight so the eye links them.
+const FEATURE_TIPO_COLOR: Record<CepFeatureTipo, string> = {
+  gene: "var(--lab-parte-vector)",
+  cds: "var(--lab-cepario)",
+  promotor: "var(--lab-parte-promotor)",
+  terminador: "var(--lab-parte-terminador)",
+  rbs: "var(--lab-parte-rbs)",
+  resistencia: "var(--cds-support-error)",
+  sitio: "var(--lab-warm)",
+  misc: "var(--lab-parte-tag)",
+}
+const FEATURE_TIPO_KEY: Record<CepFeatureTipo, string> = {
+  gene: "cepario.ftGene",
+  cds: "cepario.ftCds",
+  promotor: "cepario.ftPromotor",
+  terminador: "cepario.ftTerminador",
+  rbs: "cepario.ftRbs",
+  resistencia: "cepario.ftResistencia",
+  sitio: "cepario.ftSitio",
+  misc: "cepario.ftMisc",
+}
+const FEATURE_TIPOS: CepFeatureTipo[] = [
+  "gene", "cds", "promotor", "terminador", "rbs", "resistencia", "sitio", "misc",
+]
+// Colores de los resaltados de la búsqueda de motivo: hebra directa (amarillo marcador,
+// bien visible y distinto de los colores de las features) y hebra reversa (cian, para
+// distinguirla cuando se busca en ambas hebras).
+const BUSQUEDA_COLOR = "#facc15"
+const BUSQUEDA_COLOR_REV = "#38bdf8"
+const SEC_SELECT_CLASS = "h-10 border border-cds-borderSubtle bg-cds-field px-3 text-sm text-cds-textPrimary"
+
+// Paleta para personalizar el color de una feature (tokens del tema → se adaptan a
+// claro/oscuro). Se guarda el `id` corto en cepario_feature.color: el backend lo
+// limita a 20 chars, así que no entra un `var(--lab-parte-terminador)` entero; el
+// mapa y la lista lo resuelven a su CSS var vía featureColor.
+const FEATURE_PALETA: { id: string; color: string }[] = [
+  { id: "blue", color: "var(--lab-parte-vector)" },
+  { id: "green", color: "var(--lab-parte-promotor)" },
+  { id: "purple", color: "var(--lab-parte-rbs)" },
+  { id: "amber", color: "var(--lab-parte-gen)" },
+  { id: "raspberry", color: "var(--lab-parte-terminador)" },
+  { id: "teal", color: "var(--lab-parte-tag)" },
+  { id: "red", color: "var(--cds-support-error)" },
+  { id: "gold", color: "var(--lab-warm)" },
+]
+const PALETA_POR_ID = new Map(FEATURE_PALETA.map((p) => [p.id, p.color]))
+
+// Color con el que se pinta una feature: el elegido por el usuario (id de paleta →
+// su CSS var; un hex viejo se usa tal cual) o, si no eligió, el color de su tipo.
+function featureColor(f: CepFeature): string {
+  if (f.color) {
+    return PALETA_POR_ID.get(f.color) ?? f.color
+  }
+  return FEATURE_TIPO_COLOR[f.tipo]
+}
+
+function nombreFeature(f: CepFeature, t: (k: string) => string): string {
+  return f.nombre || t(FEATURE_TIPO_KEY[f.tipo])
+}
+
+async function copiarAlPortapapeles(texto: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(texto)
+    return true
+  } catch {
+    return false
+  }
+}
+
+// Greedy interval packing into non-overlapping lanes (sorted by start). Used by the
+// map so features that overlap on the sequence don't sit on top of each other.
+function repartirEnCarriles(features: CepFeature[]): { laneDe: Map<number, number>; carriles: number } {
+  const ordenadas = [...features].sort((a, b) => a.inicio - b.inicio || a.fin - b.fin)
+  const finPorCarril: number[] = []
+  const laneDe = new Map<number, number>()
+  for (const f of ordenadas) {
+    let carril = finPorCarril.findIndex((fin) => f.inicio > fin)
+    if (carril === -1) {
+      carril = finPorCarril.length
+      finPorCarril.push(f.fin)
+    } else {
+      finPorCarril[carril] = f.fin
+    }
+    laneDe.set(f.id, carril)
+  }
+  return { laneDe, carriles: Math.max(1, finPorCarril.length) }
+}
+
+// --- Geometría del anillo circular ---
+function puntoPolar(cx: number, cy: number, r: number, gradosDesdeArriba: number): [number, number] {
+  const a = ((gradosDesdeArriba - 90) * Math.PI) / 180
+  return [cx + r * Math.cos(a), cy + r * Math.sin(a)]
+}
+
+function arcoSVG(cx: number, cy: number, r: number, desde: number, hasta: number): string {
+  const [x1, y1] = puntoPolar(cx, cy, r, desde)
+  const [x2, y2] = puntoPolar(cx, cy, r, hasta)
+  const largo = hasta - desde > 180 ? 1 : 0
+  return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${largo} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`
+}
+
+// Triángulo (3 puntos "x,y") de la punta de flecha de hebra, sobre el anillo.
+function flechaArco(cx: number, cy: number, r: number, gradoPunta: number, dir: 1 | -1): string {
+  const atras = gradoPunta - dir * 3.4
+  const [tx, ty] = puntoPolar(cx, cy, r, gradoPunta)
+  const [ix, iy] = puntoPolar(cx, cy, r - 5, atras)
+  const [ox, oy] = puntoPolar(cx, cy, r + 5, atras)
+  return `${tx.toFixed(2)},${ty.toFixed(2)} ${ix.toFixed(2)},${iy.toFixed(2)} ${ox.toFixed(2)},${oy.toFixed(2)}`
+}
+
+// Intervalo "redondo" (1/2/5 × 10^n) para la regla, apuntando a ~8 marcas.
+function pasoRegla(longitud: number): number {
+  const objetivo = longitud / 8
+  const mag = Math.pow(10, Math.floor(Math.log10(Math.max(1, objetivo))))
+  for (const m of [1, 2, 5]) {
+    if (mag * m >= objetivo) {
+      return mag * m
+    }
+  }
+  return mag * 10
+}
+
+function marcasRegla(longitud: number): number[] {
+  const paso = pasoRegla(longitud)
+  const marcas: number[] = []
+  for (let p = paso; p < longitud; p += paso) {
+    marcas.push(p)
+  }
+  return marcas
+}
+
+function recortarEtiqueta(nombre: string): string {
+  return nombre.length > 16 ? `${nombre.slice(0, 15)}…` : nombre
+}
+
+// Leyenda de tipos presentes (color → etiqueta).
+function LeyendaTipos({ features }: { features: CepFeature[] }) {
+  const { t } = useTranslation()
+  const tipos = useMemo(() => Array.from(new Set(features.map((f) => f.tipo))), [features])
+  if (tipos.length === 0) {
+    return null
+  }
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+      {tipos.map((tp) => (
+        <span key={tp} className="inline-flex items-center gap-1.5 text-[11px] text-cds-textSecondary">
+          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: FEATURE_TIPO_COLOR[tp] }} aria-hidden="true" />
+          {t(FEATURE_TIPO_KEY[tp])}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+// Resumen de sitios de enzimas: cortadores únicos (chips con su posición) + los que
+// cortan en varios lugares (línea muteada). Los únicos son los útiles para clonar.
+function EnzimasResumen({ sitios }: { sitios: SitiosEnzima[] }) {
+  const { t } = useTranslation()
+  if (sitios.length === 0) {
+    return <p className="text-xs text-cds-textSecondary">{t("cepario.secEnzimasNinguno")}</p>
+  }
+  const unicos = sitios.filter((s) => s.posiciones.length === 1)
+  const multiples = sitios.filter((s) => s.posiciones.length > 1)
+  return (
+    <div className="flex flex-col gap-2">
+      {unicos.length > 0 ? (
+        <div>
+          <h4 className="mb-1 text-[11px] font-medium uppercase tracking-wide text-cds-textSecondary">{t("cepario.secEnzimasUnicos")}</h4>
+          <div className="flex flex-wrap gap-1.5">
+            {unicos.map((s) => (
+              <span key={s.enzima} className="inline-flex items-center gap-1 rounded-full border border-cds-borderSubtle px-2 py-0.5 text-[11px]">
+                <span className="font-medium text-cds-textPrimary">{s.enzima}</span>
+                <span className="font-mono text-cds-textSecondary">{s.posiciones[0].toLocaleString()}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {multiples.length > 0 ? (
+        <p className="text-[11px] text-cds-textSecondary">
+          <span className="font-medium">{t("cepario.secEnzimasMultiples")}:</span>{" "}
+          {multiples.map((s) => `${s.enzima} ×${s.posiciones.length}`).join(" · ")}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+// Mapa de plásmido propio: anillo (circular) o riel (lineal) con las features
+// ubicadas y coloreadas por tipo. La hebra se muestra con la punta de flecha; el
+// hover sincroniza con la lista y el texto (estado `hoverId` levantado al panel).
+// Suma: etiquetas con líneas guía, regla de pb, tooltip al hover, click-para-copiar.
+// Geometría del mapa, compartida entre el render y el cálculo de pb del arrastre de
+// selección (deben coincidir con las constantes locales de cada rama del render).
+const MAPA_CIRC_W = 360
+const MAPA_CIRC_H = 340
+const MAPA_LIN_W = 520
+const MAPA_LIN_MARGEN = 18
+// Selección por arrastre: neutro de alto contraste (gris en claro / casi blanco en
+// oscuro) con borde punteado estilo "marquee". A propósito NO es un color de la paleta,
+// así que nunca se confunde con una feature (presente o futura) ni con la búsqueda.
+const SELECCION_COLOR = "var(--cds-text-primary)"
+const SELECCION_DASH = "4 3"
+
+function PlasmidoMapa({
+  secuencia,
+  hoverId,
+  onHover,
+  onCopiarFeature,
+  marcasEnzima = [],
+  marcasBusqueda = [],
+  seleccion = null,
+  onSeleccionar,
+}: {
+  secuencia: CepSecuencia
+  hoverId: number | null
+  onHover: (id: number | null) => void
+  onCopiarFeature: (f: CepFeature) => void
+  marcasEnzima?: { nombre: string; posicion: number }[]
+  marcasBusqueda?: { inicio: number; fin: number; color: string }[]
+  seleccion?: { inicio: number; fin: number } | null
+  onSeleccionar?: (sel: { inicio: number; fin: number } | null) => void
+}) {
+  const { t } = useTranslation()
+  const { longitud, topologia, features } = secuencia
+  const circular = topologia === "circular"
+  const { laneDe, carriles } = useMemo(() => repartirEnCarriles(features), [features])
+  const [copiadoId, setCopiadoId] = useState<number | null>(null)
+  const svgRef = useRef<SVGSVGElement>(null)
+  // Arrastre de selección: ancla en pb + si hubo movimiento (para distinguir click).
+  const drag = useRef<{ ancla: number; movido: boolean } | null>(null)
+
+  // Convierte un evento de mouse a posición en pb (1-based) usando el CTM del SVG, así
+  // funciona pese al escalado responsive (viewBox + width 100%).
+  function pbDesdeEvento(e: { clientX: number; clientY: number }): number | null {
+    const svg = svgRef.current
+    if (!svg) {
+      return null
+    }
+    const ctm = svg.getScreenCTM()
+    if (!ctm) {
+      return null
+    }
+    const pt = svg.createSVGPoint()
+    pt.x = e.clientX
+    pt.y = e.clientY
+    const loc = pt.matrixTransform(ctm.inverse())
+    let pb: number
+    if (circular) {
+      const cx = MAPA_CIRC_W / 2
+      const cy = MAPA_CIRC_H / 2
+      let g = (Math.atan2(loc.y - cy, loc.x - cx) * 180) / Math.PI + 90
+      g = ((g % 360) + 360) % 360
+      pb = Math.round((g / 360) * longitud)
+    } else {
+      const usable = MAPA_LIN_W - MAPA_LIN_MARGEN * 2
+      pb = Math.round(((loc.x - MAPA_LIN_MARGEN) / usable) * longitud)
+    }
+    return Math.min(longitud, Math.max(1, pb || 1))
+  }
+
+  function onMapaMouseDown(e: React.MouseEvent) {
+    if (!onSeleccionar || e.button !== 0) {
+      return
+    }
+    const pb = pbDesdeEvento(e)
+    if (pb == null) {
+      return
+    }
+    drag.current = { ancla: pb, movido: false }
+  }
+  function onMapaMouseMove(e: React.MouseEvent) {
+    const st = drag.current
+    if (!st || !onSeleccionar) {
+      return
+    }
+    const pb = pbDesdeEvento(e)
+    if (pb == null) {
+      return
+    }
+    st.movido = true
+    onSeleccionar({ inicio: Math.min(st.ancla, pb), fin: Math.max(st.ancla, pb) })
+  }
+  function onMapaMouseUp() {
+    const st = drag.current
+    drag.current = null
+    // Click simple (sin arrastrar) limpia la selección.
+    if (st && !st.movido && onSeleccionar) {
+      onSeleccionar(null)
+    }
+  }
+  const dragProps = onSeleccionar
+    ? { ref: svgRef, onMouseDown: onMapaMouseDown, onMouseMove: onMapaMouseMove, onMouseUp: onMapaMouseUp, onMouseLeave: onMapaMouseUp, style: { cursor: "crosshair" as const } }
+    : { ref: svgRef }
+
+  function alClickear(f: CepFeature) {
+    onCopiarFeature(f)
+    setCopiadoId(f.id)
+    setTimeout(() => setCopiadoId((c) => (c === f.id ? null : c)), 1200)
+  }
+
+  function textoTooltip(f: CepFeature): string {
+    if (copiadoId === f.id) {
+      return t("cepario.secCopiado")
+    }
+    const flecha = f.hebra === "-" ? "←" : "→"
+    return `${nombreFeature(f, t)} · ${t(FEATURE_TIPO_KEY[f.tipo])} · ${f.inicio.toLocaleString()}–${f.fin.toLocaleString()} ${flecha}`
+  }
+
+  // Orden de pintado: la feature en hover va al final (encima de todas).
+  const enOrden = useMemo(() => {
+    const arr = [...features]
+    arr.sort((a, b) => (a.id === hoverId ? 1 : 0) - (b.id === hoverId ? 1 : 0))
+    return arr
+  }, [features, hoverId])
+
+  const hoverFeat = hoverId != null ? features.find((f) => f.id === hoverId) ?? null : null
+
+  if (circular) {
+    const W = MAPA_CIRC_W
+    const H = MAPA_CIRC_H
+    const cx = W / 2
+    const cy = H / 2
+    const rBase = 120
+    const paso = 16
+    const rLabel = rBase + 14
+    return (
+      <div className="flex flex-col gap-3">
+        <div className="relative mx-auto w-full" style={{ maxWidth: 360 }}>
+          <svg {...dragProps} viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full select-none" role="img" aria-label={t("cepario.secMapaAria")}>
+            {/* Backbone ring */}
+            <circle cx={cx} cy={cy} r={rBase} fill="none" stroke="var(--cds-border-subtle)" strokeWidth={2.5} />
+            {/* Selección por arrastre: sector sombreado de la porción elegida */}
+            {seleccion ? (() => {
+              const sg1 = ((seleccion.inicio - 1) / longitud) * 360
+              const sg2 = (seleccion.fin / longitud) * 360
+              const [sp1x, sp1y] = puntoPolar(cx, cy, rBase + 12, sg1)
+              const [sp2x, sp2y] = puntoPolar(cx, cy, rBase + 12, sg2)
+              const largo = sg2 - sg1 > 180 ? 1 : 0
+              return (
+                <path
+                  d={`M ${cx} ${cy} L ${sp1x.toFixed(2)} ${sp1y.toFixed(2)} A ${rBase + 12} ${rBase + 12} 0 ${largo} 1 ${sp2x.toFixed(2)} ${sp2y.toFixed(2)} Z`}
+                  fill={SELECCION_COLOR}
+                  fillOpacity={0.1}
+                  stroke={SELECCION_COLOR}
+                  strokeOpacity={0.7}
+                  strokeWidth={1.25}
+                  strokeDasharray={SELECCION_DASH}
+                />
+              )
+            })() : null}
+            {/* Regla: marcas de pb a intervalos redondos */}
+            {marcasRegla(longitud).map((pos) => {
+              const g = (pos / longitud) * 360
+              const [a1x, a1y] = puntoPolar(cx, cy, rBase - 3, g)
+              const [a2x, a2y] = puntoPolar(cx, cy, rBase + 3, g)
+              return <line key={pos} x1={a1x} y1={a1y} x2={a2x} y2={a2y} stroke="var(--cds-border-strong)" strokeWidth={1} />
+            })}
+            {/* Coincidencias de la búsqueda: banda exterior sobre el tramo [inicio,fin], por
+                fuera del backbone para no taparse con las features (color por hebra). */}
+            {marcasBusqueda.map((m, idx) => {
+              const g1 = ((m.inicio - 1) / longitud) * 360
+              let g2 = (m.fin / longitud) * 360
+              if (g2 - g1 < 1.4) {
+                g2 = g1 + 1.4 // visibilidad mínima de coincidencias cortas
+              }
+              return (
+                <g key={`bus-${idx}`}>
+                  {/* Relleno tenido + bordes interno/externo plenos: "banda con borde" como en el riel. */}
+                  <path d={arcoSVG(cx, cy, rBase + 8, g1, g2)} fill="none" stroke={m.color} strokeWidth={7} strokeLinecap="round" opacity={0.45} />
+                  <path d={arcoSVG(cx, cy, rBase + 5, g1, g2)} fill="none" stroke={m.color} strokeWidth={1.5} strokeLinecap="round" />
+                  <path d={arcoSVG(cx, cy, rBase + 11, g1, g2)} fill="none" stroke={m.color} strokeWidth={1.5} strokeLinecap="round" />
+                </g>
+              )
+            })}
+            {/* Marca del origen (posición 1, arriba) */}
+            <line x1={cx} y1={cy - rBase - 5} x2={cx} y2={cy - rBase + 5} stroke="var(--cds-text-secondary)" strokeWidth={1.5} />
+            <text x={cx} y={cy - rBase - 9} textAnchor="middle" className="fill-cds-textSecondary" style={{ fontSize: 10 }}>1</text>
+            {enOrden.map((f) => {
+              const carril = laneDe.get(f.id) ?? 0
+              const r = rBase - carril * paso
+              const g1 = ((f.inicio - 1) / longitud) * 360
+              let g2 = (f.fin / longitud) * 360
+              if (g2 - g1 < 2.2) {
+                g2 = g1 + 2.2 // visibilidad mínima de features muy chicas
+              }
+              const gm = (g1 + g2) / 2
+              const activo = hoverId === f.id
+              const color = featureColor(f)
+              const dir: 1 | -1 = f.hebra === "-" ? -1 : 1
+              const gradoPunta = dir === 1 ? g2 : g1
+              const [px, py] = puntoPolar(cx, cy, rBase + 2, gm)
+              const [lx, ly] = puntoPolar(cx, cy, rLabel, gm)
+              const anchor = lx >= cx ? "start" : "end"
+              return (
+                <g
+                  key={f.id}
+                  onMouseEnter={() => onHover(f.id)}
+                  onMouseLeave={() => onHover(null)}
+                  onClick={() => alClickear(f)}
+                  style={{ cursor: "pointer" }}
+                >
+                  {/* Halo sutil bajo la feature activa, para destacar sin apagar el resto. */}
+                  {activo ? (
+                    <path d={arcoSVG(cx, cy, r, g1, g2)} fill="none" stroke={color} strokeWidth={18} strokeLinecap="round" opacity={0.22} />
+                  ) : null}
+                  <path
+                    d={arcoSVG(cx, cy, r, g1, g2)}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={activo ? 14 : 11}
+                    strokeLinecap="butt"
+                  />
+                  <polygon points={flechaArco(cx, cy, r, gradoPunta, dir)} fill={color} />
+                  {/* Línea guía + etiqueta de la feature */}
+                  <line x1={px} y1={py} x2={lx} y2={ly} stroke={color} strokeWidth={1} opacity={activo ? 0.9 : 0.6} />
+                  <text
+                    x={lx + (anchor === "start" ? 2 : -2)}
+                    y={ly}
+                    textAnchor={anchor}
+                    dominantBaseline="middle"
+                    className={activo ? "fill-cds-textPrimary" : "fill-cds-textSecondary"}
+                    style={{ fontSize: 10.5, fontWeight: activo ? 600 : 400 }}
+                  >
+                    {recortarEtiqueta(nombreFeature(f, t))}
+                  </text>
+                </g>
+              )
+            })}
+            {/* Cut sites of unique restriction enzymes (opt-in) */}
+            {marcasEnzima.map((m, idx) => {
+              const g = (m.posicion / longitud) * 360
+              const [t1x, t1y] = puntoPolar(cx, cy, rBase - 7, g)
+              const [t2x, t2y] = puntoPolar(cx, cy, rBase + 7, g)
+              const [nx, ny] = puntoPolar(cx, cy, rBase + 30, g)
+              const anchor = nx >= cx ? "start" : "end"
+              return (
+                <g key={`enz-${idx}`}>
+                  <title>{`${m.nombre} · ${t("cepario.secEnzimaCortaEn", { n: m.posicion })}`}</title>
+                  <line x1={t1x} y1={t1y} x2={t2x} y2={t2y} stroke="var(--cds-text-primary)" strokeWidth={1.5} />
+                  <text x={nx} y={ny} textAnchor={anchor} dominantBaseline="middle" className="fill-cds-textPrimary" style={{ fontSize: 9.5, fontWeight: 500 }}>
+                    {m.nombre}
+                  </text>
+                </g>
+              )
+            })}
+            {/* Center label: length + topology */}
+            <text x={cx} y={cy - 3} textAnchor="middle" className="fill-cds-textPrimary" style={{ fontSize: 23, fontWeight: 500 }}>
+              {longitud.toLocaleString()}
+            </text>
+            <text x={cx} y={cy + 16} textAnchor="middle" className="fill-cds-textSecondary" style={{ fontSize: 12 }}>
+              {t("cepario.secBpCorto")} · {t("cepario.secCircular")}
+            </text>
+          </svg>
+        </div>
+        {/* Detalle de la feature en hover: línea fija debajo del mapa (no tapa el dibujo). */}
+        <div className="min-h-[1.25rem] text-center text-[11px] leading-5">
+          {hoverFeat ? <span className="text-cds-textPrimary">{textoTooltip(hoverFeat)}</span> : null}
+        </div>
+        <LeyendaTipos features={features} />
+      </div>
+    )
+  }
+
+  // --- Riel lineal ---
+  const W = MAPA_LIN_W
+  const margen = MAPA_LIN_MARGEN
+  const usable = W - margen * 2
+  const altoCarril = 26
+  const ejeY = 34
+  const H = ejeY + 14 + carriles * altoCarril
+  const x = (pos: number) => margen + (pos / longitud) * usable
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="relative w-full">
+        <svg {...dragProps} viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full select-none" role="img" aria-label={t("cepario.secMapaAria")}>
+          {/* Selección por arrastre: columna sombreada del tramo elegido (al fondo) */}
+          {seleccion ? (
+            <rect
+              x={x(seleccion.inicio - 1)}
+              y={ejeY - 12}
+              width={Math.max(x(seleccion.fin) - x(seleccion.inicio - 1), 2)}
+              height={H - (ejeY - 12) - 2}
+              fill={SELECCION_COLOR}
+              fillOpacity={0.1}
+              stroke={SELECCION_COLOR}
+              strokeOpacity={0.7}
+              strokeWidth={1.25}
+              strokeDasharray={SELECCION_DASH}
+            />
+          ) : null}
+          <line x1={margen} y1={ejeY} x2={W - margen} y2={ejeY} stroke="var(--cds-border-subtle)" strokeWidth={2.5} />
+          {/* Regla: marcas de pb numeradas */}
+          {marcasRegla(longitud).map((pos) => (
+            <g key={pos}>
+              <line x1={x(pos)} y1={ejeY - 3} x2={x(pos)} y2={ejeY + 3} stroke="var(--cds-border-strong)" strokeWidth={1} />
+              <text x={x(pos)} y={ejeY - 7} textAnchor="middle" className="fill-cds-textSecondary" style={{ fontSize: 9 }}>
+                {pos.toLocaleString()}
+              </text>
+            </g>
+          ))}
+          <text x={margen} y={ejeY - 7} className="fill-cds-textSecondary" style={{ fontSize: 9 }}>1</text>
+          <text x={W - margen} y={ejeY - 7} textAnchor="end" className="fill-cds-textSecondary" style={{ fontSize: 9 }}>
+            {longitud.toLocaleString()} {t("cepario.secBpCorto")}
+          </text>
+          {enOrden.map((f) => {
+            const carril = laneDe.get(f.id) ?? 0
+            const y = ejeY + 12 + carril * altoCarril
+            const x1 = x(f.inicio - 1)
+            const x2 = Math.max(x(f.fin), x1 + 4)
+            const activo = hoverId === f.id
+            const color = featureColor(f)
+            const flechaW = 5
+            // Bloque con muesca de flecha según hebra.
+            const puntos = f.hebra === "-"
+              ? `${x1},${y + 5} ${x1 + flechaW},${y} ${x2},${y} ${x2},${y + 10} ${x1 + flechaW},${y + 10}`
+              : `${x1},${y} ${x2 - flechaW},${y} ${x2},${y + 5} ${x2 - flechaW},${y + 10} ${x1},${y + 10}`
+            return (
+              <g
+                key={f.id}
+                onMouseEnter={() => onHover(f.id)}
+                onMouseLeave={() => onHover(null)}
+                onClick={() => alClickear(f)}
+                style={{ cursor: "pointer" }}
+              >
+                <polygon
+                  points={puntos}
+                  fill={color}
+                  stroke={activo ? "var(--cds-text-primary)" : "none"}
+                  strokeWidth={activo ? 1.5 : 0}
+                />
+                <text x={x1} y={y - 4} className={activo ? "fill-cds-textPrimary" : "fill-cds-textSecondary"} style={{ fontSize: 9.5, fontWeight: activo ? 600 : 400 }}>
+                  {recortarEtiqueta(nombreFeature(f, t))}
+                </text>
+              </g>
+            )
+          })}
+          {/* Coincidencias de la búsqueda: banda sobre el eje en el tramo [inicio,fin], alta y
+              con borde marcado para que resalte (color por hebra). */}
+          {marcasBusqueda.map((m, idx) => {
+            const x1 = x(m.inicio - 1)
+            const x2 = Math.max(x(m.fin), x1 + 3)
+            return (
+              <rect
+                key={`bus-${idx}`}
+                x={x1}
+                y={ejeY - 7}
+                width={x2 - x1}
+                height={14}
+                rx={3}
+                fill={m.color}
+                fillOpacity={0.5}
+                stroke={m.color}
+                strokeWidth={2}
+              />
+            )
+          })}
+          {/* Cut sites of unique restriction enzymes (opt-in): líneas punteadas + título nativo */}
+          {marcasEnzima.map((m, idx) => (
+            <g key={`enz-${idx}`}>
+              <title>{`${m.nombre} · ${t("cepario.secEnzimaCortaEn", { n: m.posicion })}`}</title>
+              <line
+                x1={x(m.posicion)}
+                y1={ejeY - 6}
+                x2={x(m.posicion)}
+                y2={H - 2}
+                stroke="var(--cds-text-primary)"
+                strokeWidth={1}
+                strokeDasharray="2 2"
+                opacity={0.55}
+              />
+            </g>
+          ))}
+        </svg>
+      </div>
+      {/* Detalle de la feature en hover: línea fija debajo del mapa (no tapa el dibujo). */}
+      <div className="min-h-[1.25rem] text-center text-[11px] leading-5">
+        {hoverFeat ? <span className="text-cds-textPrimary">{textoTooltip(hoverFeat)}</span> : null}
+      </div>
+      <LeyendaTipos features={features} />
+    </div>
+  )
+}
+
+// Resuelve un color `var(--x)` a su valor concreto computado del :root. Lo usa la
+// exportación del mapa, que necesita colores absolutos fuera del DOM de la app.
+function resolverColorCss(valor: string): string {
+  const m = /^var\((--[^)]+)\)$/.exec(valor.trim())
+  if (m && typeof window !== "undefined") {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(m[1]).trim()
+    return v || valor
+  }
+  return valor
+}
+
+// --- Exportar el mapa propio (SVG vectorial / PNG) --------------------------------
+// El <svg> del mapa usa clases Tailwind y CSS vars que no existen fuera de la app;
+// para un archivo autónomo clonamos el nodo e inlineamos los colores ya computados
+// por el navegador, y componemos el título + la leyenda de tipos dentro del SVG.
+const NS_SVG = "http://www.w3.org/2000/svg"
+type LeyendaExport = { color: string; label: string }
+
+// Propiedades de pintado/tipografía a "congelar" como atributos en el clon.
+const SVG_PROPS_INLINE = [
+  "fill", "stroke", "stroke-width", "stroke-dasharray", "stroke-linecap",
+  "opacity", "font-size", "font-weight", "font-family", "text-anchor", "dominant-baseline",
+] as const
+
+// Primer ancestro con fondo no transparente (fondo del archivo, theme-aware).
+function fondoDe(el: Element): string {
+  let n: Element | null = el
+  while (n) {
+    const bg = getComputedStyle(n).backgroundColor
+    if (bg && bg !== "transparent" && !bg.startsWith("rgba(0, 0, 0, 0")) {
+      return bg
+    }
+    n = n.parentElement
+  }
+  return "#ffffff"
+}
+
+// Ancho aproximado de un chip de leyenda (punto + etiqueta + separación).
+function anchoChip(it: LeyendaExport): number {
+  return 14 + it.label.length * 6.2 + 14
+}
+
+// Clona el <svg>, inlinea los colores computados y agrega fondo + título + leyenda.
+// Devuelve el markup standalone y las dimensiones finales (para rasterizar a PNG).
+function componerSvgExport(
+  svg: SVGSVGElement,
+  opts: { titulo: string | null; leyenda: LeyendaExport[]; colorTexto: string; colorTenue: string; fondo: string },
+): { markup: string; ancho: number; alto: number } {
+  const clon = svg.cloneNode(true) as SVGSVGElement
+  // Inline de estilos: original y clon comparten el mismo orden de nodos descendientes.
+  const orig = svg.querySelectorAll<SVGElement>("*")
+  const dest = clon.querySelectorAll<SVGElement>("*")
+  dest.forEach((nodo, i) => {
+    const cs = getComputedStyle(orig[i])
+    for (const prop of SVG_PROPS_INLINE) {
+      const v = cs.getPropertyValue(prop)
+      if (v) {
+        nodo.setAttribute(prop, v)
+      }
+    }
+    nodo.removeAttribute("class")
+  })
+
+  const vb = (svg.getAttribute("viewBox") ?? `0 0 ${svg.clientWidth} ${svg.clientHeight}`).split(/\s+/).map(Number)
+  const W = vb[2]
+  const H = vb[3]
+  const padTop = opts.titulo ? 30 : 8
+  const margen = 12
+  // Leyenda en filas que entran en el ancho (greedy).
+  const filas: LeyendaExport[][] = []
+  let fila: LeyendaExport[] = []
+  let anchoFila = 0
+  for (const it of opts.leyenda) {
+    const w = anchoChip(it)
+    if (anchoFila + w > W - margen * 2 && fila.length > 0) {
+      filas.push(fila)
+      fila = []
+      anchoFila = 0
+    }
+    fila.push(it)
+    anchoFila += w
+  }
+  if (fila.length > 0) {
+    filas.push(fila)
+  }
+  const altoFila = 18
+  const padBottom = filas.length > 0 ? filas.length * altoFila + 14 : 8
+  const total = padTop + H + padBottom
+
+  // Fondo sólido + contenido del mapa desplazado por padTop.
+  const fondoRect = document.createElementNS(NS_SVG, "rect")
+  fondoRect.setAttribute("x", "0")
+  fondoRect.setAttribute("y", "0")
+  fondoRect.setAttribute("width", String(W))
+  fondoRect.setAttribute("height", String(total))
+  fondoRect.setAttribute("fill", opts.fondo)
+  const grupo = document.createElementNS(NS_SVG, "g")
+  grupo.setAttribute("transform", `translate(0, ${padTop})`)
+  while (clon.firstChild) {
+    grupo.appendChild(clon.firstChild)
+  }
+  clon.appendChild(fondoRect)
+  clon.appendChild(grupo)
+
+  if (opts.titulo) {
+    const titulo = document.createElementNS(NS_SVG, "text")
+    titulo.setAttribute("x", String(W / 2))
+    titulo.setAttribute("y", "20")
+    titulo.setAttribute("text-anchor", "middle")
+    titulo.setAttribute("fill", opts.colorTexto)
+    titulo.setAttribute("font-size", "14")
+    titulo.setAttribute("font-weight", "600")
+    titulo.textContent = opts.titulo
+    clon.appendChild(titulo)
+  }
+  filas.forEach((f, fi) => {
+    const y = padTop + H + 12 + fi * altoFila
+    let x = margen
+    for (const it of f) {
+      const punto = document.createElementNS(NS_SVG, "circle")
+      punto.setAttribute("cx", String(x + 5))
+      punto.setAttribute("cy", String(y - 4))
+      punto.setAttribute("r", "5")
+      punto.setAttribute("fill", it.color)
+      clon.appendChild(punto)
+      const txt = document.createElementNS(NS_SVG, "text")
+      txt.setAttribute("x", String(x + 14))
+      txt.setAttribute("y", String(y))
+      txt.setAttribute("fill", opts.colorTenue)
+      txt.setAttribute("font-size", "11")
+      txt.textContent = it.label
+      clon.appendChild(txt)
+      x += anchoChip(it)
+    }
+  })
+
+  clon.setAttribute("xmlns", NS_SVG)
+  clon.setAttribute("viewBox", `0 0 ${W} ${total}`)
+  clon.setAttribute("width", String(W))
+  clon.setAttribute("height", String(total))
+  return { markup: new XMLSerializer().serializeToString(clon), ancho: W, alto: total }
+}
+
+// Rasteriza el SVG standalone a PNG (2x) y lo descarga.
+async function descargarPng(markup: string, ancho: number, alto: number, nombre: string): Promise<void> {
+  const escala = 2
+  const url = URL.createObjectURL(new Blob([markup], { type: "image/svg+xml;charset=utf-8" }))
+  try {
+    const img = new Image()
+    await new Promise<void>((res, rej) => {
+      img.onload = () => res()
+      img.onerror = () => rej(new Error("svg load"))
+      img.src = url
+    })
+    const canvas = document.createElement("canvas")
+    canvas.width = Math.round(ancho * escala)
+    canvas.height = Math.round(alto * escala)
+    const ctx = canvas.getContext("2d")
+    if (!ctx) {
+      return
+    }
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+    await new Promise<void>((res) => {
+      canvas.toBlob((blob) => {
+        if (blob) {
+          descargarBlob(blob, nombre)
+        }
+        res()
+      }, "image/png")
+    })
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+// `busqueda`: coincidencia de la búsqueda de motivo (estilo marcador, bien visible).
+// Si no, es el feature en hover (tinte suave de su color).
+type Resaltado = { inicio: number; fin: number; color: string; busqueda?: boolean }
+
+// Parte la secuencia en tramos según los resaltados (rangos 1-based). Pinta en orden,
+// así los últimos ganan en los solapamientos. Devuelve la marca aplicada en cada tramo.
+function segmentarSecuencia(seq: string, resaltados: Resaltado[]): { texto: string; marca: Resaltado | null }[] {
+  const n = seq.length
+  if (n === 0 || resaltados.length === 0) {
+    return [{ texto: seq, marca: null }]
+  }
+  const por = new Array<Resaltado | null>(n).fill(null)
+  for (const r of resaltados) {
+    const a = Math.max(0, r.inicio - 1)
+    const b = Math.min(n, r.fin)
+    for (let i = a; i < b; i++) {
+      por[i] = r
+    }
+  }
+  const segs: { texto: string; marca: Resaltado | null }[] = []
+  let inicio = 0
+  for (let i = 1; i <= n; i++) {
+    if (i === n || por[i] !== por[i - 1]) {
+      segs.push({ texto: seq.slice(inicio, i), marca: por[i - 1] })
+      inicio = i
+    }
+  }
+  return segs
+}
+
+// Texto de la secuencia (monospace, scrollable) con resaltados (feature en hover +
+// coincidencias de la búsqueda de motivo). La búsqueda usa estilo marcador (amarillo
+// + texto oscuro) para que se vea en cualquier tema; el feature, un tinte de su color.
+function SecuenciaTexto({ secuencia, resaltados }: { secuencia: string; resaltados: Resaltado[] }) {
+  const clase = "max-h-60 overflow-auto whitespace-pre-wrap break-all rounded-[10px] border border-cds-borderSubtle bg-cds-field p-3 font-mono text-xs leading-relaxed text-cds-textSecondary"
+  const segs = useMemo(() => segmentarSecuencia(secuencia, resaltados), [secuencia, resaltados])
+  return (
+    <pre className={clase}>
+      {segs.map((s, i) => {
+        if (!s.marca) {
+          return <span key={i}>{s.texto}</span>
+        }
+        if (s.marca.busqueda) {
+          return (
+            <mark key={i} className="rounded-[2px] font-bold" style={{ backgroundColor: s.marca.color, color: "#1f2937" }}>
+              {s.texto}
+            </mark>
+          )
+        }
+        return (
+          <mark
+            key={i}
+            className="rounded-[2px] font-semibold text-cds-textPrimary"
+            style={{ backgroundColor: `color-mix(in srgb, ${s.marca.color} 32%, transparent)`, boxShadow: `inset 0 -2px 0 ${s.marca.color}` }}
+          >
+            {s.texto}
+          </mark>
+        )
+      })}
+    </pre>
+  )
+}
+
+// Formulario de alta/edición de una feature manual.
+function FeatureForm({
+  inicial,
+  longitud,
+  pending,
+  onSubmit,
+  onCancel,
+}: {
+  inicial?: CepFeature
+  longitud: number
+  pending: boolean
+  onSubmit: (data: CepFeatureCrear) => void
+  onCancel: () => void
+}) {
+  const { t } = useTranslation()
+  const [nombre, setNombre] = useState(inicial?.nombre ?? "")
+  const [tipo, setTipo] = useState<CepFeatureTipo>(inicial?.tipo ?? "gene")
+  const [inicio, setInicio] = useState(inicial ? String(inicial.inicio) : "")
+  const [fin, setFin] = useState(inicial ? String(inicial.fin) : "")
+  const [hebra, setHebra] = useState<CepHebra>(inicial?.hebra ?? "+")
+  const [color, setColor] = useState<string | null>(inicial?.color ?? null)
+
+  function submit(e: FormEvent) {
+    e.preventDefault()
+    const i = Number(inicio)
+    const f = Number(fin)
+    if (!Number.isInteger(i) || !Number.isInteger(f)) {
+      return
+    }
+    onSubmit({ nombre: nombre.trim() || null, tipo, inicio: i, fin: f, hebra, color })
+  }
+
+  return (
+    <form onSubmit={submit} className="rounded-[10px] border border-cds-borderSubtle bg-cds-layer01 p-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_0.7fr_0.7fr_0.9fr]">
+        <label className="block">
+          <span className="mb-1 block text-xs text-cds-textSecondary">{t("cepario.secNombre")}</span>
+          <Input className="h-10" value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="AmpR" />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs text-cds-textSecondary">{t("cepario.secTipo")}</span>
+          <select className={cn(SEC_SELECT_CLASS, "w-full")} value={tipo} onChange={(e) => setTipo(e.target.value as CepFeatureTipo)}>
+            {FEATURE_TIPOS.map((tp) => (
+              <option key={tp} value={tp}>{t(FEATURE_TIPO_KEY[tp])}</option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs text-cds-textSecondary">{t("cepario.secDesde")}</span>
+          <Input className="h-10" type="number" min={1} max={longitud} value={inicio} onChange={(e) => setInicio(e.target.value)} />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs text-cds-textSecondary">{t("cepario.secHasta")}</span>
+          <Input className="h-10" type="number" min={1} max={longitud} value={fin} onChange={(e) => setFin(e.target.value)} />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs text-cds-textSecondary">{t("cepario.secHebra")}</span>
+          <select className={cn(SEC_SELECT_CLASS, "w-full")} value={hebra} onChange={(e) => setHebra(e.target.value as CepHebra)}>
+            <option value="+">{t("cepario.secHebraDirecta")}</option>
+            <option value="-">{t("cepario.secHebraReversa")}</option>
+          </select>
+        </label>
+      </div>
+      <div className="mt-3">
+        <span className="mb-1 block text-xs text-cds-textSecondary">{t("cepario.secColor")}</span>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {FEATURE_PALETA.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => setColor(p.id)}
+              className={cn(
+                "h-6 w-6 rounded-full border transition",
+                color === p.id ? "border-cds-textPrimary ring-2 ring-cds-borderStrong" : "border-cds-borderSubtle",
+              )}
+              style={{ backgroundColor: p.color }}
+              aria-label={`${t("cepario.secColor")} ${p.id}`}
+              aria-pressed={color === p.id}
+            />
+          ))}
+          <button
+            type="button"
+            onClick={() => setColor(null)}
+            className={cn(
+              "ml-1 h-6 rounded-full border px-2.5 text-[11px] transition",
+              color === null ? "border-cds-borderStrong text-cds-textPrimary" : "border-cds-borderSubtle text-cds-textSecondary",
+            )}
+            aria-pressed={color === null}
+          >
+            {t("cepario.secColorPorTipo")}
+          </button>
+        </div>
+      </div>
+      <div className="mt-3 flex gap-2">
+        <Button type="submit" variant="primary" size="compact" disabled={pending || !inicio || !fin}>
+          <Check size={16} aria-hidden="true" />
+          {t("cepario.secGuardarFeature")}
+        </Button>
+        <Button type="button" variant="secondary" size="compact" onClick={onCancel} disabled={pending}>
+          {t("cepario.secCancelar")}
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+// Una fila de la lista de features: color, nombre, tipo, posición, hebra + acciones.
+function FeatureFila({
+  feature,
+  secuencia,
+  puedeEditar,
+  activo,
+  copiado,
+  pendingEdit,
+  onHover,
+  onCopiar,
+  onEditar,
+  onBorrar,
+}: {
+  feature: CepFeature
+  secuencia: string
+  puedeEditar: boolean
+  activo: boolean
+  copiado: boolean
+  pendingEdit: boolean
+  onHover: (id: number | null) => void
+  onCopiar: (f: CepFeature) => void
+  onEditar: (data: CepFeatureCrear) => void
+  onBorrar: () => void
+}) {
+  const { t } = useTranslation()
+  const [editando, setEditando] = useState(false)
+  const color = featureColor(feature)
+
+  if (editando) {
+    return (
+      <li>
+        <FeatureForm
+          inicial={feature}
+          longitud={secuencia.length}
+          pending={pendingEdit}
+          onSubmit={(data) => {
+            onEditar(data)
+            setEditando(false)
+          }}
+          onCancel={() => setEditando(false)}
+        />
+      </li>
+    )
+  }
+
+  return (
+    <li
+      className={cn(
+        "flex flex-wrap items-center gap-3 rounded-[10px] border bg-cds-layer01 px-4 py-2.5 transition-colors",
+        activo ? "border-cds-borderStrong" : "border-cds-borderSubtle",
+      )}
+      onMouseEnter={() => onHover(feature.id)}
+      onMouseLeave={() => onHover(null)}
+    >
+      <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: color }} aria-hidden="true" />
+      <span className="min-w-0 flex-1 truncate text-sm font-medium text-cds-textPrimary">{nombreFeature(feature, t)}</span>
+      <span className="rounded-full px-2 py-0.5 text-[11px]" style={{ backgroundColor: `color-mix(in srgb, ${color} 16%, transparent)`, color }}>
+        {t(FEATURE_TIPO_KEY[feature.tipo])}
+      </span>
+      <span className="font-mono text-xs text-cds-textSecondary">
+        {feature.inicio.toLocaleString()}–{feature.fin.toLocaleString()}
+        <span className="ml-1">{feature.hebra === "-" ? "←" : "→"}</span>
+      </span>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onCopiar(feature)}
+          title={t("cepario.secCopiarFeature")}
+          className="inline-flex h-8 w-8 items-center justify-center rounded text-cds-textSecondary transition-colors hover:bg-cds-layer02 hover:text-cds-textPrimary"
+        >
+          {copiado ? <Check size={15} className="text-cds-supportSuccess" aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
+        </button>
+        {puedeEditar ? (
+          <>
+            <button
+              type="button"
+              onClick={() => setEditando(true)}
+              title={t("cepario.secEditar")}
+              className="inline-flex h-8 w-8 items-center justify-center rounded text-cds-textSecondary transition-colors hover:bg-cds-layer02 hover:text-cds-textPrimary"
+            >
+              <PenLine size={15} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={onBorrar}
+              title={t("cepario.secBorrar")}
+              className="inline-flex h-8 w-8 items-center justify-center rounded text-cds-textSecondary transition-colors hover:bg-cds-layer02 hover:text-cds-supportError"
+            >
+              <Trash2 size={15} aria-hidden="true" />
+            </button>
+          </>
+        ) : null}
+      </div>
+    </li>
+  )
+}
+
+// Formulario para cargar/reemplazar la secuencia (pegar o subir archivo).
+function SubirSecuenciaForm({
+  pending,
+  conCancelar,
+  onGuardar,
+  onCancelar,
+}: {
+  pending: boolean
+  conCancelar: boolean
+  onGuardar: (data: { contenido: string; formato: CepFormatoGuardar; topologia: CepTopologia | null }) => void
+  onCancelar: () => void
+}) {
+  const { t } = useTranslation()
+  const [contenido, setContenido] = useState("")
+  const [formato, setFormato] = useState<CepFormatoGuardar>("auto")
+  const [topologia, setTopologia] = useState<"" | CepTopologia>("")
+
+  async function onArchivo(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) {
+      setContenido(await file.text())
+    }
+    e.target.value = "" // permite re-subir el mismo archivo
+  }
+
+  function submit(e: FormEvent) {
+    e.preventDefault()
+    if (!contenido.trim()) {
+      return
+    }
+    onGuardar({ contenido, formato, topologia: topologia || null })
+  }
+
+  return (
+    <form onSubmit={submit} className="rounded-[10px] border border-cds-borderSubtle bg-cds-layer01 p-4">
+      <textarea
+        value={contenido}
+        onChange={(e) => setContenido(e.target.value)}
+        placeholder={t("cepario.secPegarPh")}
+        rows={6}
+        className="w-full resize-y rounded-[10px] border border-cds-borderSubtle bg-cds-field p-3 font-mono text-xs text-cds-textPrimary placeholder:text-cds-textSecondary focus:border-cds-focus focus:outline-none"
+      />
+      <div className="mt-3 flex flex-wrap items-end gap-3">
+        <label className="block">
+          <span className="mb-1 block text-xs text-cds-textSecondary">{t("cepario.secFormatoLabel")}</span>
+          <select className={SEC_SELECT_CLASS} value={formato} onChange={(e) => setFormato(e.target.value as CepFormatoGuardar)}>
+            <option value="auto">{t("cepario.secFormatoAuto")}</option>
+            <option value="fasta">{t("cepario.secFormatoFasta")}</option>
+            <option value="genbank">{t("cepario.secFormatoGenbank")}</option>
+            <option value="manual">{t("cepario.secFormatoManual")}</option>
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs text-cds-textSecondary">{t("cepario.secTopologiaLabel")}</span>
+          <select className={SEC_SELECT_CLASS} value={topologia} onChange={(e) => setTopologia(e.target.value as "" | CepTopologia)}>
+            <option value="">{t("cepario.secTopologiaAuto")}</option>
+            <option value="circular">{t("cepario.secCircular")}</option>
+            <option value="lineal">{t("cepario.secLineal")}</option>
+          </select>
+        </label>
+        <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded border border-cds-borderStrong bg-cds-layer02 px-3 text-sm text-cds-textPrimary transition-colors hover:bg-cds-borderSubtle">
+          <Upload size={16} aria-hidden="true" />
+          {t("cepario.secArchivo")}
+          <input type="file" accept=".fasta,.fa,.fna,.gb,.gbk,.genbank,.txt,.seq" onChange={onArchivo} className="hidden" />
+        </label>
+        <div className="ml-auto flex gap-2">
+          {conCancelar ? (
+            <Button type="button" variant="secondary" size="compact" onClick={onCancelar} disabled={pending}>
+              {t("cepario.secCancelar")}
+            </Button>
+          ) : null}
+          <Button type="submit" variant="primary" size="compact" disabled={pending || !contenido.trim()}>
+            <Dna size={16} aria-hidden="true" />
+            {pending ? t("cepario.secGuardando") : t("cepario.secGuardar")}
+          </Button>
+        </div>
+      </div>
+    </form>
+  )
+}
+
+// Panel de secuencia de la ficha de parte genética. Autocontenido: maneja su propio
+// query + mutaciones (token de la sesión) e invalida la ficha para refrescar el
+// timeline (los guardados/bajas registran eventos 'nota').
+function SecuenciaPanel({ entidadId, puedeEditar }: { entidadId: number; puedeEditar: boolean }) {
+  const { t } = useTranslation()
+  const { token } = useAuth()
+  const queryClient = useQueryClient()
+  const [hoverId, setHoverId] = useState<number | null>(null)
+  const mapaRef = useRef<HTMLDivElement>(null)
+  const [reemplazando, setReemplazando] = useState(false)
+  const [confirmarQuitar, setConfirmarQuitar] = useState(false)
+  const [agregando, setAgregando] = useState(false)
+  const [aviso, setAviso] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [copiado, setCopiado] = useState<string | null>(null)
+  const [rangoDesde, setRangoDesde] = useState("")
+  const [rangoHasta, setRangoHasta] = useState("")
+  const [mostrarEnzimas, setMostrarEnzimas] = useState(false)
+  const [motivo, setMotivo] = useState("")
+  const [ambasHebras, setAmbasHebras] = useState(false)
+
+  const secQuery = useQuery({
+    queryKey: ["cepario", "secuencia", entidadId],
+    queryFn: () => api.ceparioSecuencia(token!, entidadId),
+    enabled: !!token,
+  })
+
+  const invalidar = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["cepario", "secuencia", entidadId] })
+    queryClient.invalidateQueries({ queryKey: ["cepario", "entidad", entidadId] })
+  }, [queryClient, entidadId])
+
+  const guardar = useMutation({
+    mutationFn: (data: { contenido: string; formato: CepFormatoGuardar; topologia: CepTopologia | null }) =>
+      api.ceparioGuardarSecuencia(token!, entidadId, data),
+    onSuccess: (res) => {
+      setError(null)
+      setReemplazando(false)
+      setAviso(res.features_omitidas && res.features_omitidas > 0 ? t("cepario.secOmitidas", { n: res.features_omitidas }) : null)
+      invalidar()
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+
+  const quitar = useMutation({
+    mutationFn: () => api.ceparioBorrarSecuencia(token!, entidadId),
+    onSuccess: () => {
+      setError(null)
+      setConfirmarQuitar(false)
+      setAviso(null)
+      invalidar()
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+
+  const agregarFeature = useMutation({
+    mutationFn: (data: CepFeatureCrear) => api.ceparioAgregarFeature(token!, entidadId, data),
+    onSuccess: () => {
+      setError(null)
+      setAgregando(false)
+      invalidar()
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+
+  const editarFeature = useMutation({
+    mutationFn: ({ featureId, data }: { featureId: number; data: CepFeatureEditar }) =>
+      api.ceparioEditarFeature(token!, featureId, data),
+    onSuccess: () => {
+      setError(null)
+      invalidar()
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+
+  const borrarFeature = useMutation({
+    mutationFn: (featureId: number) => api.ceparioBorrarFeature(token!, featureId),
+    onSuccess: () => {
+      setError(null)
+      invalidar()
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+
+  const copiar = useCallback(async (id: string, texto: string) => {
+    if (await copiarAlPortapapeles(texto)) {
+      setCopiado(id)
+      setTimeout(() => setCopiado((c) => (c === id ? null : c)), 1500)
+    }
+  }, [])
+
+  const secuencia = secQuery.data ?? null
+  const featureHover = useMemo(
+    () => (secuencia && hoverId != null ? secuencia.features.find((f) => f.id === hoverId) ?? null : null),
+    [secuencia, hoverId],
+  )
+  // Sitios de enzimas de restricción (solo se calculan si el usuario los pide).
+  const sitiosEnzimas = useMemo<SitiosEnzima[]>(
+    () => (secuencia && mostrarEnzimas ? buscarSitios(secuencia.secuencia, secuencia.topologia === "circular") : []),
+    [secuencia, mostrarEnzimas],
+  )
+  // En el mapa solo marcamos los cortadores únicos (los relevantes para clonar).
+  const marcasEnzima = useMemo(
+    () => sitiosEnzimas.filter((s) => s.posiciones.length === 1).map((s) => ({ nombre: s.enzima, posicion: s.posiciones[0] })),
+    [sitiosEnzimas],
+  )
+  // Búsqueda de motivo: coincidencias en la hebra directa (acepta IUPAC) y, si se pide,
+  // también en la reversa. El color del resaltado distingue la hebra.
+  const coincidencias = useMemo(
+    () => (secuencia && motivo.trim() ? buscarMotivo(secuencia.secuencia, motivo, ambasHebras) : []),
+    [secuencia, motivo, ambasHebras],
+  )
+  const motivoInvalido = motivo.trim() !== "" && !esMotivoValido(motivo)
+  const colorHebra = (h: "+" | "-") => (h === "-" ? BUSQUEDA_COLOR_REV : BUSQUEDA_COLOR)
+  const conteoHebras = useMemo(
+    () => ({
+      mas: coincidencias.filter((c) => c.hebra === "+").length,
+      menos: coincidencias.filter((c) => c.hebra === "-").length,
+    }),
+    [coincidencias],
+  )
+  const marcasBusqueda = useMemo(
+    () => coincidencias.map((c) => ({ inicio: c.inicio, fin: c.fin, color: colorHebra(c.hebra) })),
+    [coincidencias],
+  )
+  // Selección de un tramo: arrastre en el mapa ⇄ inputs desde–hasta (una sola fuente de
+  // verdad en rangoDesde/rangoHasta). Se refleja en el mapa y en el texto de bases.
+  const seleccion = useMemo(() => {
+    const a = Number(rangoDesde)
+    const b = Number(rangoHasta)
+    if (secuencia && Number.isInteger(a) && Number.isInteger(b) && a >= 1 && b <= secuencia.longitud && a <= b) {
+      return { inicio: a, fin: b }
+    }
+    return null
+  }, [rangoDesde, rangoHasta, secuencia])
+  const onSeleccionar = useCallback((sel: { inicio: number; fin: number } | null) => {
+    setRangoDesde(sel ? String(sel.inicio) : "")
+    setRangoHasta(sel ? String(sel.fin) : "")
+  }, [])
+  // Resaltados del texto: coincidencias (color por hebra) + feature en hover + selección.
+  const resaltadosTexto = useMemo<Resaltado[]>(() => {
+    const lista: Resaltado[] = coincidencias.map((c) => ({ inicio: c.inicio, fin: c.fin, color: colorHebra(c.hebra), busqueda: true }))
+    if (featureHover) {
+      lista.push({ inicio: featureHover.inicio, fin: featureHover.fin, color: featureColor(featureHover) })
+    }
+    if (seleccion) {
+      lista.push({ inicio: seleccion.inicio, fin: seleccion.fin, color: SELECCION_COLOR })
+    }
+    return lista
+  }, [coincidencias, featureHover, seleccion])
+
+  function copiarRango() {
+    if (!secuencia) {
+      return
+    }
+    const a = Number(rangoDesde)
+    const b = Number(rangoHasta)
+    if (!Number.isInteger(a) || !Number.isInteger(b) || a < 1 || b > secuencia.longitud || a > b) {
+      setError(t("cepario.secRangoInvalido", { n: secuencia.longitud }))
+      return
+    }
+    setError(null)
+    copiar("rango", secuencia.secuencia.slice(a - 1, b))
+  }
+
+  // Exporta el mapa propio como SVG vectorial o PNG, con su título y leyenda de tipos.
+  function exportarMapa(formato: "svg" | "png") {
+    const svg = mapaRef.current?.querySelector("svg")
+    if (!svg || !secuencia) {
+      return
+    }
+    const tipos = Array.from(new Set(secuencia.features.map((f) => f.tipo)))
+    const leyenda: LeyendaExport[] = tipos.map((tp) => ({
+      color: resolverColorCss(FEATURE_TIPO_COLOR[tp]),
+      label: t(FEATURE_TIPO_KEY[tp]),
+    }))
+    const { markup, ancho, alto } = componerSvgExport(svg as SVGSVGElement, {
+      titulo: secuencia.nombre_origen ?? null,
+      leyenda,
+      colorTexto: resolverColorCss("var(--cds-text-primary)"),
+      colorTenue: resolverColorCss("var(--cds-text-secondary)"),
+      fondo: fondoDe(svg),
+    })
+    const base = secuencia.nombre_origen?.replace(/[^\w.-]+/g, "_") || "mapa-plasmido"
+    if (formato === "svg") {
+      descargarBlob(new Blob([markup], { type: "image/svg+xml;charset=utf-8" }), `${base}.svg`)
+    } else {
+      void descargarPng(markup, ancho, alto, `${base}.png`)
+    }
+  }
+
+  return (
+    <section>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-cds-borderSubtle pb-2">
+        <h2 className="flex items-center gap-2 text-sm font-medium tracking-[0.16px] text-cds-textPrimary">
+          <Dna size={16} className="text-lab-cepario" aria-hidden="true" />
+          {t("cepario.secTitulo")}
+        </h2>
+        {secuencia && puedeEditar ? (
+          <div className="flex gap-2">
+            <Button type="button" variant="secondary" size="compact" onClick={() => { setReemplazando((v) => !v); setConfirmarQuitar(false) }}>
+              <Upload size={16} aria-hidden="true" />
+              {t("cepario.secReemplazar")}
+            </Button>
+            <Button type="button" variant="secondary" size="compact" onClick={() => { setConfirmarQuitar((v) => !v); setReemplazando(false) }}>
+              <Trash2 size={16} aria-hidden="true" />
+              {t("cepario.secQuitar")}
+            </Button>
+          </div>
+        ) : null}
+      </div>
+
+      {error ? (
+        <div className="mb-3 flex items-center gap-2 rounded-[10px] border border-cds-supportError bg-lab-critTint px-3 py-2 text-sm text-cds-supportError">
+          <AlertTriangle size={15} aria-hidden="true" />
+          {error}
+        </div>
+      ) : null}
+      {aviso ? (
+        <div className="mb-3 flex items-center gap-2 rounded-[10px] border border-lab-warm bg-lab-warmTint px-3 py-2 text-sm text-lab-warmFg">
+          <AlertTriangle size={15} aria-hidden="true" />
+          {aviso}
+        </div>
+      ) : null}
+
+      {confirmarQuitar ? (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-[10px] border border-cds-supportError bg-lab-critTint px-4 py-3">
+          <span className="text-sm text-cds-textPrimary">{t("cepario.secConfirmarQuitar")}</span>
+          <div className="flex gap-2">
+            <Button type="button" variant="danger" size="compact" onClick={() => quitar.mutate()} disabled={quitar.isPending}>
+              {t("cepario.secQuitar")}
+            </Button>
+            <Button type="button" variant="secondary" size="compact" onClick={() => setConfirmarQuitar(false)} disabled={quitar.isPending}>
+              {t("cepario.secCancelar")}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {secQuery.isLoading ? (
+        <p className="text-sm text-cds-textSecondary">{t("cepario.cargando")}</p>
+      ) : !secuencia ? (
+        // Estado vacío: si puede editar, mostramos el form; si no, una placa.
+        puedeEditar ? (
+          <SubirSecuenciaForm
+            pending={guardar.isPending}
+            conCancelar={false}
+            onGuardar={(data) => guardar.mutate(data)}
+            onCancelar={() => undefined}
+          />
+        ) : (
+          <PlacaVacia>
+            <div className="text-sm text-cds-textSecondary">{t("cepario.secVacia")}</div>
+          </PlacaVacia>
+        )
+      ) : reemplazando ? (
+        <SubirSecuenciaForm
+          pending={guardar.isPending}
+          conCancelar
+          onGuardar={(data) => guardar.mutate(data)}
+          onCancelar={() => setReemplazando(false)}
+        />
+      ) : (
+        <div className="flex flex-col gap-5">
+          {/* Sitios de enzimas de restricción (opcional) sobre el mapa */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setMostrarEnzimas((v) => !v)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs transition-colors",
+                mostrarEnzimas
+                  ? "border-cds-borderStrong bg-cds-layer02 text-cds-textPrimary"
+                  : "border-cds-borderSubtle text-cds-textSecondary hover:text-cds-textPrimary",
+              )}
+            >
+              <Scissors size={14} aria-hidden="true" />
+              {t("cepario.secEnzimas")}
+            </button>
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-[380px_minmax(0,1fr)] lg:items-start">
+          {/* Columna izquierda: mapa + metadatos */}
+          <div className="flex flex-col gap-4">
+            <div className="rounded-[10px] border border-cds-borderSubtle bg-cds-layer01 p-4">
+              <div className="mb-2 flex items-center justify-end gap-1.5">
+                {(["svg", "png"] as const).map((fmt) => (
+                  <button
+                    key={fmt}
+                    type="button"
+                    onClick={() => exportarMapa(fmt)}
+                    aria-label={`${t("cepario.secExportar")} ${fmt.toUpperCase()}`}
+                    className="inline-flex items-center gap-1 rounded-md border border-cds-borderSubtle px-2 py-1 text-[11px] text-cds-textSecondary transition-colors hover:text-cds-textPrimary"
+                  >
+                    <Download size={13} aria-hidden="true" />
+                    {fmt.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+              <div ref={mapaRef}>
+                <PlasmidoMapa
+                  secuencia={secuencia}
+                  hoverId={hoverId}
+                  onHover={setHoverId}
+                  onCopiarFeature={(feat) => copiar(`f-${feat.id}`, secuencia.secuencia.slice(feat.inicio - 1, feat.fin))}
+                  marcasEnzima={marcasEnzima}
+                  marcasBusqueda={marcasBusqueda}
+                  seleccion={seleccion}
+                  onSeleccionar={onSeleccionar}
+                />
+              </div>
+              <p className="mt-2 text-center text-[11px] text-cds-textSecondary">{t("cepario.secSeleccionHint")}</p>
+            </div>
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
+              <MetaCampo label={t("cepario.secLongitud")} mono>{t("cepario.secBp", { n: secuencia.longitud })}</MetaCampo>
+              <MetaCampo label={t("cepario.secTopologia")}>{secuencia.topologia === "circular" ? t("cepario.secCircular") : t("cepario.secLineal")}</MetaCampo>
+              <MetaCampo label={t("cepario.secFormato")}>{t(`cepario.secFormato${secuencia.formato_origen.charAt(0).toUpperCase()}${secuencia.formato_origen.slice(1)}`)}</MetaCampo>
+              {secuencia.nombre_origen ? <MetaCampo label={t("cepario.secNombreOrigen")} mono>{secuencia.nombre_origen}</MetaCampo> : null}
+            </dl>
+            {mostrarEnzimas ? (
+              <div className="rounded-[10px] border border-cds-borderSubtle bg-cds-layer01 p-3">
+                <EnzimasResumen sitios={sitiosEnzimas} />
+              </div>
+            ) : null}
+          </div>
+
+          {/* Columna derecha: features + secuencia + copiado */}
+          <div className="flex min-w-0 flex-col gap-5">
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="text-xs font-medium uppercase tracking-wide text-cds-textSecondary">{t("cepario.secFeatures")}</h3>
+                {puedeEditar && !agregando ? (
+                  <Button type="button" variant="ghost" size="compact" onClick={() => setAgregando(true)}>
+                    <Plus size={15} aria-hidden="true" />
+                    {t("cepario.secAgregarFeature")}
+                  </Button>
+                ) : null}
+              </div>
+              {agregando ? (
+                <div className="mb-3">
+                  <FeatureForm
+                    longitud={secuencia.longitud}
+                    pending={agregarFeature.isPending}
+                    onSubmit={(data) => agregarFeature.mutate(data)}
+                    onCancel={() => setAgregando(false)}
+                  />
+                </div>
+              ) : null}
+              {secuencia.features.length === 0 ? (
+                <p className="text-sm text-cds-textSecondary">{t("cepario.secFeaturesVacias")}</p>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {secuencia.features.map((f) => (
+                    <FeatureFila
+                      key={f.id}
+                      feature={f}
+                      secuencia={secuencia.secuencia}
+                      puedeEditar={puedeEditar}
+                      activo={hoverId === f.id}
+                      copiado={copiado === `f-${f.id}`}
+                      pendingEdit={editarFeature.isPending}
+                      onHover={setHoverId}
+                      onCopiar={(feat) => copiar(`f-${feat.id}`, secuencia.secuencia.slice(feat.inicio - 1, feat.fin))}
+                      onEditar={(data) => editarFeature.mutate({ featureId: f.id, data })}
+                      onBorrar={() => borrarFeature.mutate(f.id)}
+                    />
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-xs font-medium uppercase tracking-wide text-cds-textSecondary">{t("cepario.secSecuencia")}</h3>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input className="h-8 w-20" type="number" min={1} max={secuencia.longitud} placeholder={t("cepario.secDesde")} value={rangoDesde} onChange={(e) => setRangoDesde(e.target.value)} />
+                  <Input className="h-8 w-20" type="number" min={1} max={secuencia.longitud} placeholder={t("cepario.secHasta")} value={rangoHasta} onChange={(e) => setRangoHasta(e.target.value)} />
+                  <Button type="button" variant="secondary" size="compact" onClick={copiarRango} disabled={!rangoDesde || !rangoHasta}>
+                    {copiado === "rango" ? <Check size={15} className="text-cds-supportSuccess" aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
+                    {t("cepario.secCopiarRango")}
+                  </Button>
+                  <Button type="button" variant="secondary" size="compact" onClick={() => copiar("todo", secuencia.secuencia)}>
+                    {copiado === "todo" ? <Check size={15} className="text-cds-supportSuccess" aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
+                    {t("cepario.secCopiar")}
+                  </Button>
+                </div>
+              </div>
+              {/* Búsqueda de motivo / subsecuencia (resalta en el texto y el mapa) */}
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <div className="relative min-w-[200px] flex-1">
+                  <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-cds-textSecondary" aria-hidden="true" />
+                  <Input
+                    className="h-9 pl-9 font-mono"
+                    value={motivo}
+                    onChange={(e) => setMotivo(e.target.value)}
+                    placeholder={t("cepario.secBuscarMotivoPh")}
+                    aria-label={t("cepario.secBuscarMotivo")}
+                  />
+                  {motivo ? (
+                    <button
+                      type="button"
+                      onClick={() => setMotivo("")}
+                      aria-label={t("cepario.secCancelar")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-6 w-6 items-center justify-center rounded text-cds-textSecondary hover:text-cds-textPrimary"
+                    >
+                      <X size={14} aria-hidden="true" />
+                    </button>
+                  ) : null}
+                </div>
+                <label className="inline-flex items-center gap-1.5 text-xs text-cds-textSecondary">
+                  <input
+                    type="checkbox"
+                    checked={ambasHebras}
+                    onChange={(e) => setAmbasHebras(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-lab-cepario"
+                  />
+                  {t("cepario.secAmbasHebras")}
+                </label>
+                {motivo.trim() ? (
+                  <span className={cn("text-xs", motivoInvalido ? "text-cds-supportError" : "text-cds-textSecondary")}>
+                    {motivoInvalido
+                      ? t("cepario.secMotivoInvalido")
+                      : ambasHebras
+                        ? t("cepario.secCoincidenciasHebras", { n: coincidencias.length, mas: conteoHebras.mas, menos: conteoHebras.menos })
+                        : t("cepario.secCoincidencias", { n: coincidencias.length })}
+                  </span>
+                ) : null}
+              </div>
+              {/* Aclaración de hebras: qué color/signo es cada una (la reversa = la contraria). */}
+              {ambasHebras ? (
+                <div className="mb-2 flex items-center gap-3 text-[11px] text-cds-textSecondary">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: BUSQUEDA_COLOR }} aria-hidden="true" />
+                    {t("cepario.secHebraDirecta")}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: BUSQUEDA_COLOR_REV }} aria-hidden="true" />
+                    {t("cepario.secHebraReversa")}
+                  </span>
+                </div>
+              ) : null}
+              <SecuenciaTexto secuencia={secuencia.secuencia} resaltados={resaltadosTexto} />
+            </div>
+          </div>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
 function CeparioDetalle({
   entidad,
   genealogia,
@@ -2646,6 +4468,7 @@ function CeparioDetalle({
   const [motivoArchivar, setMotivoArchivar] = useState("")
   const esParte = entidad.tipo === "parte_genetica"
   const esLinea = entidad.tipo === "linea_celular"
+  const esHongo = entidad.tipo === "hongo"
   const esMicro = entidad.tipo === "microorganismo"
   const esAislado = entidad.estado === "aislado"
   const esArchivado = entidad.estado === "archivado"
@@ -2699,7 +4522,7 @@ function CeparioDetalle({
         <span className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: acento }} aria-hidden="true" />
         <div className="flex flex-wrap items-center gap-3">
           <span className="font-mono text-3xl font-medium tracking-[0.01em] text-cds-textPrimary">{codigo}</span>
-          {esParte ? <ParteChip categoria={entidad.categoria} /> : esLinea ? <LineaChip /> : <GrupoAvatar grupo={entidad.grupo_operativo} />}
+          {esParte ? <ParteChip categoria={entidad.categoria} /> : esLinea ? <LineaChip /> : esHongo ? <HongoChip subtipo={entidad.subtipo} /> : <GrupoAvatar grupo={entidad.grupo_operativo} />}
           <EstadoPill estado={entidad.estado} />
           <ViabilidadPlano viabilidad={viabilidadResumen} />
           {entidad.nivel_bioseguridad ? (
@@ -2712,7 +4535,7 @@ function CeparioDetalle({
           <div
             className={cn(
               "mt-2.5 text-lg",
-              esParte || esLinea
+              esParte || esLinea || esHongo
                 ? "font-medium text-cds-textPrimary"
                 : entidad.taxon_presuntivo
                   ? "font-medium italic text-cds-textPrimary"
@@ -2772,6 +4595,45 @@ function CeparioDetalle({
               ) : null}
               {entidad.modificacion_genetica ? (
                 <MetaCampo label={t("cepario.detModGenetica")}>{entidad.modificacion_genetica}</MetaCampo>
+              ) : null}
+              {entidad.procedencia ? (
+                <MetaCampo label={t("cepario.detProcedencia")}>{t(entidad.procedencia === "adquirida" ? "cepario.procAdquirida" : "cepario.procDisenada")}</MetaCampo>
+              ) : null}
+            </>
+          ) : esHongo ? (
+            <>
+              {entidad.subtipo ? (
+                <MetaCampo label={t("cepario.detSubtipo")}>{t(SUBTIPO_HONGO_KEY[entidad.subtipo] ?? entidad.subtipo)}</MetaCampo>
+              ) : null}
+              {entidad.especie ? (
+                <MetaCampo label={t("cepario.detEspecie")}>{entidad.especie}</MetaCampo>
+              ) : null}
+              {entidad.origen_aislamiento ? (
+                <MetaCampo label={t("cepario.detOrigenAislamiento")}>{entidad.origen_aislamiento}</MetaCampo>
+              ) : null}
+              {entidad.medio_cultivo ? (
+                <MetaCampo label={t("cepario.detMedioCultivo")}>{entidad.medio_cultivo}</MetaCampo>
+              ) : null}
+              {entidad.temperatura_optima ? (
+                <MetaCampo label={t("cepario.detTemperaturaOptima")} mono>{entidad.temperatura_optima}</MetaCampo>
+              ) : null}
+              {entidad.forma_conservacion ? (
+                <MetaCampo label={t("cepario.detFormaConservacion")}>{t(CONSERVACION_KEY[entidad.forma_conservacion] ?? entidad.forma_conservacion)}</MetaCampo>
+              ) : null}
+              {entidad.tipo_sexual ? (
+                <MetaCampo label={t("cepario.detTipoSexual")} mono>{entidad.tipo_sexual}</MetaCampo>
+              ) : null}
+              {entidad.genotipo_marcadores ? (
+                <MetaCampo label={t("cepario.detGenotipo")} mono>{entidad.genotipo_marcadores}</MetaCampo>
+              ) : null}
+              {entidad.morfologia_colonia ? (
+                <MetaCampo label={t("cepario.detMorfColonia")}>{entidad.morfologia_colonia}</MetaCampo>
+              ) : null}
+              {entidad.referencia_coleccion ? (
+                <MetaCampo label={t("cepario.detRefColeccion")} mono>{entidad.referencia_coleccion}</MetaCampo>
+              ) : null}
+              {entidad.ingenieria_genetica ? (
+                <MetaCampo label={t("cepario.detIngenieria")}>{entidad.ingenieria_genetica}</MetaCampo>
               ) : null}
               {entidad.procedencia ? (
                 <MetaCampo label={t("cepario.detProcedencia")}>{t(entidad.procedencia === "adquirida" ? "cepario.procAdquirida" : "cepario.procDisenada")}</MetaCampo>
@@ -2895,6 +4757,8 @@ function CeparioDetalle({
           onAplicarParche={onAplicarParche}
         />
       ) : null}
+
+      {esParte ? <SecuenciaPanel entidadId={entidad.id} puedeEditar={screening.puedeCaracterizar} /> : null}
 
       <section>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-cds-borderSubtle pb-2">
@@ -3166,6 +5030,7 @@ export function CeparioPage() {
 
   const esParteVista = tipo === "parte_genetica"
   const esLineaVista = tipo === "linea_celular"
+  const esHongoVista = tipo === "hongo"
   const esMicroVista = tipo === "microorganismo"
   const entidadesQuery = useQuery({
     queryKey: ["cepario", "entidades", tipo, grupo, estado, categoria],
@@ -3209,7 +5074,7 @@ export function CeparioPage() {
       if (!texto) {
         return true
       }
-      return [e.codigo, e.codigo_temporal, e.nombre, e.taxon_presuntivo, e.categoria, e.resistencia, e.organismo]
+      return [e.codigo, e.codigo_temporal, e.nombre, e.taxon_presuntivo, e.categoria, e.resistencia, e.organismo, e.especie]
         .filter(Boolean)
         .some((v) => String(v).toLocaleLowerCase("es").includes(texto))
     })
@@ -3262,9 +5127,11 @@ export function CeparioPage() {
           ? "cepario.parteCreada"
           : res.tipo === "linea_celular"
             ? "cepario.lineaCreada"
-            : res.estado === "aislado"
-              ? "cepario.aisladoCreado"
-              : "cepario.cepaCreada"
+            : res.tipo === "hongo"
+              ? "cepario.hongoCreado"
+              : res.estado === "aislado"
+                ? "cepario.aisladoCreado"
+                : "cepario.cepaCreada"
       setMensaje(t(msgKey, { codigo: res.codigo ?? res.codigo_temporal ?? "" }))
       setErrorLocal(null)
       abrirDetalle(res.id)
@@ -3325,7 +5192,7 @@ export function CeparioPage() {
   const etiquetasMutation = useMutation({
     mutationFn: (stockIds: number[]) => api.ceparioEtiquetasPdf(token!, stockIds, "rollo_50x30"),
     onSuccess: (blob) => {
-      descargarPdf(blob, "etiquetas-viales.pdf")
+      descargarBlob(blob, "etiquetas-viales.pdf")
       setMensaje(t("cepario.etiquetasGeneradas"))
       setErrorLocal(null)
     },
@@ -3519,7 +5386,7 @@ export function CeparioPage() {
     tab === "listado"
       ? [
           ...(puedeCrear
-            ? [{ label: t(esParteVista ? "cepario.nuevaParte" : esLineaVista ? "cepario.nuevaLinea" : "cepario.nuevoMicro"), onClick: () => { setTab("nueva"); setMensaje(null); setErrorLocal(null) }, icon: <Plus size={18} aria-hidden="true" /> }]
+            ? [{ label: t(esParteVista ? "cepario.nuevaParte" : esLineaVista ? "cepario.nuevaLinea" : esHongoVista ? "cepario.nuevoHongo" : "cepario.nuevoMicro"), onClick: () => { setTab("nueva"); setMensaje(null); setErrorLocal(null) }, icon: <Plus size={18} aria-hidden="true" /> }]
             : []),
           { label: t("cepario.verCajas"), onClick: () => { setTab("cajas"); setMensaje(null); setErrorLocal(null) }, icon: <Grid3x3 size={18} aria-hidden="true" />, variant: "secondary" as const },
         ]
@@ -3530,7 +5397,7 @@ export function CeparioPage() {
       <PageHeader
         title={t("cepario.title")}
         description={t("cepario.desc")}
-        count={entidadesQuery.isLoading ? t("cepario.cargando") : t(esParteVista ? "cepario.countPartesN" : esLineaVista ? "cepario.countLineasN" : "cepario.countN", { n: entidadesFiltradas.length })}
+        count={entidadesQuery.isLoading ? t("cepario.cargando") : t(esParteVista ? "cepario.countPartesN" : esLineaVista ? "cepario.countLineasN" : esHongoVista ? "cepario.countHongosN" : "cepario.countN", { n: entidadesFiltradas.length })}
         plain
       />
 
@@ -3576,6 +5443,8 @@ export function CeparioPage() {
           <NuevaParteForm pending={crearEntidadMutation.isPending} onSubmit={(data) => crearEntidadMutation.mutate(data)} />
         ) : esLineaVista ? (
           <NuevaLineaForm pending={crearEntidadMutation.isPending} onSubmit={(data) => crearEntidadMutation.mutate(data)} />
+        ) : esHongoVista ? (
+          <NuevaHongoForm pending={crearEntidadMutation.isPending} onSubmit={(data) => crearEntidadMutation.mutate(data)} />
         ) : (
           <NuevaMicroForm pending={crearEntidadMutation.isPending} onSubmit={(data) => crearEntidadMutation.mutate(data)} />
         )
@@ -3637,10 +5506,10 @@ export function CeparioPage() {
               <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">{t("cepario.buscar")}</span>
               <div className="relative">
                 <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-cds-textSecondary" size={18} aria-hidden="true" />
-                <Input className="pl-12" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder={t(esParteVista ? "cepario.buscarPhParte" : esLineaVista ? "cepario.buscarPhLinea" : "cepario.buscarPh")} />
+                <Input className="pl-12" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder={t(esParteVista ? "cepario.buscarPhParte" : esLineaVista ? "cepario.buscarPhLinea" : esHongoVista ? "cepario.buscarPhHongo" : "cepario.buscarPh")} />
               </div>
             </label>
-            {esLineaVista ? null : esParteVista ? (
+            {esLineaVista || esHongoVista ? null : esParteVista ? (
               <label className="block">
                 <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">{t("cepario.filtroCategoria")}</span>
                 <select className={FILTRO_SELECT_CLASS} value={categoria} onChange={(e) => setCategoria(e.target.value)}>
@@ -3699,6 +5568,8 @@ export function CeparioPage() {
                   <ParteCard key={e.id} entidad={e} onClick={() => abrirDetalle(e.id)} />
                 ) : esLineaVista ? (
                   <LineaCard key={e.id} entidad={e} onClick={() => abrirDetalle(e.id)} />
+                ) : esHongoVista ? (
+                  <HongoCard key={e.id} entidad={e} onClick={() => abrirDetalle(e.id)} />
                 ) : (
                   <CeparioCard key={e.id} entidad={e} onClick={() => abrirDetalle(e.id)} />
                 ),
@@ -3751,6 +5622,31 @@ export function CeparioPage() {
                     <td className="px-4 py-2 font-mono text-cds-textPrimary">{e.codigo ?? "—"}</td>
                     <td className="px-4 py-2 text-cds-textSecondary">{e.organismo ?? e.nombre ?? ""}</td>
                     <td className="px-4 py-2 text-cds-textSecondary">{e.tipo_cultivo ? t(CULTIVO_KEY[e.tipo_cultivo] ?? e.tipo_cultivo) : ""}</td>
+                    <td className="px-4 py-2 text-right">{e.nro_viales_total}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : esHongoVista ? (
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-cds-borderSubtle bg-cds-layer01 text-xs tracking-[0.32px] text-cds-textSecondary">
+                  <th className="h-10 px-4 text-left font-normal">{t("cepario.thCodigo")}</th>
+                  <th className="h-10 px-4 text-left font-normal">{t("cepario.thEspecie")}</th>
+                  <th className="h-10 px-4 text-left font-normal">{t("cepario.thSubtipo")}</th>
+                  <th className="h-10 px-4 text-right font-normal">{t("cepario.thViales")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entidadesFiltradas.map((e) => (
+                  <tr
+                    key={e.id}
+                    onClick={() => abrirDetalle(e.id)}
+                    className="cursor-pointer border-b border-cds-borderSubtle hover:bg-cds-layer01"
+                  >
+                    <td className="px-4 py-2 font-mono text-cds-textPrimary">{e.codigo ?? "—"}</td>
+                    <td className="px-4 py-2 italic text-cds-textSecondary">{e.especie ?? e.nombre ?? ""}</td>
+                    <td className="px-4 py-2 text-cds-textSecondary">{e.subtipo ? t(SUBTIPO_HONGO_KEY[e.subtipo] ?? e.subtipo) : ""}</td>
                     <td className="px-4 py-2 text-right">{e.nro_viales_total}</td>
                   </tr>
                 ))}
