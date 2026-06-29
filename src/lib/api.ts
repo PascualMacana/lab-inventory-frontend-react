@@ -2255,6 +2255,9 @@ export const api = {
   lotePorCodigo: async (token: string, codigoInterno: string) =>
     request<Lote>(`/lotes/codigo/${encodeURIComponent(codigoInterno)}`, { token }),
 
+  lotePorId: async (token: string, loteId: number) =>
+    request<Lote>(`/lotes/id/${loteId}`, { token }),
+
   crearLote: async (token: string, data: LoteCrear) =>
     request<LoteCrearResponse>("/lotes", {
       method: "POST",

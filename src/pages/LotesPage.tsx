@@ -1412,10 +1412,21 @@ function EtiquetasLotes({
   const [seleccionPdf, setSeleccionPdf] = useState<number[]>([])
   const [posicionInicio, setPosicionInicio] = useState("1")
   const [formato, setFormato] = useState("avery_l7160")
+  const [busquedaEtiqueta, setBusquedaEtiqueta] = useState("")
+  const [lotesExtra, setLotesExtra] = useState<Lote[]>([])
   const [errorLocal, setErrorLocal] = useState<string | null>(null)
   const { t } = useTranslation()
   const qrMutation = useMutation({
     mutationFn: (lote: Lote) => api.qrLote(token, lote.id),
+  })
+  const buscarEtiquetaMutation = useMutation({
+    mutationFn: async (texto: string) => {
+      const limpio = texto.trim()
+      if (/^\d+$/.test(limpio)) {
+        return api.lotePorId(token, Number(limpio))
+      }
+      return api.lotePorCodigo(token, limpio)
+    },
   })
   const perfilesQuery = useQuery({
     queryKey: ["etiquetas-perfiles"],
@@ -1435,7 +1446,38 @@ function EtiquetasLotes({
   const esGrilla = perfilSel.grilla
   const maxEtiquetasPdf = perfilSel.max_por_pdf ?? (esGrilla ? perfilSel.por_pagina * 10 : 500)
 
-  const loteQr = lotes.find((lote) => lote.id === loteQrId) ?? lotes[0]
+  const lotesDisponibles = useMemo(() => {
+    const map = new Map<number, Lote>()
+    for (const lote of lotes) {
+      map.set(lote.id, lote)
+    }
+    for (const lote of lotesExtra) {
+      map.set(lote.id, lote)
+    }
+    return [...map.values()]
+  }, [lotes, lotesExtra])
+
+  const lotesEtiquetas = useMemo(() => {
+    const texto = busquedaEtiqueta.trim().toLocaleLowerCase("es")
+    if (!texto) {
+      return lotesDisponibles
+    }
+    return lotesDisponibles.filter((lote) =>
+      [
+        String(lote.id),
+        lote.codigo_interno,
+        lote.reactivo_nombre,
+        lote.numero_lote,
+        lote.marca,
+        lote.proveedor,
+        lote.cas_numero,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLocaleLowerCase("es").includes(texto)),
+    )
+  }, [busquedaEtiqueta, lotesDisponibles])
+
+  const loteQr = lotesDisponibles.find((lote) => lote.id === loteQrId) ?? lotesEtiquetas[0] ?? lotesDisponibles[0]
 
   function downloadBlob(blob: Blob, filename: string) {
     const url = URL.createObjectURL(blob)
@@ -1451,6 +1493,9 @@ function EtiquetasLotes({
   async function descargarQr() {
     setErrorLocal(null)
     try {
+      if (!loteQr) {
+        throw new Error(t("lotes.errSeleccionaLote"))
+      }
       const blob = await qrMutation.mutateAsync(loteQr)
       downloadBlob(blob, `${loteQr.codigo_interno}.png`)
     } catch (error) {
@@ -1490,6 +1535,25 @@ function EtiquetasLotes({
     )
   }
 
+  async function buscarLoteParaEtiqueta() {
+    const limpio = busquedaEtiqueta.trim()
+    if (!limpio) {
+      return
+    }
+    setErrorLocal(null)
+    const local = lotesDisponibles.find(
+      (lote) => String(lote.id) === limpio || lote.codigo_interno.toLocaleLowerCase("es") === limpio.toLocaleLowerCase("es"),
+    )
+    try {
+      const lote = local ?? await buscarEtiquetaMutation.mutateAsync(limpio)
+      setLotesExtra((actual) => (actual.some((item) => item.id === lote.id) ? actual : [lote, ...actual]))
+      setLoteQrId(lote.id)
+      setSeleccionPdf((actual) => (actual.includes(lote.id) ? actual : [...actual, lote.id]))
+    } catch (error) {
+      setErrorLocal(mutationError(error, t("lotes.errBuscarLoteEtiqueta")))
+    }
+  }
+
   return (
     <div className="mt-8 grid gap-6 xl:grid-cols-2">
       <section className="bg-cds-layer01 p-4">
@@ -1497,23 +1561,40 @@ function EtiquetasLotes({
           <QrCode size={20} aria-hidden="true" />
           <h2 className="text-[24px] leading-[1.33]">{t("lotes.reimprimirQr")}</h2>
         </div>
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row">
+          <Input
+            value={busquedaEtiqueta}
+            onChange={(event) => setBusquedaEtiqueta(event.target.value)}
+            placeholder={t("lotes.buscarEtiquetaPlaceholder")}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault()
+                void buscarLoteParaEtiqueta()
+              }
+            }}
+          />
+          <Button type="button" variant="secondary" onClick={() => void buscarLoteParaEtiqueta()} disabled={buscarEtiquetaMutation.isPending}>
+            <Search size={18} aria-hidden="true" />
+            {buscarEtiquetaMutation.isPending ? t("common.buscando") : t("common.buscar")}
+          </Button>
+        </div>
         <label className="block">
           <Label className="mb-2" htmlFor="lote_qr">{t("lotes.lote")}</Label>
           <select
             id="lote_qr"
             className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
-            value={loteQr.id}
+            value={loteQr?.id ?? ""}
             onChange={(event) => setLoteQrId(Number(event.target.value))}
           >
-            {lotes.map((lote) => (
+            {lotesEtiquetas.map((lote) => (
               <option key={lote.id} value={lote.id}>
                 {lote.codigo_interno} ({formatNumber(lote.cantidad_actual)} {lote.unidad})
               </option>
             ))}
           </select>
         </label>
-        <p className="mt-4 font-mono text-sm tracking-[0.16px]">{loteQr.codigo_interno}</p>
-        <Button className="mt-5" type="button" onClick={descargarQr} disabled={qrMutation.isPending}>
+        <p className="mt-4 font-mono text-sm tracking-[0.16px]">{loteQr?.codigo_interno ?? "—"}</p>
+        <Button className="mt-5" type="button" onClick={descargarQr} disabled={qrMutation.isPending || !loteQr}>
           <Download size={18} aria-hidden="true" />
           {qrMutation.isPending ? t("lotes.descargando") : t("lotes.descargarQrPng")}
         </Button>
@@ -1547,7 +1628,7 @@ function EtiquetasLotes({
           {t("lotes.maxEtiquetasPdf", { n: maxEtiquetasPdf })}
         </p>
         <div className="max-h-56 overflow-y-auto border-t border-cds-borderSubtle">
-          {lotes.map((lote) => (
+          {lotesEtiquetas.map((lote) => (
             <label key={lote.id} className="flex min-h-12 items-center gap-3 border-b border-cds-borderSubtle px-1 text-sm">
               <input
                 type="checkbox"
