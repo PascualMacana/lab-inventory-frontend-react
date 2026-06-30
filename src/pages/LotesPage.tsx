@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowRight, CalendarClock, Camera, Check, Download, FileText, Package, PackagePlus, Plus, QrCode, Save, Search, X } from "lucide-react"
 import { useTranslation } from "react-i18next"
-import { useSearchParams } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
@@ -1033,6 +1033,12 @@ export function NuevoLoteForm({
         <>
           <div className="mb-5 border-l-4 border-cds-supportInfo bg-cds-background px-4 py-3 text-sm">
             {t("lotes.unidadBaseInfo", { unidad: reactivo.unidad, id: usuarioId })}
+            <div className="mt-2 text-xs leading-4 tracking-[0.32px] text-cds-textSecondary">
+              {t("lotes.corregirUnidadBase")}{" "}
+              <Link className="text-cds-linkPrimary underline" to={`/reactivos?reactivo_id=${reactivo.id}`}>
+                {t("lotes.abrirReactivo")}
+              </Link>
+            </div>
           </div>
           <div className="grid gap-5 md:grid-cols-2">
             {modoCarga === "multiple" ? (

@@ -947,6 +947,7 @@ function DetalleReactivo({
   const { t } = useTranslation()
   const [errorLocal, setErrorLocal] = useState<string | null>(null)
   const [nombre, setNombre] = useState("")
+  const [unidad, setUnidad] = useState("")
   const [stockMinimo, setStockMinimo] = useState("")
   const [ubicacion, setUbicacion] = useState("")
   const [categoria, setCategoria] = useState("")
@@ -979,6 +980,7 @@ function DetalleReactivo({
       return
     }
     setNombre(reactivo.nombre ?? "")
+    setUnidad(reactivo.unidad ?? "")
     setStockMinimo(String(reactivo.stock_minimo ?? 0))
     setUbicacion(reactivo.ubicacion ?? "")
     setCategoria(reactivo.categoria ?? "")
@@ -1005,6 +1007,7 @@ function DetalleReactivo({
       )
       const payload: ReactivoActualizar = {
         nombre: nombre.trim(),
+        unidad,
         stock_minimo: stockMinimoParseado,
         ubicacion: nullable(ubicacion),
         categoria: nullable(categoria),
@@ -1120,6 +1123,23 @@ function DetalleReactivo({
             required
             disabled={!puedeEditar}
           />
+          <label className="block">
+            <Label className="mb-2" htmlFor="unidad_editar">{t("reactivos.fUnidadBase")}</Label>
+            <select
+              id="unidad_editar"
+              name="unidad"
+              className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
+              value={unidad}
+              onChange={(event) => setUnidad(event.target.value)}
+              disabled={!puedeEditar}
+            >
+              {unidades.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </label>
           <Field
             label={t("reactivos.fStockMin")}
             name="stock_minimo"

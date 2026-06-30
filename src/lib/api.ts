@@ -625,6 +625,7 @@ export type DuplicadosReactivo = {
 
 export type ReactivoActualizar = {
   nombre: string
+  unidad?: string | null
   stock_minimo: number
   ubicacion?: string | null
   categoria?: string | null
