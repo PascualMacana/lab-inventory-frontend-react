@@ -730,6 +730,23 @@ function EquipoDetalle({
     }
   }
 
+  async function marcarRetornoServicio(unidad: EquipamientoUnidad) {
+    onError(null)
+    try {
+      await eventoMutation.mutateAsync({
+        equipamiento_id: equipo.id,
+        usuario_id: usuarioId,
+        tipo: "reparacion",
+        cantidad: 1,
+        motivo: t(unidad.estado === "calibracion" ? "equip.motivoFinCalibracion" : "equip.motivoRetornoServicio"),
+        unidad_id: unidad.id,
+      })
+      await onUpdated(t("equip.msgRetornoServicio", { codigo: unidad.codigo_interno }))
+    } catch (error) {
+      onError(mutationError(error, t("equip.errEvento")))
+    }
+  }
+
   function toggleUnidadEtiqueta(id: number) {
     setUnidadesEtiqueta((actual) =>
       actual.includes(id) ? actual.filter((item) => item !== id) : [...actual, id],
@@ -877,6 +894,7 @@ function EquipoDetalle({
                 onSave={guardarUnidad}
                 onDelete={eliminarUnidad}
                 onMarcarUso={marcarUso}
+                onMarcarRetornoServicio={marcarRetornoServicio}
               />
               {/* Caja de impresión (handoff): marco propio, select Carbon de
                   tamaño + checklist de unidades a imprimir (con "Seleccionar
@@ -1019,6 +1037,7 @@ function UnidadesTable({
   onSave,
   onDelete,
   onMarcarUso,
+  onMarcarRetornoServicio,
 }: {
   unidades: EquipamientoUnidad[]
   isLoading: boolean
@@ -1031,6 +1050,7 @@ function UnidadesTable({
   onSave: (unidad: EquipamientoUnidad, data: EquipamientoUnidadActualizar) => void | Promise<void>
   onDelete: (unidad: EquipamientoUnidad) => void | Promise<void>
   onMarcarUso: (unidad: EquipamientoUnidad, tipo: "uso_inicio" | "uso_fin") => void | Promise<void>
+  onMarcarRetornoServicio: (unidad: EquipamientoUnidad) => void | Promise<void>
 }) {
   const { t } = useTranslation()
   const [ediciones, setEdiciones] = useState<Record<number, EquipamientoUnidadActualizar>>({})
@@ -1179,6 +1199,18 @@ function UnidadesTable({
                           disabled={isUsando}
                         >
                           <LogOut size={14} aria-hidden="true" /> {t("equip.liberar")}
+                        </Button>
+                      ) : null}
+                      {puedeEvento && (unidad.estado === "calibracion" || unidad.estado === "fuera_de_uso") ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="compact"
+                          className="h-[34px] whitespace-nowrap px-2.5 text-xs"
+                          onClick={() => onMarcarRetornoServicio(unidad)}
+                          disabled={isUsando}
+                        >
+                          <Check size={14} aria-hidden="true" /> {t("equip.volverServicio")}
                         </Button>
                       ) : null}
                       {puedeEditar ? (
