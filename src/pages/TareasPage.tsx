@@ -5,6 +5,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 
 import { ModuleNav } from "../components/ModuleNav"
+import { SuccessBanner } from "../components/SuccessBanner"
 import { PageHeader } from "../components/PageHeader"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
@@ -197,7 +198,7 @@ export function TareasPage() {
         plain
       />
 
-      {mensaje ? <div className="mb-6 border-l-4 border-cds-supportSuccess bg-cds-layer01 px-4 py-3 text-sm">{mensaje}</div> : null}
+      {mensaje ? <SuccessBanner message={mensaje} onClose={() => setMensaje(null)} className="mb-6" /> : null}
       {errorLocal ? <div className="mb-6 border-l-4 border-cds-supportError bg-cds-layer01 px-4 py-3 text-sm">{errorLocal}</div> : null}
 
       <ModuleNav

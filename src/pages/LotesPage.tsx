@@ -4,6 +4,7 @@ import { ArrowRight, CalendarClock, Camera, Check, Download, FileText, Package, 
 import { useTranslation } from "react-i18next"
 import { Link, useSearchParams } from "react-router-dom"
 
+import { SuccessBanner } from "../components/SuccessBanner"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
 import { Label } from "../components/ui/label"
@@ -112,6 +113,11 @@ export function LotesPage() {
     queryKey: ["lotes", reactivoId ?? "todos", reactivoId ? "" : busqueda.trim()],
     queryFn: () => (reactivoId ? api.lotesPorReactivo(token!, reactivoId) : api.lotes(token!, busqueda, !busqueda.trim())),
     enabled: Boolean(token),
+    // La búsqueda viaja en la queryKey, así que tipear refetchea (la búsqueda de
+    // texto la resuelve el backend para alcanzar lotes sin stock más allá del
+    // límite). placeholderData mantiene la lista anterior visible mientras llega
+    // la nueva: el filtrado en vivo se siente fluido y la tabla no parpadea.
+    placeholderData: (anterior) => anterior,
   })
 
   const lotes = lotesQuery.data ?? lotesVacios
@@ -144,6 +150,18 @@ export function LotesPage() {
     const siguiente = new URLSearchParams(searchParams)
     siguiente.delete("proveedor_id")
     setSearchParams(siguiente, { replace: true })
+  }
+
+  // Limpiar el scope a un reactivo (deep-link desde Reactivos). Hay que borrar
+  // también el reactivo_id de la URL: si no, el efecto de abajo lo vuelve a fijar.
+  function limpiarReactivoFiltro() {
+    setReactivoId(null)
+    setLoteSeleccionadoId(null)
+    if (searchParams.get("reactivo_id")) {
+      const siguiente = new URLSearchParams(searchParams)
+      siguiente.delete("reactivo_id")
+      setSearchParams(siguiente, { replace: true })
+    }
   }
 
   useEffect(() => {
@@ -206,7 +224,7 @@ export function LotesPage() {
       ) : null}
 
       {mensaje ? (
-        <div className="mb-6 border-l-4 border-cds-supportSuccess bg-cds-layer01 px-4 py-3 text-sm">{mensaje}</div>
+        <SuccessBanner message={mensaje} onClose={() => setMensaje(null)} className="mb-6" />
       ) : null}
       {errorLocal ? (
         <div className="mb-6 border-l-4 border-cds-supportError bg-cds-layer01 px-4 py-3 text-sm">{errorLocal}</div>
@@ -234,36 +252,9 @@ export function LotesPage() {
           busqueda={busqueda}
           stockTotal={stockTotal}
           proximoVencimiento={proximoVencimiento}
-          onReactivoChange={(value) => {
-            limpiarProveedorFiltro()
-            setReactivoId(value)
-            setLoteSeleccionadoId(null)
-          }}
           onLoteSelect={setLoteSeleccionadoId}
           onBusquedaChange={setBusqueda}
-          onBuscarTexto={async (texto) => {
-            setErrorLocal(null)
-            setMensaje(null)
-            setReactivoId(null)
-            setLoteSeleccionadoId(null)
-            limpiarProveedorFiltro()
-            setBusqueda(texto)
-            await queryClient.invalidateQueries({ queryKey: ["lotes"] })
-          }}
-          onBuscarCodigoInterno={async (codigo) => {
-            setErrorLocal(null)
-            setMensaje(null)
-            limpiarProveedorFiltro()
-            try {
-              const lote = await api.lotePorCodigo(token!, codigo)
-              setReactivoId(null)
-              setLoteSeleccionadoId(lote.id)
-              setBusqueda(lote.codigo_interno)
-              setMensaje(t("lotes.msgEncontrado", { codigo: lote.codigo_interno }))
-            } catch (error) {
-              setErrorLocal(mutationError(error, t("lotes.errBuscarLote")))
-            }
-          }}
+          onLimpiarReactivo={limpiarReactivoFiltro}
           onUpdated={async (mensajeActualizado) => {
             await queryClient.invalidateQueries({ queryKey: ["lotes"] })
             await queryClient.invalidateQueries({ queryKey: ["reactivos"] })
@@ -290,11 +281,9 @@ function ListadoLotes({
   busqueda,
   stockTotal,
   proximoVencimiento,
-  onReactivoChange,
   onLoteSelect,
   onBusquedaChange,
-  onBuscarTexto,
-  onBuscarCodigoInterno,
+  onLimpiarReactivo,
   onUpdated,
 }: {
   token: string
@@ -309,11 +298,9 @@ function ListadoLotes({
   busqueda: string
   stockTotal: number
   proximoVencimiento?: string
-  onReactivoChange: (id: number | null) => void
   onLoteSelect: (id: number | null) => void
   onBusquedaChange: (value: string) => void
-  onBuscarTexto: (texto: string) => void | Promise<void>
-  onBuscarCodigoInterno: (codigo: string) => void | Promise<void>
+  onLimpiarReactivo: () => void
   onUpdated: (mensaje?: string) => void | Promise<void>
 }) {
   const { t } = useTranslation()
@@ -367,60 +354,7 @@ function ListadoLotes({
         </div>
       ) : null}
 
-      <div className="mb-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <label className="block">
-          <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">{t("lotes.reactivo")}</span>
-          <select
-            className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
-            value={reactivoSeleccionado?.id ?? ""}
-            onChange={(event) => onReactivoChange(event.target.value ? Number(event.target.value) : null)}
-            disabled={reactivos.length === 0}
-          >
-            <option value="">{t("lotes.todosReactivos")}</option>
-            {reactivos.map((reactivo) => (
-              <option key={reactivo.id} value={reactivo.id}>
-                {reactivo.nombre} | stock: {formatNumber(reactivo.stock_total)} {reactivo.unidad} | ID {reactivo.id}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="block">
-          <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">{t("lotes.buscarLote")}</span>
-          <form
-            className="grid gap-2 sm:grid-cols-[1fr_auto]"
-            onSubmit={(event) => {
-              event.preventDefault()
-              const texto = busqueda.trim()
-              if (texto.toUpperCase().startsWith("LAB-")) {
-                void onBuscarCodigoInterno(texto)
-                return
-              }
-              if (texto) {
-                void onBuscarTexto(texto)
-              }
-            }}
-          >
-            <div className="relative">
-              <Search
-                className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-cds-textSecondary"
-                size={18}
-                aria-hidden="true"
-              />
-              <Input
-                className="pl-12"
-                value={busqueda}
-                onChange={(event) => onBusquedaChange(event.target.value)}
-                placeholder={t("lotes.buscarPlaceholder")}
-              />
-            </div>
-            <Button type="submit" variant="secondary" size="compact" disabled={!busqueda.trim()}>
-              {t("common.buscar")}
-            </Button>
-          </form>
-        </label>
-      </div>
-
+      {/* Tarjetas arriba (mismo orden que Reactivos: métricas → búsqueda → tabla). */}
       <div className="mb-4 grid grid-cols-1 gap-3.5 md:grid-cols-3">
         <MetricTile
           label={reactivoSeleccionado ? t("lotes.metricStockActivo") : t("lotes.metricReactivosConLote")}
@@ -430,6 +364,43 @@ function ListadoLotes({
         <MetricTile label={t("lotes.metricLotesActivos")} value={String(lotesTodos.length)} icon={Package} />
         <MetricTile label={t("lotes.metricProximoVenc")} value={formatDate(proximoVencimiento)} icon={CalendarClock} tone={proximoVencTone} />
       </div>
+
+      {/* La barra de búsqueda reemplaza al dropdown de reactivo: filtra en vivo al
+          tipear (reactivo, código, lote, proveedor, CAS). Un código LAB- igual
+          matchea porque la búsqueda incluye el código interno. */}
+      <label className="mb-4 block">
+        <span className="mb-2 block text-xs tracking-[0.32px] text-cds-textSecondary">{t("common.buscar")}</span>
+        <div className="relative">
+          <Search
+            className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-cds-textSecondary"
+            size={18}
+            aria-hidden="true"
+          />
+          <Input
+            className="pl-12"
+            value={busqueda}
+            onChange={(event) => onBusquedaChange(event.target.value)}
+            placeholder={t("lotes.buscarPlaceholder")}
+          />
+        </div>
+      </label>
+
+      {/* Chip del reactivo deep-linkeado desde Reactivos: el scope ya no se elige
+          a mano (no hay dropdown), pero al llegar con ?reactivo_id se ve y se
+          puede quitar para volver a la lista completa. */}
+      {reactivoSeleccionado ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <span className="text-xs tracking-[0.32px] text-cds-textPlaceholder">{t("lotes.filtroActivo")}:</span>
+          <button
+            type="button"
+            onClick={onLimpiarReactivo}
+            className="inline-flex h-7 items-center gap-1.5 border border-[#cddde2] bg-[#e6eef1] py-0 pl-3 pr-1.5 text-xs text-cds-linkPrimary transition-colors hover:bg-[#dbe7ec] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-cds-focus"
+          >
+            {t("lotes.chipReactivo", { nombre: reactivoSeleccionado.nombre })}
+            <X size={13} aria-hidden="true" />
+          </button>
+        </div>
+      ) : null}
 
       {fifoLoteHint ? (
         <p className="mb-3 flex items-center gap-1.5 text-xs tracking-[0.32px] text-cds-textSecondary">

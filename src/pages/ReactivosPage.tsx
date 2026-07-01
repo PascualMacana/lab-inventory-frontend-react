@@ -5,6 +5,7 @@ import { useSearchParams } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 
 import { ModuleNav } from "../components/ModuleNav"
+import { SuccessBanner } from "../components/SuccessBanner"
 import { PageHeader } from "../components/PageHeader"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
@@ -31,7 +32,7 @@ const filtroKey: Record<FiltroEstado, string> = {
   "Con stock": "conStock",
 }
 const reactivosVacios: Reactivo[] = []
-const unidades = ["ml", "L", "g", "kg", "mg", "ug", "unidad"]
+const unidades = ["ml", "L", "g", "kg", "mg", "ug", "unidad", "reacciones"]
 
 // Sentinels del filtro de categoría: "todas" y "sin categoría". El resto de los
 // valores son la categoría tal cual (trimmed) — las opciones se derivan del dato.
@@ -41,6 +42,38 @@ type CategoriaOpcion = { value: string; label: string; count: number }
 
 function normalizarTexto(value: string | null | undefined) {
   return (value ?? "").toLocaleLowerCase("es")
+}
+
+function normalizarUnidadFusion(value: string | null | undefined) {
+  const unidad = (value ?? "").trim()
+  const lower = unidad.toLocaleLowerCase("es")
+  const aliases: Record<string, string> = {
+    l: "L",
+    lt: "L",
+    lts: "L",
+    litro: "L",
+    litros: "L",
+    "µl": "ul",
+    "μl": "ul",
+    ul: "ul",
+    unidades: "unidad",
+    uds: "unidad",
+    ud: "unidad",
+    kit: "unidad",
+    kits: "unidad",
+    paquete: "unidad",
+    paquetes: "unidad",
+    reaccion: "reacciones",
+    reacción: "reacciones",
+    reacciones: "reacciones",
+    rxn: "reacciones",
+    rxns: "reacciones",
+  }
+  return aliases[unidad] ?? aliases[lower] ?? unidad
+}
+
+function unidadesFusionCompatibles(a: string | null | undefined, b: string | null | undefined) {
+  return normalizarUnidadFusion(a) === normalizarUnidadFusion(b)
 }
 
 function esTransito(reactivo: Reactivo) {
@@ -239,7 +272,7 @@ export function ReactivosPage() {
       ) : null}
 
       {mensaje ? (
-        <div className="mb-6 border-l-4 border-cds-supportSuccess bg-cds-layer01 px-4 py-3 text-sm">{mensaje}</div>
+        <SuccessBanner message={mensaje} onClose={() => setMensaje(null)} className="mb-6" />
       ) : null}
 
       <ModuleNav
@@ -1063,13 +1096,16 @@ function DetalleReactivo({
       : (reactivo.stock_total ?? 0) > 0
         ? 160
         : 0
-  // Solo se puede fusionar entre reactivos con la MISMA unidad (el backend lo exige:
-  // los lotes guardan la cantidad en la unidad del reactivo, no se convierte).
-  const duplicadosPosibles = reactivos.filter((item) => item.id !== reactivo.id && item.unidad === reactivo.unidad)
+  const duplicadosPosibles = reactivos.filter((item) => item.id !== reactivo.id)
   const duplicadosFiltrados = busquedaDup.trim()
     ? duplicadosPosibles.filter((item) => normalizarTexto(item.nombre).includes(normalizarTexto(busquedaDup)))
     : []
-  const nombreDuplicado = reactivos.find((item) => item.id === duplicadoId)?.nombre ?? ""
+  const duplicadoSeleccionado = reactivos.find((item) => item.id === duplicadoId) ?? null
+  const nombreDuplicado = duplicadoSeleccionado?.nombre ?? ""
+  const duplicadoUnidadCompatible = duplicadoSeleccionado
+    ? unidadesFusionCompatibles(reactivo.unidad, duplicadoSeleccionado.unidad)
+    : true
+  const unidadBloqueada = Boolean(reactivo.unidad_bloqueada)
 
   return (
     <>
@@ -1128,10 +1164,10 @@ function DetalleReactivo({
             <select
               id="unidad_editar"
               name="unidad"
-              className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none"
+              className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none disabled:cursor-not-allowed disabled:bg-cds-layer01 disabled:text-cds-textPlaceholder disabled:opacity-60"
               value={unidad}
               onChange={(event) => setUnidad(event.target.value)}
-              disabled={!puedeEditar}
+              disabled={!puedeEditar || unidadBloqueada}
             >
               {unidades.map((item) => (
                 <option key={item} value={item}>
@@ -1139,6 +1175,11 @@ function DetalleReactivo({
                 </option>
               ))}
             </select>
+            {unidadBloqueada ? (
+              <p className="mt-2 text-xs leading-4 tracking-[0.32px] text-cds-textSecondary">
+                {t("reactivos.unidadBloqueadaHelp")}
+              </p>
+            ) : null}
           </label>
           <Field
             label={t("reactivos.fStockMin")}
@@ -1194,11 +1235,11 @@ function DetalleReactivo({
       <section className="mt-6 bg-cds-layer01 p-4">
         <h2 className="text-[24px] leading-[1.33]">{t("reactivos.fusionarTitulo")}</h2>
         <p className="mt-2 text-xs leading-4 tracking-[0.32px] text-cds-textSecondary">
-          {t("reactivos.fusionarHelp", { nombre: reactivo.nombre, unidad: reactivo.unidad })}
+          {t("reactivos.fusionarHelp", { nombre: reactivo.nombre })}
         </p>
 
         {duplicadosPosibles.length === 0 ? (
-          <p className="mt-4 text-sm text-cds-textSecondary">{t("reactivos.sinOtrosUnidad", { unidad: reactivo.unidad })}</p>
+          <p className="mt-4 text-sm text-cds-textSecondary">{t("reactivos.sinOtrosUnidad")}</p>
         ) : (
           <div className="mt-4 max-w-xl">
             <Button
@@ -1232,7 +1273,11 @@ function DetalleReactivo({
                       >
                         <span>
                           {candidato.nombre}{" "}
-                          <span className="text-cds-textSecondary">(ID {candidato.reactivo_id}{candidato.cas_numero ? ` · CAS ${candidato.cas_numero}` : ""})</span>
+                          <span className="text-cds-textSecondary">
+                            (ID {candidato.reactivo_id}
+                            {candidato.cas_numero ? ` · CAS ${candidato.cas_numero}` : ""}
+                            {candidato.unidad ? ` · ${candidato.unidad}` : ""})
+                          </span>
                         </span>
                         {duplicadoId === candidato.reactivo_id ? <Check size={16} aria-hidden="true" /> : null}
                       </button>
@@ -1246,7 +1291,7 @@ function DetalleReactivo({
             ) : null}
 
             <div className="mt-5">
-              <Label className="mb-2" htmlFor="buscar_duplicado">{t("reactivos.buscarEnTodos", { unidad: reactivo.unidad })}</Label>
+              <Label className="mb-2" htmlFor="buscar_duplicado">{t("reactivos.buscarEnTodos")}</Label>
               <Input
                 id="buscar_duplicado"
                 value={busquedaDup}
@@ -1272,7 +1317,10 @@ function DetalleReactivo({
                       >
                         <span>
                           {item.nombre}{" "}
-                          <span className="text-cds-textSecondary">(ID {item.id} · stock {formatNumber(item.stock_total)} {item.unidad})</span>
+                          <span className="text-cds-textSecondary">
+                            (ID {item.id} · stock {formatNumber(item.stock_total)} {item.unidad}
+                            {!unidadesFusionCompatibles(reactivo.unidad, item.unidad) ? ` · ${t("reactivos.unidadDistinta", { unidad: item.unidad })}` : ""})
+                          </span>
                         </span>
                         {duplicadoId === item.id ? <Check size={16} aria-hidden="true" /> : null}
                       </button>
@@ -1284,6 +1332,14 @@ function DetalleReactivo({
 
             {duplicadoId ? (
               <p className="mt-4 text-sm">{t("reactivos.duplicadoElegido")} <strong>{nombreDuplicado}</strong></p>
+            ) : null}
+            {duplicadoSeleccionado && !duplicadoUnidadCompatible ? (
+              <p className="mt-3 border-l-4 border-cds-supportWarning bg-cds-background px-4 py-3 text-sm text-cds-textSecondary">
+                {t("reactivos.unidadIncompatibleFusion", {
+                  actual: reactivo.unidad,
+                  duplicado: duplicadoSeleccionado.unidad,
+                })}
+              </p>
             ) : null}
           </div>
         )}

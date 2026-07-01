@@ -4,6 +4,7 @@ import { Bot, Building2, Check, Plus, RefreshCw, Search, Shield, UserPlus } from
 import { useTranslation } from "react-i18next"
 
 import { ModuleNav } from "../components/ModuleNav"
+import { SuccessBanner } from "../components/SuccessBanner"
 import { PageHeader } from "../components/PageHeader"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
@@ -201,7 +202,7 @@ export function OwnerPage() {
       />
 
       {mensaje ? (
-        <div className="mb-6 border-l-4 border-cds-supportSuccess bg-cds-layer01 px-4 py-3 text-sm">{mensaje}</div>
+        <SuccessBanner message={mensaje} onClose={() => setMensaje(null)} className="mb-6" />
       ) : null}
       {errorLocal ? (
         <div className="mb-6 border-l-4 border-cds-supportError bg-cds-layer01 px-4 py-3 text-sm">{errorLocal}</div>

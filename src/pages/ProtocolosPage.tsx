@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next"
 import type { TFunction } from "i18next"
 
 import { ModuleNav } from "../components/ModuleNav"
+import { SuccessBanner } from "../components/SuccessBanner"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
 import { Label } from "../components/ui/label"
@@ -40,7 +41,7 @@ function compatibleReactivos(reactivos: Reactivo[], grupo?: string) {
     return reactivos.filter((reactivo) => new Set(["ug", "mg", "g", "kg"]).has(reactivo.unidad))
   }
   if (grupo === "discreto") {
-    return reactivos.filter((reactivo) => reactivo.unidad === "unidad")
+    return reactivos.filter((reactivo) => new Set(["unidad", "reacciones"]).has(reactivo.unidad))
   }
   return reactivos
 }
@@ -342,9 +343,13 @@ export function ProtocolosPage() {
       />
 
       {message ? (
-        <div className={`border-l-4 bg-cds-layer01 px-4 py-3 text-sm ${message.type === "error" ? "border-cds-supportError" : message.type === "success" ? "border-cds-supportSuccess" : "border-cds-supportInfo"}`}>
-          {message.text}
-        </div>
+        message.type === "success" ? (
+          <SuccessBanner message={message.text} onClose={() => setMessage(null)} />
+        ) : (
+          <div className={`border-l-4 bg-cds-layer01 px-4 py-3 text-sm ${message.type === "error" ? "border-cds-supportError" : "border-cds-supportInfo"}`}>
+            {message.text}
+          </div>
+        )
       ) : null}
 
       {tab === "plantillas" ? (

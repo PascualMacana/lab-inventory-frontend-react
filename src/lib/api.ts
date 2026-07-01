@@ -569,6 +569,7 @@ export type Reactivo = {
   // Catálogo muestre la relación reactivo↔lotes sin abrir cada fila.
   lotes_count?: number
   proximo_vencimiento?: string | null
+  unidad_bloqueada?: boolean | number
 }
 
 export type ReactivoCrear = {
@@ -585,6 +586,7 @@ export type ReactivoCandidato = {
   reactivo_id: number
   nombre: string
   cas_numero: string | null
+  unidad?: string | null
 }
 
 export type SugerenciaNuevo = {
@@ -904,6 +906,13 @@ export type Equipamiento = {
   categoria?: string | null
   cantidad_total: number
   cantidad_operativa: number
+  // Conteos derivados del estado real de las unidades (los tiles usan estos, no
+  // los contadores legacy). disponible = operativa; en_uso; no_operativa =
+  // fuera_de_uso + calibracion; unidades = total que existe (sin las de baja).
+  cantidad_disponible: number
+  cantidad_en_uso: number
+  cantidad_no_operativa: number
+  cantidad_unidades: number
   marca?: string | null
   modelo?: string | null
   numero_serie?: string | null
@@ -930,15 +939,17 @@ export type EquipamientoCrear = {
   notas?: string | null
 }
 
+export type EquipamientoActualizar = Omit<EquipamientoCrear, "cantidad_inicial">
+
 export type EventoEquipamiento = {
   id: number
   equipamiento_id: number
   unidad_id?: number | null
   usuario_id: number
-  tipo: "alta" | "rotura" | "calibracion" | "reparacion" | "baja"
+  tipo: "alta" | "rotura" | "calibracion" | "reparacion" | "baja" | "uso_inicio" | "uso_fin"
   cantidad: number
   fecha: string
-  motivo: string
+  motivo: string | null
   equipamiento_nombre: string
   unidad_codigo?: string | null
   usuario_nombre: string
@@ -949,7 +960,8 @@ export type EventoEquipamientoCrear = {
   usuario_id: number
   tipo: EventoEquipamiento["tipo"]
   cantidad: number
-  motivo: string
+  // Opcional: uso_inicio/uso_fin no llevan motivo.
+  motivo?: string | null
   unidad_id?: number | null
 }
 
@@ -960,16 +972,23 @@ export type EquipamientoUnidad = {
   codigo_interno: string
   numero_serie?: string | null
   ubicacion?: string | null
-  estado: "operativa" | "fuera_de_uso" | "calibracion" | "baja"
+  estado: "operativa" | "en_uso" | "fuera_de_uso" | "calibracion" | "baja"
   fecha_creacion: string
   usuario_id?: number | null
   activo: number
   ultimo_evento_fecha?: string | null
   ultimo_evento_tipo?: EventoEquipamiento["tipo"] | null
+  // Tenedor actual: usuario del último evento (quien la tiene si está en_uso).
+  ultimo_evento_usuario?: string | null
   equipamiento_nombre?: string
   equipamiento_categoria?: string | null
   equipamiento_marca?: string | null
   equipamiento_modelo?: string | null
+}
+
+export type EquipamientoUnidadActualizar = {
+  numero_serie?: string | null
+  ubicacion?: string | null
 }
 
 export type AuditoriaEvento = {
@@ -1594,6 +1613,77 @@ export type CepBacdiveRefreshResponse = {
     truncado: boolean
   }
   sin_cambios: boolean
+}
+
+// ── Cepario C3: capa de referencias externas multi-fuente (NCBI / GenBank → partes) ──
+// tipo de búsqueda; null/undefined = autodetectar accession vs término en el backend.
+export type CepFuenteTipoBusqueda = "accession" | "termino"
+
+export type CepNcbiFeaturesResumen = {
+  count: number
+  tipos: string[]
+  omitidas: number
+}
+
+export type CepNcbiResumen = {
+  fuente: "ncbi"
+  external_id: string
+  titulo?: string | null
+  definicion?: string | null
+  organismo?: string | null
+  tax_id?: number | null
+  longitud?: number | null
+  moltype?: string | null
+  topologia?: string | null
+  accession_version?: string | null
+  uid?: string | null
+  url?: string | null
+  features_resumen?: CepNcbiFeaturesResumen | null
+  [key: string]: unknown
+}
+
+export type CepNcbiCandidate = {
+  fuente: "ncbi"
+  external_id: string
+  titulo?: string | null
+  descripcion?: string | null
+  query_usada?: string | null
+  payload_resumen: CepNcbiResumen
+  payload_raw?: Record<string, unknown> | null
+}
+
+export type CepNcbiSearchResponse = {
+  query_usada: string
+  count: number
+  candidatos: CepNcbiCandidate[]
+}
+
+// El parche de NCBI usa valor_ncbi (el de BacDive, valor_bacdive); por lo demás
+// la forma es la misma, así la tabla de parche del front se calca tal cual.
+export type CepNcbiPatchItem = {
+  id: string
+  grupo: string
+  campo: string
+  etiqueta: string
+  valor_local?: string | number | null
+  valor_ncbi?: string | number | null
+  aplicable: boolean
+}
+
+export type CepNcbiPatch = {
+  referencia_id: number
+  external_id: string
+  fuente: "ncbi"
+  items: CepNcbiPatchItem[]
+  aplicables: string[]
+  preseleccionados?: string[]
+}
+
+export type CepNcbiPatchAplicado = {
+  referencia_id: number
+  external_id: string
+  aplicados: Array<{ grupo: string; campo: string; valor: string | number | null }>
+  parche: CepNcbiPatch
 }
 
 // ── Cepario C2: capa de secuencia (ADN + features) ──
@@ -2228,8 +2318,8 @@ export const api = {
       body: JSON.stringify({ sobreviviente_id: sobrevivienteId, duplicado_id: duplicadoId }),
     }),
 
-  // Merge tool: posibles duplicados de un reactivo (mismo CAS o misma sustancia
-  // según el LLM, misma unidad). Requiere crear_reactivo.
+  // Merge tool: posibles duplicados de un reactivo (mismo CAS, nombre parecido
+  // o misma sustancia según el LLM). Requiere crear_reactivo.
   duplicadosReactivo: async (token: string, id: number) =>
     request<DuplicadosReactivo>(`/reactivos/${id}/duplicados`, { token }),
 
@@ -2463,6 +2553,26 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  actualizarEquipamiento: async (token: string, id: number, data: EquipamientoActualizar) =>
+    request<{ mensaje: string }>(`/equipamiento/${id}`, {
+      method: "PATCH",
+      token,
+      body: JSON.stringify(data),
+    }),
+
+  actualizarEquipamientoUnidad: async (token: string, unidadId: number, data: EquipamientoUnidadActualizar) =>
+    request<{ mensaje: string }>(`/equipamiento/unidades/${unidadId}`, {
+      method: "PATCH",
+      token,
+      body: JSON.stringify(data),
+    }),
+
+  eliminarEquipamientoUnidad: async (token: string, unidadId: number) =>
+    request<{ mensaje: string }>(`/equipamiento/unidades/${unidadId}`, {
+      method: "DELETE",
+      token,
+    }),
+
   registrarEventoEquipamiento: async (token: string, data: EventoEquipamientoCrear) =>
     request<{ id: number; mensaje: string }>("/equipamiento/evento", {
       method: "POST",
@@ -2617,11 +2727,11 @@ export const api = {
     request<CepReferenciaExterna[]>(`/cepario/entidades/${entidadId}/referencias-externas`, { token }),
 
   ceparioGuardarReferenciaExterna: async (token: string, entidadId: number, data: {
-    fuente?: "bacdive"
+    fuente?: string
     external_id: string
     query_usada?: string | null
     match_estado?: "confirmado" | "sugerido" | "descartado"
-    payload_resumen?: CepBacdiveResumen | null
+    payload_resumen?: CepBacdiveResumen | CepNcbiResumen | Record<string, unknown> | null
     payload_raw?: Record<string, unknown> | null
   }) =>
     request<CepReferenciaExterna>(`/cepario/entidades/${entidadId}/referencias-externas`, {
@@ -2651,6 +2761,52 @@ export const api = {
       token,
       body: JSON.stringify({ campos }),
     }),
+
+  // ── Cepario C3: fuentes externas genéricas (NCBI/GenBank → partes genéticas) ──
+  // Busca candidatos en una fuente registrada; `tipo` omitido = autodetecta.
+  ceparioFuenteBuscar: async (
+    token: string,
+    fuente: string,
+    q: string,
+    tipo?: CepFuenteTipoBusqueda,
+    limite = 10,
+  ) => {
+    const params = new URLSearchParams({ q, limite: String(limite) })
+    if (tipo) {
+      params.set("tipo", tipo)
+    }
+    return request<CepNcbiSearchResponse>(
+      `/cepario/fuentes/${encodeURIComponent(fuente)}/buscar?${params.toString()}`,
+      { token },
+    )
+  },
+
+  // Parche NCBI: mismo endpoint que el de BacDive, tipado para `valor_ncbi`.
+  ceparioReferenciaParcheNcbi: async (token: string, entidadId: number, referenciaId: number) =>
+    request<CepNcbiPatch>(`/cepario/entidades/${entidadId}/referencias-externas/${referenciaId}/parche`, { token }),
+
+  ceparioReferenciaAplicarParcheNcbi: async (token: string, entidadId: number, referenciaId: number, campos: string[]) =>
+    request<CepNcbiPatchAplicado>(`/cepario/entidades/${entidadId}/referencias-externas/${referenciaId}/parche`, {
+      method: "POST",
+      token,
+      body: JSON.stringify({ campos }),
+    }),
+
+  // US2 — trae la secuencia + features del GenBank de una referencia NCBI al panel de C2.
+  ceparioImportarSecuenciaReferencia: async (
+    token: string,
+    entidadId: number,
+    referenciaId: number,
+    confirmarReemplazo = false,
+  ) =>
+    request<CepSecuencia>(
+      `/cepario/entidades/${entidadId}/referencias-externas/${referenciaId}/importar-secuencia`,
+      {
+        method: "POST",
+        token,
+        body: JSON.stringify({ confirmar_reemplazo: confirmarReemplazo }),
+      },
+    ),
 
   // ── Cepario C2: secuencia + features de una entidad (en este corte, partes genéticas) ──
   ceparioSecuencia: async (token: string, entidadId: number): Promise<CepSecuencia | null> => {

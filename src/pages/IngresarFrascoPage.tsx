@@ -4,6 +4,7 @@ import { Camera } from "lucide-react"
 import { Link } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 
+import { SuccessBanner } from "../components/SuccessBanner"
 import { NuevoLoteForm } from "./LotesPage"
 import { api, type Reactivo } from "../lib/api"
 import { useAuth } from "../lib/auth"
@@ -49,12 +50,18 @@ export function IngresarFrascoPage() {
       </div>
 
       {mensaje ? (
-        <div className="mb-6 border-l-4 border-cds-supportSuccess bg-cds-layer01 px-4 py-3 text-sm">
-          {mensaje}{" "}
-          <Link to={verLotesHref} className="text-cds-linkPrimary underline">
-            {codigoCreado ? t("ingresar.verLote") : t("ingresar.verEnLotes")}
-          </Link>
-        </div>
+        <SuccessBanner
+          message={
+            <>
+              {mensaje}{" "}
+              <Link to={verLotesHref} className="text-cds-linkPrimary underline">
+                {codigoCreado ? t("ingresar.verLote") : t("ingresar.verEnLotes")}
+              </Link>
+            </>
+          }
+          onClose={() => setMensaje(null)}
+          className="mb-6"
+        />
       ) : null}
 
       <NuevoLoteForm

@@ -3,7 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { BrowserQRCodeReader, type IScannerControls } from "@zxing/browser"
 import { ScanLine, Search, Square, Trash2 } from "lucide-react"
 import { useTranslation } from "react-i18next"
+import { useNavigate } from "react-router-dom"
 
+import { SuccessBanner } from "../components/SuccessBanner"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
 import { Label } from "../components/ui/label"
@@ -25,9 +27,16 @@ function extraerCodigoInterno(valor: string) {
   return match?.[0] ?? null
 }
 
+function extraerCodigoEquipamiento(valor: string) {
+  const normalizado = valor.trim().toUpperCase()
+  const match = normalizado.match(/\bEQ-\d{4}-\d{4}\b/)
+  return match?.[0] ?? null
+}
+
 export function MesadaPage() {
   const { token, usuario } = useAuth()
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [codigo, setCodigo] = useState("")
   const [lote, setLote] = useState<Lote | null>(null)
@@ -79,16 +88,35 @@ export function MesadaPage() {
     await buscarCodigo(codigo)
   }
 
+  function abrirEquipamiento(codigoInterno: string) {
+    const codigoEquipo = extraerCodigoEquipamiento(codigoInterno)
+    if (!codigoEquipo) {
+      return false
+    }
+    setLote(null)
+    setMensaje(null)
+    setErrorLocal(null)
+    setCodigo(codigoEquipo)
+    navigate(`/equipamiento?unidad=${encodeURIComponent(codigoEquipo)}`)
+    return true
+  }
+
   async function buscarCodigo(codigoInterno: string) {
     const codigoLimpio = codigoInterno.trim()
     if (!codigoLimpio) {
       setErrorLocal(t("mesada.errCodigoVacio"))
       return
     }
+    if (abrirEquipamiento(codigoLimpio)) {
+      return
+    }
     await buscarMutation.mutateAsync(codigoLimpio)
   }
 
   async function handleQrEnVivo(valor: string) {
+    if (abrirEquipamiento(valor)) {
+      return
+    }
     const codigoInterno = extraerCodigoInterno(valor)
     if (!codigoInterno) {
       setLote(null)
@@ -197,7 +225,7 @@ export function MesadaPage() {
       </form>
 
       {mensaje ? (
-        <div className="mt-4 border-l-4 border-cds-supportSuccess bg-cds-layer01 px-4 py-3 text-sm">{mensaje}</div>
+        <SuccessBanner message={mensaje} onClose={() => setMensaje(null)} className="mt-4" />
       ) : null}
       {errorLocal ? (
         <div className="mt-4 border-l-4 border-cds-supportError bg-cds-layer01 px-4 py-3 text-sm">{errorLocal}</div>

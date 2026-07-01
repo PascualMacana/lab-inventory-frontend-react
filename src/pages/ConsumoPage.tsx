@@ -2,6 +2,7 @@ import { FormEvent, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { RotateCcw, Search } from "lucide-react"
 import { useTranslation } from "react-i18next"
+import { useNavigate } from "react-router-dom"
 
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
@@ -21,9 +22,16 @@ function mutationError(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
 }
 
+function extraerCodigoEquipamiento(valor: string) {
+  const normalizado = valor.trim().toUpperCase()
+  const match = normalizado.match(/\bEQ-\d{4}-\d{4}\b/)
+  return match?.[0] ?? null
+}
+
 export function ConsumoPage() {
   const { token, usuario } = useAuth()
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [reactivoId, setReactivoId] = useState<number | null>(null)
   const [loteElegido, setLoteElegido] = useState<Lote | null>(null)
@@ -126,6 +134,15 @@ export function ConsumoPage() {
     const codigoLimpio = codigo.trim()
     if (!codigoLimpio) {
       setErrorLocal(t("consumo.errCodigoVacio"))
+      return
+    }
+    const codigoEquipo = extraerCodigoEquipamiento(codigoLimpio)
+    if (codigoEquipo) {
+      setLoteElegido(null)
+      setMensaje(null)
+      setErrorLocal(null)
+      setCodigoManual(codigoEquipo)
+      navigate(`/equipamiento?unidad=${encodeURIComponent(codigoEquipo)}`)
       return
     }
     setErrorLocal(null)

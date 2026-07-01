@@ -4,6 +4,7 @@ import { useSearchParams } from "react-router-dom"
 import { Check, ClipboardCheck, ClipboardList, Clock, Copy, Download, FileText, PackageCheck, Plus, RefreshCw, Save, Search, Send, SlidersHorizontal, Sparkles, Trash2, Truck, X } from "lucide-react"
 
 import { ModuleNav } from "../components/ModuleNav"
+import { SuccessBanner } from "../components/SuccessBanner"
 import { PageHeader } from "../components/PageHeader"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
@@ -34,7 +35,7 @@ type RecepcionDraft = {
 
 const prioridades: CompraPrioridad[] = ["baja", "media", "alta", "urgente"]
 // Unidades canónicas, mismo set que el form de Reactivos (ReactivosPage.tsx).
-const unidadesOpciones = ["ml", "L", "g", "kg", "mg", "ug", "unidad"]
+const unidadesOpciones = ["ml", "L", "g", "kg", "mg", "ug", "unidad", "reacciones"]
 const estadosFiltro = ["", "borrador", "pendiente_aprobacion", "cambios_solicitados", "aprobada", "recibida_parcial", "recibida", "rechazada", "cancelada"] as const
 const emptySolicitudes: CompraSolicitud[] = []
 const emptyRecomendaciones: ReposicionRecomendacion[] = []
@@ -1336,7 +1337,7 @@ export function ComprasPage() {
         }
       />
 
-      {mensaje ? <div className="mb-6 border-l-4 border-cds-supportSuccess bg-cds-layer01 px-4 py-3 text-sm">{mensaje}</div> : null}
+      {mensaje ? <SuccessBanner message={mensaje} onClose={() => setMensaje(null)} className="mb-6" /> : null}
       {errorLocal ? <div className="mb-6 border-l-4 border-cds-supportError bg-cds-layer01 px-4 py-3 text-sm">{errorLocal}</div> : null}
       {revalidacion ? <div className="mb-6 border-l-4 border-cds-focus bg-cds-layer01 px-4 py-3 text-sm">{revalidacion}</div> : null}
 

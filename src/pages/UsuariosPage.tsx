@@ -4,6 +4,7 @@ import { ArrowLeft, Eye, EyeOff, Mail, Plus, RotateCcw, Search, Shield, UserRoun
 import { useTranslation } from "react-i18next"
 
 import { ModuleNav } from "../components/ModuleNav"
+import { SuccessBanner } from "../components/SuccessBanner"
 import { PageHeader } from "../components/PageHeader"
 import { Button } from "../components/ui/button"
 import { EstadoBadge } from "../components/ui/estado-badge"
@@ -95,7 +96,7 @@ export function UsuariosPage() {
       />
 
       {mensaje ? (
-        <div className="mb-6 border-l-4 border-cds-supportSuccess bg-cds-layer01 px-4 py-3 text-sm">{mensaje}</div>
+        <SuccessBanner message={mensaje} onClose={() => setMensaje(null)} className="mb-6" />
       ) : null}
       {errorLocal ? (
         <div className="mb-6 border-l-4 border-cds-supportError bg-cds-layer01 px-4 py-3 text-sm">{errorLocal}</div>
