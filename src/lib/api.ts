@@ -978,6 +978,7 @@ export type EquipamientoUnidad = {
   activo: number
   ultimo_evento_fecha?: string | null
   ultimo_evento_tipo?: EventoEquipamiento["tipo"] | null
+  ultimo_evento_motivo?: string | null
   // Tenedor actual: usuario del último evento (quien la tiene si está en_uso).
   ultimo_evento_usuario?: string | null
   equipamiento_nombre?: string

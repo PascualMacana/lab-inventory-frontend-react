@@ -770,6 +770,7 @@
     "msgLiberada": "{{codigo}} liberada.",
     "msgRetornoServicio": "{{codigo}} volvió a servicio.",
     "volverServicio": "Volver a servicio",
+    "calibracionFinalizada": "Calibración finalizada",
     "motivoFinCalibracion": "Calibración finalizada",
     "motivoRetornoServicio": "Retorno a servicio",
     "iSerie": "N° serie",
@@ -861,9 +862,9 @@
     },
     "tipoEvento": {
       "alta": "Alta",
-      "rotura": "Rotura",
+      "rotura": "Enviar a reparación / fuera de uso",
       "calibracion": "Calibración",
-      "reparacion": "Reparación",
+      "reparacion": "Reparación finalizada",
       "baja": "Baja",
       "uso_inicio": "Inicio de uso",
       "uso_fin": "Fin de uso"

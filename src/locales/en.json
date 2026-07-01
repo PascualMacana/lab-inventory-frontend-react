@@ -770,6 +770,7 @@
     "msgLiberada": "{{codigo}} released.",
     "msgRetornoServicio": "{{codigo}} returned to service.",
     "volverServicio": "Return to service",
+    "calibracionFinalizada": "Calibration completed",
     "motivoFinCalibracion": "Calibration completed",
     "motivoRetornoServicio": "Return to service",
     "iSerie": "Serial no.",
@@ -861,9 +862,9 @@
     },
     "tipoEvento": {
       "alta": "Entry",
-      "rotura": "Breakage",
+      "rotura": "Send to repair / out of use",
       "calibracion": "Calibration",
-      "reparacion": "Repair",
+      "reparacion": "Repair completed",
       "baja": "Removal",
       "uso_inicio": "Checked out",
       "uso_fin": "Returned"

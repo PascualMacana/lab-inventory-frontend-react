@@ -32,7 +32,8 @@ const equiposVacios: Equipamiento[] = []
 const eventosVacios: EventoEquipamiento[] = []
 const proveedoresVacios: Proveedor[] = []
 const unidadesVacias: EquipamientoUnidad[] = []
-const tiposEvento: TipoEvento[] = ["alta", "rotura", "calibracion", "reparacion", "baja"]
+const tiposEventoFormulario: TipoEvento[] = ["alta", "rotura", "calibracion", "baja"]
+const tiposEventoHistorial: TipoEvento[] = ["alta", "rotura", "calibracion", "reparacion", "baja", "uso_inicio", "uso_fin"]
 const formatosEtiquetaEquipo = [
   { clave: "rollo_70x40", nombre: "Frasco grande — 70×40 mm (rollo)", maxPorPdf: 500 },
   { clave: "rollo_50x30", nombre: "Frasco mediano — 50×30 mm (rollo)", maxPorPdf: 500 },
@@ -96,6 +97,15 @@ const tipoEventoColor: Record<TipoEvento, string> = {
   calibracion: "var(--cds-support-warning)",
   rotura: "var(--cds-support-error)",
   baja: "var(--cds-support-error)",
+}
+
+function esMotivoFinCalibracion(tipo: TipoEvento | null | undefined, motivo: string | null | undefined) {
+  const motivoNormalizado = (motivo || "").trim().toLocaleLowerCase("es")
+  return tipo === "reparacion" && ["calibración finalizada", "calibracion finalizada", "calibration completed"].includes(motivoNormalizado)
+}
+
+function etiquetaTipoEvento(t: ReturnType<typeof useTranslation>["t"], evento: EventoEquipamiento) {
+  return esMotivoFinCalibracion(evento.tipo, evento.motivo) ? t("equip.calibracionFinalizada") : t(`equip.tipoEvento.${evento.tipo}`)
 }
 
 // Punto de estado del equipo en la tabla maestra (handoff). Prioridad: rojo si
@@ -984,7 +994,7 @@ function EquipoDetalle({
               <label className="block">
                 <Label className="mb-2" htmlFor={`tipo-${equipo.id}`}>{t("equip.tipo")}</Label>
                 <select id={`tipo-${equipo.id}`} name="tipo" className="h-10 w-full border-0 border-b-2 border-b-cds-borderStrong bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none">
-                  {tiposEvento.map((tipo) => (
+                  {tiposEventoFormulario.map((tipo) => (
                     <option key={tipo} value={tipo}>
                       {t(`equip.tipoEvento.${tipo}`)}
                     </option>
@@ -1172,7 +1182,11 @@ function UnidadesTable({
                   )}
                 </td>
                 <td className="h-14 px-3 text-cds-textSecondary">
-                  {unidad.ultimo_evento_tipo ? t(`equip.tipoEvento.${unidad.ultimo_evento_tipo}`) : "-"}
+                  {unidad.ultimo_evento_tipo
+                    ? (esMotivoFinCalibracion(unidad.ultimo_evento_tipo, unidad.ultimo_evento_motivo)
+                        ? t("equip.calibracionFinalizada")
+                        : t(`equip.tipoEvento.${unidad.ultimo_evento_tipo}`))
+                    : "-"}
                 </td>
                 {puedeAcciones ? (
                   <td className="h-14 px-3">
@@ -1464,7 +1478,7 @@ function HistorialGlobal({ token }: { token: string }) {
           <Label className="mb-2" htmlFor="tipo_evento_global">{t("equip.tipo")}</Label>
           <select id="tipo_evento_global" className="h-10 w-full border-0 border-b-2 border-b-transparent bg-cds-field px-4 text-sm text-cds-textPrimary focus:border-b-cds-focus focus:outline-none" value={tipo} onChange={(event) => setTipo(event.target.value)}>
             <option value="">{t("equip.todos")}</option>
-            {tiposEvento.map((item) => (
+            {tiposEventoHistorial.map((item) => (
               <option key={item} value={item}>
                 {t(`equip.tipoEvento.${item}`)}
               </option>
@@ -1493,7 +1507,7 @@ function EventosList({ eventos, isLoading }: { eventos: EventoEquipamiento[]; is
           <div className="flex items-center justify-between gap-3">
             <span className="inline-flex items-center gap-2">
               <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: tipoEventoColor[evento.tipo] }} aria-hidden="true" />
-              <span className="font-medium" style={{ color: tipoEventoColor[evento.tipo] }}>{t(`equip.tipoEvento.${evento.tipo}`)}</span>
+              <span className="font-medium" style={{ color: tipoEventoColor[evento.tipo] }}>{etiquetaTipoEvento(t, evento)}</span>
             </span>
             <span className="font-mono text-xs text-cds-textSecondary">{formatDateTime(evento.fecha)}</span>
           </div>
@@ -1536,7 +1550,7 @@ function EventosTable({ eventos, isLoading }: { eventos: EventoEquipamiento[]; i
               <td className="h-12 px-4 text-cds-textSecondary">{formatDateTime(evento.fecha)}</td>
               <td className="h-12 px-4">{evento.equipamiento_nombre}</td>
               <td className="h-12 px-4 font-mono text-xs text-cds-textSecondary">{evento.unidad_codigo || "-"}</td>
-              <td className="h-12 px-4">{t(`equip.tipoEvento.${evento.tipo}`)}</td>
+              <td className="h-12 px-4">{etiquetaTipoEvento(t, evento)}</td>
               <td className="h-12 px-4 text-right font-mono">{evento.cantidad}</td>
               <td className="h-12 px-4 text-cds-textSecondary">{evento.usuario_nombre}</td>
               <td className="h-12 max-w-[360px] px-4 text-cds-textSecondary">
